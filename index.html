@@ -1,0 +1,1265 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name="theme-color" content="#07090d"><title>Atalaya V12 — gráfico estable</title><style>
+:root{--bg:#07090d;--panel:#11161f;--panel2:#0b1017;--line:#293443;--text:#f2f4f7;--muted:#909aaa;--green:#76dda7;--yellow:#e5c15c;--red:#ff737d}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{background:var(--bg);scroll-behavior:auto}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;height:100vh;height:100dvh;overflow:hidden;display:grid;grid-template-rows:minmax(0,1fr) auto;touch-action:manipulation}
+a{color:inherit;text-decoration:none}
+main{width:100%;max-width:900px;margin:auto;padding:24px 16px 148px;overflow-y:auto;overflow-x:hidden;min-height:100dvh;height:100dvh;-webkit-overflow-scrolling:touch;overflow-anchor:none}
+.screen{display:none}.screen:target{display:block}.screen.default{display:block}body:has(.screen:target:not(.default)) .screen.default{display:none}
+.brand{font-size:42px;font-weight:900;letter-spacing:-1.8px}.status{color:var(--muted);font-size:11px;margin:4px 0 16px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:7px}
+.quick{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.quick a{min-height:48px;border:1px solid var(--line);border-radius:12px;background:var(--panel);display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800}.quick b{font-size:12px;margin-bottom:1px}
+.op,.rule,.market,.note{background:var(--panel);border:1px solid var(--line);border-radius:14px}
+.op{padding:15px;margin:12px 0}.row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.eyebrow,.section{font-size:9px;letter-spacing:.12em;font-weight:900;color:var(--muted)}.badge{padding:6px 8px;border-radius:7px;font-size:8px;font-weight:900}.wait{background:#322b13;color:var(--yellow)}.sell{background:#3b1b20;color:var(--red)}
+.sym{font-size:22px;font-weight:900}.dir{font-size:9px;color:var(--red);font-weight:900;margin-top:2px}
+.view{display:block;text-align:center;width:100%;border:1px solid #304052;border-radius:9px;background:#1a2330;padding:10px;font-weight:900;margin-top:11px}
+.section{margin:14px 0 8px}.markets{display:grid;gap:8px}
+.market{width:100%;display:grid;grid-template-columns:90px 1fr 105px;align-items:center;padding:10px 12px;text-align:left}
+.symbol{font-size:14px;font-weight:900}.name{font-size:9px;color:var(--muted)}.spark{color:#7da5ff}.right{text-align:right}.price{font-size:10px;color:var(--muted);margin-bottom:4px}
+.rule{padding:14px;margin-top:14px}.rule h2{font-size:14px;margin:0 0 7px}.rule ol{font-size:10px;line-height:1.7;color:#aeb7c4;margin:0;padding-left:18px}
+.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:15px}.top h2{font-size:16px;margin:0}
+.ico{width:44px;height:44px;border-radius:11px;border:1px solid var(--line);background:var(--panel);display:grid;place-items:center;font-size:25px}
+.ico svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.selects{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.selectbox{display:block;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 14px;font-weight:900}
+.tfrow{display:flex;gap:6px;overflow:auto;padding:2px 0 10px}.tf{flex:0 0 auto;border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:8px 11px;font-size:11px;font-weight:800}.tf.on{border-color:var(--green);color:var(--green)}
+.graph-title h1{font-size:34px;margin:4px 0}.graph-title p{color:var(--muted);font-size:11px;margin:0 0 12px}
+.chartbox{min-height:430px;border:1px solid var(--line);border-radius:14px;background:#05070a;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px}
+.chartbox h3{font-size:18px;margin:8px 0}.chartbox p{color:var(--muted);font-size:11px;line-height:1.6;max-width:520px}
+.real{display:inline-block;background:#1e4332;border:1px solid var(--green);color:var(--green);border-radius:10px;padding:13px 18px;font-weight:900;margin-top:8px}
+.note{padding:14px;margin-top:12px;color:#aeb7c4;font-size:11px;line-height:1.55}.note strong{color:var(--text)}
+.bottom{position:fixed;left:0;right:0;bottom:0;z-index:100;width:100%;height:112px;padding:8px 6px max(16px,env(safe-area-inset-bottom));background:#0a0e14;border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(4,1fr);box-shadow:0 -8px 24px rgba(0,0,0,.3);box-sizing:border-box}
+.nav{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:var(--muted);font-size:10px;font-weight:900}.nav b{font-size:20px}
+.nav.home{color:var(--text)}
+.pillrow{display:flex;gap:7px;overflow:auto;margin:8px 0 12px}.pill{border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--panel);font-size:10px;font-weight:800;white-space:nowrap}
+@media(min-width:700px){main{padding-left:24px;padding-right:24px}.chartbox{min-height:520px}}
+
+.chartbox{overflow:hidden;align-items:stretch;justify-content:flex-start;text-align:left;padding:0;min-height:430px}
+.chartbox svg{display:block;width:100%;height:360px;flex:none}
+.chartmeta{padding:12px 14px 7px;color:#909aaa;font-size:11px}
+.chartmeta strong{color:#f2f4f7}
+.chartfoot{padding:8px 14px 12px;color:#909aaa;font-size:10px;border-top:1px solid #151e29}
+@media(max-width:520px){.quick{gap:6px}.quick a{min-height:46px;font-size:10px}.quick b{font-size:11px}.bottom{height:100px}}
+
+/* ATALAYA V7 */
+.graph-controls{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0 12px}
+.graph-dropdown{position:relative;min-width:0}
+.graph-dropdown summary{list-style:none;min-height:58px;padding:0 16px;border:1px solid var(--line);border-radius:16px;background:var(--panel);color:var(--text);display:flex;align-items:center;justify-content:space-between;font-size:16px;font-weight:900;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.graph-dropdown summary::-webkit-details-marker{display:none}
+.graph-dropdown[open] summary{border-color:#3c4859}
+.graph-dropdown .chev{font-size:18px;color:var(--muted)}
+.graph-menu{position:absolute;left:0;right:0;top:64px;z-index:200;padding:6px;border:1px solid var(--line);border-radius:14px;background:#10151e;box-shadow:0 16px 35px rgba(0,0,0,.5)}
+.graph-menu a{display:block;padding:13px 12px;border-radius:10px;color:var(--text);font-size:15px;font-weight:800}
+.graph-menu a.selected{background:#171d28;color:var(--yellow)}
+.quick{gap:7px}
+.quick a{min-height:48px!important;padding:6px 3px!important;border-radius:14px!important}
+.quick b{font-size:10px!important;line-height:1.1}
+.quick-icon{width:27px;height:27px;border-radius:8px;display:grid;place-items:center;margin:0 auto 3px;border:1px solid #334052;background:#171e29}
+.quick-icon svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.times,.pillrow,.selects{display:none!important}
+@media(max-width:520px){.graph-controls{gap:9px}.graph-dropdown summary{min-height:56px;padding:0 14px;font-size:15px}.bottom{height:104px}}
+
+/* ATALAYA V8 — motor y gráficos reales */
+.status .live{background:#76dda7;box-shadow:0 0 0 4px rgba(118,221,167,.08)}
+.quick{grid-template-columns:repeat(4,1fr)}
+.quick a{min-height:50px!important;padding:5px 2px!important}
+.quick-icon{width:27px;height:27px}
+.real-chart{padding-bottom:0;overflow:hidden}
+.canvas-wrap{height:430px;position:relative;background:#05070a}
+.market-canvas{display:block;width:100%;height:100%;touch-action:pan-y}
+.chart-foot{display:flex;justify-content:space-between;gap:10px;padding:11px 14px;border-top:1px solid var(--line);font-size:11px;color:var(--muted)}
+.signalbox{margin-top:10px;padding:15px;border:1px solid var(--line);border-radius:16px;background:var(--panel)}
+.signal-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.signal-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.signal-grid div{padding:10px;border:1px solid #222d3b;border-radius:11px;background:#0c1119}
+.signal-grid small{display:block;color:var(--muted);font-size:10px;margin-bottom:4px}
+.signal-grid b{font-size:13px}
+.signalbox p{color:var(--muted);font-size:12px;line-height:1.45;margin:12px 0 0}
+.badge.buy{background:rgba(48,154,105,.22);color:#76dda7}
+.badge.sell{background:rgba(174,52,64,.25);color:#ff737d}
+.badge.wait{background:rgba(133,105,20,.3);color:#e5c15c}
+.levels{margin:12px 0;padding:10px 12px;border:1px solid #222d3b;border-radius:10px;color:var(--muted);font-size:12px;line-height:1.45}
+.news-list,.best-page{display:grid;gap:12px}
+.news-card,.calendar-card,.history-card{padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--panel)}
+.news-card p,.calendar-card p{color:var(--muted);line-height:1.45}
+.news-card a,.calendar-card a{color:var(--green);font-weight:800}
+.history-item{padding:12px 0;border-bottom:1px solid #202936}
+.history-item:last-child{border-bottom:0}
+.history-item strong{font-size:15px}
+.history-item small{display:block;color:var(--muted);margin-top:3px}
+.muted{color:var(--muted)}
+@media(max-width:520px){
+  .canvas-wrap{height:390px}
+  .signal-grid{grid-template-columns:repeat(2,1fr)}
+  .chart-foot{font-size:10px}
+}
+
+/* V10 — fluidez + barra inferior estable */
+html{background:var(--bg);overscroll-behavior:none}
+body{overscroll-behavior:none}
+main{scroll-behavior:smooth}
+a,button,summary{-webkit-tap-highlight-color:transparent}
+.quick{gap:8px}
+.quick a{min-height:62px!important;padding:7px 3px!important;border-radius:16px!important;display:flex!important;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+.quick-icon{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;margin:0!important;border:1px solid #344154;background:#151c27;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+.quick-icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.quick-label{display:block;font-size:9.5px;font-weight:800;line-height:1.08;text-align:center;letter-spacing:-.1px}
+.qi-star{background:#1a1b16;border-color:#514a2c}.qi-star svg{stroke:#e5c15c}
+.qi-chart{background:#121c1a;border-color:#29443b}.qi-chart svg{stroke:#76dda7}
+.qi-news{background:#171922;border-color:#363b4b}.qi-news svg{stroke:#aeb8c8}
+.qi-refresh svg{stroke:#8ea0b7}
+.bottom a{transition:none!important}
+
+/* V11 — header order + CORS-safe market loading */
+.graph-title{position:relative;z-index:1}
+.graph-controls{position:relative;z-index:5}
+.real-chart{overflow:hidden}
+.canvas-wrap{min-height:390px}
+.chart-foot{min-height:54px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.retry-chart{border:0;background:transparent;color:var(--green);font:inherit;font-weight:700;padding:6px 2px;cursor:pointer}.retry-chart:active{opacity:.7}
+</style></head>
+<body><main>
+<section id="home" class="screen default">
+  <div class="brand">Atalaya</div>
+  <div class="status"><span class="dot live"></span><span id="engineStatus">Motor real · conectando datos…</span></div>
+  <div class="quick">
+<a href="#home" id="refreshBtn"><span class="quick-icon qi-refresh"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14-5L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14 5l2-2"/><path d="M20 20v-4h-4"/></svg></span><span class="quick-label">Actualizar</span></a>
+<a href="#best"><span class="quick-icon qi-star"><svg viewBox="0 0 24 24"><path d="m12 3 2.1 5.2 5.6.5-4.3 3.6 1.4 5.4-4.8-2.8-4.8 2.8 1.4-5.4-4.3-3.6 5.6-.5z"/></svg></span><span class="quick-label">Mejor oportunidad</span></a>
+<a href="#graphs-BTCUSD-15m"><span class="quick-icon qi-chart"><svg viewBox="0 0 24 24"><path d="M4 19V5"/><path d="M4 19h16"/><path d="m7 15 3-4 3 2 5-6"/></svg></span><span class="quick-label">Gráficos</span></a>
+<a href="#news"><span class="quick-icon qi-news"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span><span class="quick-label">Noticias</span></a>
+</div>
+</div>
+  <div class="op" id="best">
+    <div class="row"><span class="eyebrow">MEJOR OPORTUNIDAD AHORA</span><span class="badge wait" id="bestBadge">ANALIZANDO</span></div>
+    <div style="margin-top:14px"><div class="sym" id="bestSymbol">—</div><div class="dir" id="bestDirection">ESPERANDO DATOS</div></div>
+    <div class="row" style="margin-top:14px"><span class="price">Precio <strong id="bestPrice">—</strong></span><span class="price">R:R <strong id="bestRR">1:2</strong></span></div>
+    <div class="levels" id="bestLevels">Motor técnico: EMA20 / EMA50 · RSI14 · ATR14</div>
+    <a class="view" id="bestDetail" href="#graphs-BTCUSD-15m">Ver detalle →</a>
+  </div>
+  <div class="section">MERCADOS</div>
+  <div class="markets">
+<a class="market" href="#graphs-BTCUSD-15m"><div><div class="symbol">BTCUSD</div><div class="name">Bitcoin</div></div><div class="spark">╱╲╱╲╱╲</div><div class="right"><div class="price"><span data-price="BTCUSD">—</span></div><span class="badge wait" data-signal="BTCUSD">ANALIZANDO</span></div></a><a class="market" href="#graphs-XAUUSD-15m"><div><div class="symbol">XAUUSD</div><div class="name">Oro</div></div><div class="spark">╱╲╱╲╱╲</div><div class="right"><div class="price"><span data-price="XAUUSD">—</span></div><span class="badge wait" data-signal="XAUUSD">ANALIZANDO</span></div></a><a class="market" href="#graphs-US100-15m"><div><div class="symbol">US100</div><div class="name">Nasdaq 100</div></div><div class="spark">╱╲╱╲╱╲</div><div class="right"><div class="price"><span data-price="US100">—</span></div><span class="badge wait" data-signal="US100">ANALIZANDO</span></div></a><a class="market" href="#graphs-WTI-15m"><div><div class="symbol">WTI</div><div class="name">Petróleo WTI</div></div><div class="spark">╱╲╱╲╱╲</div><div class="right"><div class="price"><span data-price="WTI">—</span></div><span class="badge wait" data-signal="WTI">ANALIZANDO</span></div></a>
+  </div>
+  <div class="rule"><h2>Regla visual de Atalaya</h2><ol><li>Dirección → <strong>COMPRA o VENTA.</strong></li><li>Esperar → el precio entra en la <strong>zona.</strong></li><li>Confirmación → rechazo/cierre.</li><li>Entonces → <strong>ENTRADA</strong>, con SL y TP visibles.</li></ol></div>
+</section>
+
+<section id="graphs-BTCUSD-1m" class="screen">
+  <div class="graph-title"><h1>BTCUSD</h1><p>Bitcoin · 1M · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>BTCUSD</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1m" class="selected">BTCUSD</a><a href="#graphs-XAUUSD-1m" class="">XAUUSD</a><a href="#graphs-US100-1m" class="">US100</a><a href="#graphs-WTI-1m" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>1M</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1m" class="selected">1M</a><a href="#graphs-BTCUSD-5m" class="">5M</a><a href="#graphs-BTCUSD-15m" class="">15M</a><a href="#graphs-BTCUSD-30m" class="">30M</a><a href="#graphs-BTCUSD-1h" class="">1H</a><a href="#graphs-BTCUSD-4h" class="">4H</a><a href="#graphs-BTCUSD-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="BTCUSD" data-tf="1m">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de BTCUSD 1M"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="BTCUSD">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-BTCUSD-5m" class="screen">
+  <div class="graph-title"><h1>BTCUSD</h1><p>Bitcoin · 5M · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>BTCUSD</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-5m" class="selected">BTCUSD</a><a href="#graphs-XAUUSD-5m" class="">XAUUSD</a><a href="#graphs-US100-5m" class="">US100</a><a href="#graphs-WTI-5m" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>5M</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1m" class="">1M</a><a href="#graphs-BTCUSD-5m" class="selected">5M</a><a href="#graphs-BTCUSD-15m" class="">15M</a><a href="#graphs-BTCUSD-30m" class="">30M</a><a href="#graphs-BTCUSD-1h" class="">1H</a><a href="#graphs-BTCUSD-4h" class="">4H</a><a href="#graphs-BTCUSD-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="BTCUSD" data-tf="5m">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de BTCUSD 5M"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="BTCUSD">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-BTCUSD-15m" class="screen">
+  <div class="graph-title"><h1>BTCUSD</h1><p>Bitcoin · 15M · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>BTCUSD</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-15m" class="selected">BTCUSD</a><a href="#graphs-XAUUSD-15m" class="">XAUUSD</a><a href="#graphs-US100-15m" class="">US100</a><a href="#graphs-WTI-15m" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>15M</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1m" class="">1M</a><a href="#graphs-BTCUSD-5m" class="">5M</a><a href="#graphs-BTCUSD-15m" class="selected">15M</a><a href="#graphs-BTCUSD-30m" class="">30M</a><a href="#graphs-BTCUSD-1h" class="">1H</a><a href="#graphs-BTCUSD-4h" class="">4H</a><a href="#graphs-BTCUSD-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="BTCUSD" data-tf="15m">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de BTCUSD 15M"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="BTCUSD">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-BTCUSD-30m" class="screen">
+  <div class="graph-title"><h1>BTCUSD</h1><p>Bitcoin · 30M · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>BTCUSD</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-30m" class="selected">BTCUSD</a><a href="#graphs-XAUUSD-30m" class="">XAUUSD</a><a href="#graphs-US100-30m" class="">US100</a><a href="#graphs-WTI-30m" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>30M</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1m" class="">1M</a><a href="#graphs-BTCUSD-5m" class="">5M</a><a href="#graphs-BTCUSD-15m" class="">15M</a><a href="#graphs-BTCUSD-30m" class="selected">30M</a><a href="#graphs-BTCUSD-1h" class="">1H</a><a href="#graphs-BTCUSD-4h" class="">4H</a><a href="#graphs-BTCUSD-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="BTCUSD" data-tf="30m">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de BTCUSD 30M"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="BTCUSD">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-BTCUSD-1h" class="screen">
+  <div class="graph-title"><h1>BTCUSD</h1><p>Bitcoin · 1H · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>BTCUSD</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1h" class="selected">BTCUSD</a><a href="#graphs-XAUUSD-1h" class="">XAUUSD</a><a href="#graphs-US100-1h" class="">US100</a><a href="#graphs-WTI-1h" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>1H</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1m" class="">1M</a><a href="#graphs-BTCUSD-5m" class="">5M</a><a href="#graphs-BTCUSD-15m" class="">15M</a><a href="#graphs-BTCUSD-30m" class="">30M</a><a href="#graphs-BTCUSD-1h" class="selected">1H</a><a href="#graphs-BTCUSD-4h" class="">4H</a><a href="#graphs-BTCUSD-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="BTCUSD" data-tf="1h">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de BTCUSD 1H"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="BTCUSD">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-BTCUSD-4h" class="screen">
+  <div class="graph-title"><h1>BTCUSD</h1><p>Bitcoin · 4H · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>BTCUSD</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-4h" class="selected">BTCUSD</a><a href="#graphs-XAUUSD-4h" class="">XAUUSD</a><a href="#graphs-US100-4h" class="">US100</a><a href="#graphs-WTI-4h" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>4H</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1m" class="">1M</a><a href="#graphs-BTCUSD-5m" class="">5M</a><a href="#graphs-BTCUSD-15m" class="">15M</a><a href="#graphs-BTCUSD-30m" class="">30M</a><a href="#graphs-BTCUSD-1h" class="">1H</a><a href="#graphs-BTCUSD-4h" class="selected">4H</a><a href="#graphs-BTCUSD-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="BTCUSD" data-tf="4h">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de BTCUSD 4H"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="BTCUSD">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-BTCUSD-1d" class="screen">
+  <div class="graph-title"><h1>BTCUSD</h1><p>Bitcoin · 1D · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>BTCUSD</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1d" class="selected">BTCUSD</a><a href="#graphs-XAUUSD-1d" class="">XAUUSD</a><a href="#graphs-US100-1d" class="">US100</a><a href="#graphs-WTI-1d" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>1D</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1m" class="">1M</a><a href="#graphs-BTCUSD-5m" class="">5M</a><a href="#graphs-BTCUSD-15m" class="">15M</a><a href="#graphs-BTCUSD-30m" class="">30M</a><a href="#graphs-BTCUSD-1h" class="">1H</a><a href="#graphs-BTCUSD-4h" class="">4H</a><a href="#graphs-BTCUSD-1d" class="selected">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="BTCUSD" data-tf="1d">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de BTCUSD 1D"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="BTCUSD">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-XAUUSD-1m" class="screen">
+  <div class="graph-title"><h1>XAUUSD</h1><p>Oro · 1M · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>XAUUSD</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1m" class="">BTCUSD</a><a href="#graphs-XAUUSD-1m" class="selected">XAUUSD</a><a href="#graphs-US100-1m" class="">US100</a><a href="#graphs-WTI-1m" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>1M</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-XAUUSD-1m" class="selected">1M</a><a href="#graphs-XAUUSD-5m" class="">5M</a><a href="#graphs-XAUUSD-15m" class="">15M</a><a href="#graphs-XAUUSD-30m" class="">30M</a><a href="#graphs-XAUUSD-1h" class="">1H</a><a href="#graphs-XAUUSD-4h" class="">4H</a><a href="#graphs-XAUUSD-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="XAUUSD" data-tf="1m">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de XAUUSD 1M"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="XAUUSD">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-XAUUSD-5m" class="screen">
+  <div class="graph-title"><h1>XAUUSD</h1><p>Oro · 5M · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>XAUUSD</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-5m" class="">BTCUSD</a><a href="#graphs-XAUUSD-5m" class="selected">XAUUSD</a><a href="#graphs-US100-5m" class="">US100</a><a href="#graphs-WTI-5m" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>5M</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-XAUUSD-1m" class="">1M</a><a href="#graphs-XAUUSD-5m" class="selected">5M</a><a href="#graphs-XAUUSD-15m" class="">15M</a><a href="#graphs-XAUUSD-30m" class="">30M</a><a href="#graphs-XAUUSD-1h" class="">1H</a><a href="#graphs-XAUUSD-4h" class="">4H</a><a href="#graphs-XAUUSD-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="XAUUSD" data-tf="5m">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de XAUUSD 5M"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="XAUUSD">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-XAUUSD-15m" class="screen">
+  <div class="graph-title"><h1>XAUUSD</h1><p>Oro · 15M · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>XAUUSD</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-15m" class="">BTCUSD</a><a href="#graphs-XAUUSD-15m" class="selected">XAUUSD</a><a href="#graphs-US100-15m" class="">US100</a><a href="#graphs-WTI-15m" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>15M</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-XAUUSD-1m" class="">1M</a><a href="#graphs-XAUUSD-5m" class="">5M</a><a href="#graphs-XAUUSD-15m" class="selected">15M</a><a href="#graphs-XAUUSD-30m" class="">30M</a><a href="#graphs-XAUUSD-1h" class="">1H</a><a href="#graphs-XAUUSD-4h" class="">4H</a><a href="#graphs-XAUUSD-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="XAUUSD" data-tf="15m">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de XAUUSD 15M"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="XAUUSD">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-XAUUSD-30m" class="screen">
+  <div class="graph-title"><h1>XAUUSD</h1><p>Oro · 30M · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>XAUUSD</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-30m" class="">BTCUSD</a><a href="#graphs-XAUUSD-30m" class="selected">XAUUSD</a><a href="#graphs-US100-30m" class="">US100</a><a href="#graphs-WTI-30m" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>30M</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-XAUUSD-1m" class="">1M</a><a href="#graphs-XAUUSD-5m" class="">5M</a><a href="#graphs-XAUUSD-15m" class="">15M</a><a href="#graphs-XAUUSD-30m" class="selected">30M</a><a href="#graphs-XAUUSD-1h" class="">1H</a><a href="#graphs-XAUUSD-4h" class="">4H</a><a href="#graphs-XAUUSD-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="XAUUSD" data-tf="30m">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de XAUUSD 30M"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="XAUUSD">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-XAUUSD-1h" class="screen">
+  <div class="graph-title"><h1>XAUUSD</h1><p>Oro · 1H · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>XAUUSD</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1h" class="">BTCUSD</a><a href="#graphs-XAUUSD-1h" class="selected">XAUUSD</a><a href="#graphs-US100-1h" class="">US100</a><a href="#graphs-WTI-1h" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>1H</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-XAUUSD-1m" class="">1M</a><a href="#graphs-XAUUSD-5m" class="">5M</a><a href="#graphs-XAUUSD-15m" class="">15M</a><a href="#graphs-XAUUSD-30m" class="">30M</a><a href="#graphs-XAUUSD-1h" class="selected">1H</a><a href="#graphs-XAUUSD-4h" class="">4H</a><a href="#graphs-XAUUSD-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="XAUUSD" data-tf="1h">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de XAUUSD 1H"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="XAUUSD">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-XAUUSD-4h" class="screen">
+  <div class="graph-title"><h1>XAUUSD</h1><p>Oro · 4H · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>XAUUSD</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-4h" class="">BTCUSD</a><a href="#graphs-XAUUSD-4h" class="selected">XAUUSD</a><a href="#graphs-US100-4h" class="">US100</a><a href="#graphs-WTI-4h" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>4H</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-XAUUSD-1m" class="">1M</a><a href="#graphs-XAUUSD-5m" class="">5M</a><a href="#graphs-XAUUSD-15m" class="">15M</a><a href="#graphs-XAUUSD-30m" class="">30M</a><a href="#graphs-XAUUSD-1h" class="">1H</a><a href="#graphs-XAUUSD-4h" class="selected">4H</a><a href="#graphs-XAUUSD-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="XAUUSD" data-tf="4h">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de XAUUSD 4H"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="XAUUSD">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-XAUUSD-1d" class="screen">
+  <div class="graph-title"><h1>XAUUSD</h1><p>Oro · 1D · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>XAUUSD</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1d" class="">BTCUSD</a><a href="#graphs-XAUUSD-1d" class="selected">XAUUSD</a><a href="#graphs-US100-1d" class="">US100</a><a href="#graphs-WTI-1d" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>1D</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-XAUUSD-1m" class="">1M</a><a href="#graphs-XAUUSD-5m" class="">5M</a><a href="#graphs-XAUUSD-15m" class="">15M</a><a href="#graphs-XAUUSD-30m" class="">30M</a><a href="#graphs-XAUUSD-1h" class="">1H</a><a href="#graphs-XAUUSD-4h" class="">4H</a><a href="#graphs-XAUUSD-1d" class="selected">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="XAUUSD" data-tf="1d">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de XAUUSD 1D"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="XAUUSD">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-US100-1m" class="screen">
+  <div class="graph-title"><h1>US100</h1><p>Nasdaq 100 · 1M · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>US100</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1m" class="">BTCUSD</a><a href="#graphs-XAUUSD-1m" class="">XAUUSD</a><a href="#graphs-US100-1m" class="selected">US100</a><a href="#graphs-WTI-1m" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>1M</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-US100-1m" class="selected">1M</a><a href="#graphs-US100-5m" class="">5M</a><a href="#graphs-US100-15m" class="">15M</a><a href="#graphs-US100-30m" class="">30M</a><a href="#graphs-US100-1h" class="">1H</a><a href="#graphs-US100-4h" class="">4H</a><a href="#graphs-US100-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="US100" data-tf="1m">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de US100 1M"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="US100">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-US100-5m" class="screen">
+  <div class="graph-title"><h1>US100</h1><p>Nasdaq 100 · 5M · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>US100</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-5m" class="">BTCUSD</a><a href="#graphs-XAUUSD-5m" class="">XAUUSD</a><a href="#graphs-US100-5m" class="selected">US100</a><a href="#graphs-WTI-5m" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>5M</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-US100-1m" class="">1M</a><a href="#graphs-US100-5m" class="selected">5M</a><a href="#graphs-US100-15m" class="">15M</a><a href="#graphs-US100-30m" class="">30M</a><a href="#graphs-US100-1h" class="">1H</a><a href="#graphs-US100-4h" class="">4H</a><a href="#graphs-US100-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="US100" data-tf="5m">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de US100 5M"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="US100">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-US100-15m" class="screen">
+  <div class="graph-title"><h1>US100</h1><p>Nasdaq 100 · 15M · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>US100</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-15m" class="">BTCUSD</a><a href="#graphs-XAUUSD-15m" class="">XAUUSD</a><a href="#graphs-US100-15m" class="selected">US100</a><a href="#graphs-WTI-15m" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>15M</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-US100-1m" class="">1M</a><a href="#graphs-US100-5m" class="">5M</a><a href="#graphs-US100-15m" class="selected">15M</a><a href="#graphs-US100-30m" class="">30M</a><a href="#graphs-US100-1h" class="">1H</a><a href="#graphs-US100-4h" class="">4H</a><a href="#graphs-US100-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="US100" data-tf="15m">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de US100 15M"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="US100">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-US100-30m" class="screen">
+  <div class="graph-title"><h1>US100</h1><p>Nasdaq 100 · 30M · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>US100</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-30m" class="">BTCUSD</a><a href="#graphs-XAUUSD-30m" class="">XAUUSD</a><a href="#graphs-US100-30m" class="selected">US100</a><a href="#graphs-WTI-30m" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>30M</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-US100-1m" class="">1M</a><a href="#graphs-US100-5m" class="">5M</a><a href="#graphs-US100-15m" class="">15M</a><a href="#graphs-US100-30m" class="selected">30M</a><a href="#graphs-US100-1h" class="">1H</a><a href="#graphs-US100-4h" class="">4H</a><a href="#graphs-US100-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="US100" data-tf="30m">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de US100 30M"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="US100">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-US100-1h" class="screen">
+  <div class="graph-title"><h1>US100</h1><p>Nasdaq 100 · 1H · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>US100</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1h" class="">BTCUSD</a><a href="#graphs-XAUUSD-1h" class="">XAUUSD</a><a href="#graphs-US100-1h" class="selected">US100</a><a href="#graphs-WTI-1h" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>1H</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-US100-1m" class="">1M</a><a href="#graphs-US100-5m" class="">5M</a><a href="#graphs-US100-15m" class="">15M</a><a href="#graphs-US100-30m" class="">30M</a><a href="#graphs-US100-1h" class="selected">1H</a><a href="#graphs-US100-4h" class="">4H</a><a href="#graphs-US100-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="US100" data-tf="1h">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de US100 1H"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="US100">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-US100-4h" class="screen">
+  <div class="graph-title"><h1>US100</h1><p>Nasdaq 100 · 4H · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>US100</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-4h" class="">BTCUSD</a><a href="#graphs-XAUUSD-4h" class="">XAUUSD</a><a href="#graphs-US100-4h" class="selected">US100</a><a href="#graphs-WTI-4h" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>4H</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-US100-1m" class="">1M</a><a href="#graphs-US100-5m" class="">5M</a><a href="#graphs-US100-15m" class="">15M</a><a href="#graphs-US100-30m" class="">30M</a><a href="#graphs-US100-1h" class="">1H</a><a href="#graphs-US100-4h" class="selected">4H</a><a href="#graphs-US100-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="US100" data-tf="4h">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de US100 4H"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="US100">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-US100-1d" class="screen">
+  <div class="graph-title"><h1>US100</h1><p>Nasdaq 100 · 1D · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>US100</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1d" class="">BTCUSD</a><a href="#graphs-XAUUSD-1d" class="">XAUUSD</a><a href="#graphs-US100-1d" class="selected">US100</a><a href="#graphs-WTI-1d" class="">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>1D</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-US100-1m" class="">1M</a><a href="#graphs-US100-5m" class="">5M</a><a href="#graphs-US100-15m" class="">15M</a><a href="#graphs-US100-30m" class="">30M</a><a href="#graphs-US100-1h" class="">1H</a><a href="#graphs-US100-4h" class="">4H</a><a href="#graphs-US100-1d" class="selected">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="US100" data-tf="1d">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de US100 1D"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="US100">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-WTI-1m" class="screen">
+  <div class="graph-title"><h1>WTI</h1><p>Petróleo WTI · 1M · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>WTI</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1m" class="">BTCUSD</a><a href="#graphs-XAUUSD-1m" class="">XAUUSD</a><a href="#graphs-US100-1m" class="">US100</a><a href="#graphs-WTI-1m" class="selected">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>1M</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-WTI-1m" class="selected">1M</a><a href="#graphs-WTI-5m" class="">5M</a><a href="#graphs-WTI-15m" class="">15M</a><a href="#graphs-WTI-30m" class="">30M</a><a href="#graphs-WTI-1h" class="">1H</a><a href="#graphs-WTI-4h" class="">4H</a><a href="#graphs-WTI-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="WTI" data-tf="1m">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de WTI 1M"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="WTI">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-WTI-5m" class="screen">
+  <div class="graph-title"><h1>WTI</h1><p>Petróleo WTI · 5M · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>WTI</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-5m" class="">BTCUSD</a><a href="#graphs-XAUUSD-5m" class="">XAUUSD</a><a href="#graphs-US100-5m" class="">US100</a><a href="#graphs-WTI-5m" class="selected">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>5M</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-WTI-1m" class="">1M</a><a href="#graphs-WTI-5m" class="selected">5M</a><a href="#graphs-WTI-15m" class="">15M</a><a href="#graphs-WTI-30m" class="">30M</a><a href="#graphs-WTI-1h" class="">1H</a><a href="#graphs-WTI-4h" class="">4H</a><a href="#graphs-WTI-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="WTI" data-tf="5m">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de WTI 5M"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="WTI">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-WTI-15m" class="screen">
+  <div class="graph-title"><h1>WTI</h1><p>Petróleo WTI · 15M · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>WTI</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-15m" class="">BTCUSD</a><a href="#graphs-XAUUSD-15m" class="">XAUUSD</a><a href="#graphs-US100-15m" class="">US100</a><a href="#graphs-WTI-15m" class="selected">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>15M</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-WTI-1m" class="">1M</a><a href="#graphs-WTI-5m" class="">5M</a><a href="#graphs-WTI-15m" class="selected">15M</a><a href="#graphs-WTI-30m" class="">30M</a><a href="#graphs-WTI-1h" class="">1H</a><a href="#graphs-WTI-4h" class="">4H</a><a href="#graphs-WTI-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="WTI" data-tf="15m">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de WTI 15M"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="WTI">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-WTI-30m" class="screen">
+  <div class="graph-title"><h1>WTI</h1><p>Petróleo WTI · 30M · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>WTI</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-30m" class="">BTCUSD</a><a href="#graphs-XAUUSD-30m" class="">XAUUSD</a><a href="#graphs-US100-30m" class="">US100</a><a href="#graphs-WTI-30m" class="selected">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>30M</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-WTI-1m" class="">1M</a><a href="#graphs-WTI-5m" class="">5M</a><a href="#graphs-WTI-15m" class="">15M</a><a href="#graphs-WTI-30m" class="selected">30M</a><a href="#graphs-WTI-1h" class="">1H</a><a href="#graphs-WTI-4h" class="">4H</a><a href="#graphs-WTI-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="WTI" data-tf="30m">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de WTI 30M"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="WTI">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-WTI-1h" class="screen">
+  <div class="graph-title"><h1>WTI</h1><p>Petróleo WTI · 1H · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>WTI</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1h" class="">BTCUSD</a><a href="#graphs-XAUUSD-1h" class="">XAUUSD</a><a href="#graphs-US100-1h" class="">US100</a><a href="#graphs-WTI-1h" class="selected">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>1H</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-WTI-1m" class="">1M</a><a href="#graphs-WTI-5m" class="">5M</a><a href="#graphs-WTI-15m" class="">15M</a><a href="#graphs-WTI-30m" class="">30M</a><a href="#graphs-WTI-1h" class="selected">1H</a><a href="#graphs-WTI-4h" class="">4H</a><a href="#graphs-WTI-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="WTI" data-tf="1h">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de WTI 1H"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="WTI">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-WTI-4h" class="screen">
+  <div class="graph-title"><h1>WTI</h1><p>Petróleo WTI · 4H · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>WTI</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-4h" class="">BTCUSD</a><a href="#graphs-XAUUSD-4h" class="">XAUUSD</a><a href="#graphs-US100-4h" class="">US100</a><a href="#graphs-WTI-4h" class="selected">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>4H</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-WTI-1m" class="">1M</a><a href="#graphs-WTI-5m" class="">5M</a><a href="#graphs-WTI-15m" class="">15M</a><a href="#graphs-WTI-30m" class="">30M</a><a href="#graphs-WTI-1h" class="">1H</a><a href="#graphs-WTI-4h" class="selected">4H</a><a href="#graphs-WTI-1d" class="">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="WTI" data-tf="4h">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de WTI 4H"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="WTI">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="graphs-WTI-1d" class="screen">
+  <div class="graph-title"><h1>WTI</h1><p>Petróleo WTI · 1D · mercado en tiempo real</p></div>
+<div class="graph-controls">
+    <details class="graph-dropdown">
+      <summary><span>WTI</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-BTCUSD-1d" class="">BTCUSD</a><a href="#graphs-XAUUSD-1d" class="">XAUUSD</a><a href="#graphs-US100-1d" class="">US100</a><a href="#graphs-WTI-1d" class="selected">WTI</a></div>
+    </details>
+    <details class="graph-dropdown">
+      <summary><span>1D</span><span class="chev">⌄</span></summary>
+      <div class="graph-menu"><a href="#graphs-WTI-1m" class="">1M</a><a href="#graphs-WTI-5m" class="">5M</a><a href="#graphs-WTI-15m" class="">15M</a><a href="#graphs-WTI-30m" class="">30M</a><a href="#graphs-WTI-1h" class="">1H</a><a href="#graphs-WTI-4h" class="">4H</a><a href="#graphs-WTI-1d" class="selected">1D</a></div>
+    </details>
+  </div>
+  <div class="top"><a class="ico" href="#home" aria-label="Volver">‹</a><h2>Gráficos</h2><a class="ico" href="#home" aria-label="Inicio">⌂</a></div>
+  
+  </div>
+
+  <div class="chartbox real-chart" data-asset="WTI" data-tf="1d">
+    <div class="chartmeta"><strong>Gráfico</strong> · <span data-chart-status>conectando con mercado…</span></div>
+    <div class="canvas-wrap"><canvas class="market-canvas" aria-label="Gráfico de WTI 1D"></canvas></div>
+    <div class="chart-foot"><span data-last-price>Precio —</span><button class="retry-chart" type="button">Reintentar</button><span data-source>Fuente: mercado · datos OHLC</span></div>
+  </div>
+  <div class="note"><strong>Motor real.</strong> Atalaya obtiene OHLC de mercado, dibuja las velas dentro de la aplicación y calcula la señal localmente. Si la fuente externa no responde, lo indicará en lugar de dejar un “cargando” infinito.</div>
+  <div class="signalbox" data-signal-box="WTI">
+    <div class="signal-head"><strong>Motor Atalaya</strong><span class="badge wait" data-chart-signal>ANALIZANDO</span></div>
+    <div class="signal-grid">
+      <div><small>Dirección</small><b data-sig-direction>—</b></div>
+      <div><small>Entrada</small><b data-sig-entry>—</b></div>
+      <div><small>SL</small><b data-sig-sl>—</b></div>
+      <div><small>TP</small><b data-sig-tp>—</b></div>
+    </div>
+    <p data-sig-reason>Esperando datos suficientes.</p>
+  </div>
+</section>
+
+<section id="asset-BTCUSD" class="screen">
+  <div class="top"><a class="ico" href="#home">‹</a><h2>Activo</h2><a class="ico" href="#home">⌂</a></div>
+  <div class="graph-title"><h1>BTCUSD</h1><p>Bitcoin · selecciona temporalidad</p></div>
+  <div class="markets">
+    <a class="market" href="#graphs-BTCUSD-1m"><div><div class="symbol">BTCUSD</div><div class="name">1M</div></div><div></div><div class="right"><span class="badge wait">1M</span></div></a><a class="market" href="#graphs-BTCUSD-5m"><div><div class="symbol">BTCUSD</div><div class="name">5M</div></div><div></div><div class="right"><span class="badge wait">5M</span></div></a><a class="market" href="#graphs-BTCUSD-15m"><div><div class="symbol">BTCUSD</div><div class="name">15M</div></div><div></div><div class="right"><span class="badge wait">15M</span></div></a><a class="market" href="#graphs-BTCUSD-30m"><div><div class="symbol">BTCUSD</div><div class="name">30M</div></div><div></div><div class="right"><span class="badge wait">30M</span></div></a><a class="market" href="#graphs-BTCUSD-1h"><div><div class="symbol">BTCUSD</div><div class="name">1H</div></div><div></div><div class="right"><span class="badge wait">1H</span></div></a><a class="market" href="#graphs-BTCUSD-4h"><div><div class="symbol">BTCUSD</div><div class="name">4H</div></div><div></div><div class="right"><span class="badge wait">4H</span></div></a><a class="market" href="#graphs-BTCUSD-1d"><div><div class="symbol">BTCUSD</div><div class="name">1D</div></div><div></div><div class="right"><span class="badge wait">1D</span></div></a>
+  </div>
+</section>
+
+<section id="asset-XAUUSD" class="screen">
+  <div class="top"><a class="ico" href="#home">‹</a><h2>Activo</h2><a class="ico" href="#home">⌂</a></div>
+  <div class="graph-title"><h1>XAUUSD</h1><p>Oro · selecciona temporalidad</p></div>
+  <div class="markets">
+    <a class="market" href="#graphs-XAUUSD-1m"><div><div class="symbol">XAUUSD</div><div class="name">1M</div></div><div></div><div class="right"><span class="badge wait">1M</span></div></a><a class="market" href="#graphs-XAUUSD-5m"><div><div class="symbol">XAUUSD</div><div class="name">5M</div></div><div></div><div class="right"><span class="badge wait">5M</span></div></a><a class="market" href="#graphs-XAUUSD-15m"><div><div class="symbol">XAUUSD</div><div class="name">15M</div></div><div></div><div class="right"><span class="badge wait">15M</span></div></a><a class="market" href="#graphs-XAUUSD-30m"><div><div class="symbol">XAUUSD</div><div class="name">30M</div></div><div></div><div class="right"><span class="badge wait">30M</span></div></a><a class="market" href="#graphs-XAUUSD-1h"><div><div class="symbol">XAUUSD</div><div class="name">1H</div></div><div></div><div class="right"><span class="badge wait">1H</span></div></a><a class="market" href="#graphs-XAUUSD-4h"><div><div class="symbol">XAUUSD</div><div class="name">4H</div></div><div></div><div class="right"><span class="badge wait">4H</span></div></a><a class="market" href="#graphs-XAUUSD-1d"><div><div class="symbol">XAUUSD</div><div class="name">1D</div></div><div></div><div class="right"><span class="badge wait">1D</span></div></a>
+  </div>
+</section>
+
+<section id="asset-US100" class="screen">
+  <div class="top"><a class="ico" href="#home">‹</a><h2>Activo</h2><a class="ico" href="#home">⌂</a></div>
+  <div class="graph-title"><h1>US100</h1><p>Nasdaq 100 · selecciona temporalidad</p></div>
+  <div class="markets">
+    <a class="market" href="#graphs-US100-1m"><div><div class="symbol">US100</div><div class="name">1M</div></div><div></div><div class="right"><span class="badge wait">1M</span></div></a><a class="market" href="#graphs-US100-5m"><div><div class="symbol">US100</div><div class="name">5M</div></div><div></div><div class="right"><span class="badge wait">5M</span></div></a><a class="market" href="#graphs-US100-15m"><div><div class="symbol">US100</div><div class="name">15M</div></div><div></div><div class="right"><span class="badge wait">15M</span></div></a><a class="market" href="#graphs-US100-30m"><div><div class="symbol">US100</div><div class="name">30M</div></div><div></div><div class="right"><span class="badge wait">30M</span></div></a><a class="market" href="#graphs-US100-1h"><div><div class="symbol">US100</div><div class="name">1H</div></div><div></div><div class="right"><span class="badge wait">1H</span></div></a><a class="market" href="#graphs-US100-4h"><div><div class="symbol">US100</div><div class="name">4H</div></div><div></div><div class="right"><span class="badge wait">4H</span></div></a><a class="market" href="#graphs-US100-1d"><div><div class="symbol">US100</div><div class="name">1D</div></div><div></div><div class="right"><span class="badge wait">1D</span></div></a>
+  </div>
+</section>
+
+<section id="asset-WTI" class="screen">
+  <div class="top"><a class="ico" href="#home">‹</a><h2>Activo</h2><a class="ico" href="#home">⌂</a></div>
+  <div class="graph-title"><h1>WTI</h1><p>Petróleo WTI · selecciona temporalidad</p></div>
+  <div class="markets">
+    <a class="market" href="#graphs-WTI-1m"><div><div class="symbol">WTI</div><div class="name">1M</div></div><div></div><div class="right"><span class="badge wait">1M</span></div></a><a class="market" href="#graphs-WTI-5m"><div><div class="symbol">WTI</div><div class="name">5M</div></div><div></div><div class="right"><span class="badge wait">5M</span></div></a><a class="market" href="#graphs-WTI-15m"><div><div class="symbol">WTI</div><div class="name">15M</div></div><div></div><div class="right"><span class="badge wait">15M</span></div></a><a class="market" href="#graphs-WTI-30m"><div><div class="symbol">WTI</div><div class="name">30M</div></div><div></div><div class="right"><span class="badge wait">30M</span></div></a><a class="market" href="#graphs-WTI-1h"><div><div class="symbol">WTI</div><div class="name">1H</div></div><div></div><div class="right"><span class="badge wait">1H</span></div></a><a class="market" href="#graphs-WTI-4h"><div><div class="symbol">WTI</div><div class="name">4H</div></div><div></div><div class="right"><span class="badge wait">4H</span></div></a><a class="market" href="#graphs-WTI-1d"><div><div class="symbol">WTI</div><div class="name">1D</div></div><div></div><div class="right"><span class="badge wait">1D</span></div></a>
+  </div>
+</section>
+
+
+
+<section id="news" class="screen">
+  <div class="top"><a class="ico" href="#home">‹</a><h2>Noticias</h2><a class="ico" href="#home">⌂</a></div>
+  <div class="news-list">
+    <div class="news-card"><strong>Mercado</strong><p>Las noticias que afecten a BTC, oro, Nasdaq y WTI se consultarán desde fuentes externas.</p><a href="https://www.tradingview.com/news/" target="_blank" rel="noopener">Abrir flujo de noticias ↗</a></div>
+    <div class="news-card"><strong>Calendario económico</strong><p>Eventos macro relevantes para el motor de señales.</p><a href="https://www.tradingview.com/economic-calendar/" target="_blank" rel="noopener">Abrir calendario ↗</a></div>
+    <div class="news-card"><strong>Nota</strong><p>Atalaya no inventa noticias. Cuando no pueda verificarlas, lo indicará.</p></div>
+  </div>
+</section>
+
+
+<section id="calendar" class="screen">
+  <div class="top"><a class="ico" href="#home">‹</a><h2>Calendario</h2><a class="ico" href="#home">⌂</a></div>
+  <div class="calendar-card">
+    <h2>Calendario económico</h2>
+    <p class="muted">Vista preparada para eventos que puedan afectar a las señales de Atalaya.</p>
+    <a class="view" href="https://www.tradingview.com/economic-calendar/" target="_blank" rel="noopener">Abrir calendario real ↗</a>
+  </div>
+</section>
+
+
+<section id="history" class="screen">
+  <div class="top"><a class="ico" href="#home">‹</a><h2>Historial</h2><a class="ico" href="#home">⌂</a></div>
+  <div class="history-card"><h2>Señales de Atalaya</h2><div id="historyList"><p class="muted">Todavía no hay señales registradas.</p></div></div>
+</section>
+
+
+<section id="best" class="screen">
+  <div class="top"><a class="ico" href="#home">‹</a><h2>Mejor oportunidad</h2><a class="ico" href="#home">⌂</a></div>
+  <div class="best-page">
+    <div class="op" id="bestPage">
+      <div class="row"><span class="eyebrow">MOTOR ATALAYA</span><span class="badge wait" id="bestPageBadge">ANALIZANDO</span></div>
+      <h1 id="bestPageSymbol">—</h1>
+      <div class="dir" id="bestPageDirection">ESPERANDO DATOS</div>
+      <div class="row"><span class="price">Precio <strong id="bestPagePrice">—</strong></span><span class="price">R:R <strong>1:2</strong></span></div>
+      <div class="levels" id="bestPageLevels">EMA20 / EMA50 · RSI14 · ATR14</div>
+      <a class="view" id="bestPageGraph" href="#graphs-BTCUSD-15m">Abrir gráfico →</a>
+    </div>
+    <div class="rule"><h2>Qué hace el motor</h2><ol><li>Detecta dirección con <strong>EMA20/EMA50</strong>.</li><li>Comprueba fuerza con <strong>RSI14</strong>.</li><li>Usa <strong>ATR14</strong> para SL/TP.</li><li>Solo genera entrada cuando hay confirmación.</li></ol></div>
+  </div>
+</section>
+
+</main>
+<nav class="bottom">
+<a class="nav home" href="#home"><b>⌂</b>Atalaya</a>
+<a class="nav" href="#graphs-BTCUSD-15m"><b>▥</b>Gráficos</a>
+<a class="nav" href="#calendar"><b>□</b>Calendario</a>
+<a class="nav" href="#history"><b>▤</b>Historial</a>
+</nav>
+<script>
+(function(){
+"use strict";
+/* ATALAYA WEB V15 — motor HTTPS server-side
+   La interfaz permanece intacta. Los datos pasan por /api/candles,
+   servido por _worker.js, para eliminar CORS y las limitaciones file://.
+*/
+const CFG={
+  BTCUSD:{name:"Bitcoin",decimals:2},
+  XAUUSD:{name:"Oro",decimals:2},
+  US100:{name:"Nasdaq 100",decimals:2},
+  WTI:{name:"WTI",decimals:2}
+};
+const TF={
+  "1m":{minutes:1},"5m":{minutes:5},"15m":{minutes:15},"30m":{minutes:30},
+  "1h":{minutes:60},"4h":{minutes:240},"1d":{minutes:1440}
+};
+const results={};
+const pending=new Map();
+function fmt(n,d=2){if(!Number.isFinite(n))return "—";return n.toLocaleString("es-ES",{minimumFractionDigits:d,maximumFractionDigits:d})}
+function ema(v,p){if(v.length<p)return [];const k=2/(p+1),o=new Array(v.length).fill(null);let s=0;for(let i=0;i<p;i++)s+=v[i];o[p-1]=s/p;for(let i=p;i<v.length;i++)o[i]=v[i]*k+o[i-1]*(1-k);return o}
+function rsi(v,p=14){const o=new Array(v.length).fill(null);if(v.length<=p)return o;let g=0,l=0;for(let i=1;i<=p;i++){const d=v[i]-v[i-1];g+=Math.max(d,0);l+=Math.max(-d,0)}let ag=g/p,al=l/p;o[p]=al===0?100:100-100/(1+ag/al);for(let i=p+1;i<v.length;i++){const d=v[i]-v[i-1],gg=Math.max(d,0),ll=Math.max(-d,0);ag=(ag*(p-1)+gg)/p;al=(al*(p-1)+ll)/p;o[i]=al===0?100:100-100/(1+ag/al)}return o}
+function atr(cs,p=14){const tr=new Array(cs.length).fill(null);for(let i=1;i<cs.length;i++){const c=cs[i],q=cs[i-1];tr[i]=Math.max(c.h-c.l,Math.abs(c.h-q.c),Math.abs(c.l-q.c))}const o=new Array(cs.length).fill(null);if(cs.length<=p)return o;let s=0;for(let i=1;i<=p;i++)s+=tr[i];o[p]=s/p;for(let i=p+1;i<cs.length;i++)o[i]=(o[i-1]*(p-1)+tr[i])/p;return o}
+async function apiCandles(asset,tf){
+  const key=asset+"|"+tf;if(pending.has(key))return pending.get(key);
+  const p=(async()=>{
+    const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),9000);
+    try{
+      const r=await fetch(`/api/candles?asset=${encodeURIComponent(asset)}&tf=${encodeURIComponent(tf)}&limit=300`,{cache:"no-store",signal:ctl.signal,headers:{Accept:"application/json"}});
+      if(!r.ok)throw new Error("API HTTP "+r.status);
+      const j=await r.json();
+      if(!j.ok||!Array.isArray(j.candles)||j.candles.length<20)throw new Error(j.error||"Sin velas");
+      return j.candles.map(c=>({t:+c.t,o:+c.o,h:+c.h,l:+c.l,c:+c.c}));
+    }finally{clearTimeout(timer)}
+  })();
+  pending.set(key,p);try{return await p}finally{pending.delete(key)}
+}
+function signal(cs){
+  if(cs.length<55)return {type:"WAIT",reason:"Datos insuficientes",price:cs.at(-1)?.c};
+  const cl=cs.map(x=>x.c),e20=ema(cl,20),e50=ema(cl,50),rs=rsi(cl),at=atr(cs),i=cs.length-1,p=cl[i],prev=cl[i-1],av=at[i]||Math.abs(p-prev)*3;
+  const up=e20[i]>e50[i],down=e20[i]<e50[i],su=rs[i]>=55,sd=rs[i]<=45,bu=p>Math.max(...cl.slice(-6,-1)),bd=p<Math.min(...cl.slice(-6,-1));
+  let type="WAIT",reason="Esperar confirmación";
+  if(up&&su&&bu){type="BUY";reason="Tendencia alcista + RSI fuerte + ruptura reciente"}
+  else if(down&&sd&&bd){type="SELL";reason="Tendencia bajista + RSI débil + ruptura reciente"}
+  const entry=p,sl=type==="BUY"?p-1.2*av:type==="SELL"?p+1.2*av:null,tp=type==="BUY"?p+2.4*av:type==="SELL"?p-2.4*av:null;
+  return {type,reason,price:p,entry,sl,tp,ema20:e20[i],ema50:e50[i],rsi:rs[i],atr:av}
+}
+function draw(canvas,cs,sig){
+  const dpr=devicePixelRatio||1,w=canvas.clientWidth||760,h=canvas.clientHeight||390;canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);
+  const x=canvas.getContext("2d");x.setTransform(dpr,0,0,dpr,0,0);x.fillStyle="#05070a";x.fillRect(0,0,w,h);
+  const pad={l:42,r:10,t:18,b:28},W=w-pad.l-pad.r,H=h-pad.t-pad.b,lo=Math.min(...cs.map(c=>c.l)),hi=Math.max(...cs.map(c=>c.h)),span=(hi-lo)||1,y=v=>pad.t+(hi-v)/span*H,step=W/(cs.length-1||1);
+  x.strokeStyle="#17212d";x.lineWidth=1;for(let k=0;k<6;k++){const yy=pad.t+k*H/5;x.beginPath();x.moveTo(pad.l,yy);x.lineTo(w-pad.r,yy);x.stroke()}
+  for(let k=0;k<6;k++){const xx=pad.l+k*W/5;x.beginPath();x.moveTo(xx,pad.t);x.lineTo(xx,h-pad.b);x.stroke()}
+  x.font="10px -apple-system,BlinkMacSystemFont,sans-serif";x.fillStyle="#8994a5";x.textAlign="right";for(let k=0;k<6;k++)x.fillText(fmt(hi-k*span/5,2),w-4,pad.t+k*H/5+3);
+  const cw=Math.max(2,Math.min(9,step*.52));cs.forEach((c,i)=>{const xx=pad.l+i*step,yo=y(c.o),yc=y(c.c),yh=y(c.h),yl=y(c.l),up=c.c>=c.o;x.strokeStyle=up?"#76dda7":"#ff737d";x.fillStyle=x.strokeStyle;x.beginPath();x.moveTo(xx,yh);x.lineTo(xx,yl);x.stroke();x.fillRect(xx-cw/2,Math.min(yo,yc),cw,Math.max(1,Math.abs(yc-yo)))})
+  const cl=cs.map(c=>c.c),e20=ema(cl,20),e50=ema(cl,50);function line(a,color){x.strokeStyle=color;x.lineWidth=1.4;x.beginPath();let s=false;a.forEach((v,i)=>{if(v==null)return;const xx=pad.l+i*step,yy=y(v);if(!s){x.moveTo(xx,yy);s=true}else x.lineTo(xx,yy)});x.stroke()}line(e20,"#e5c15c");line(e50,"#8ba7ff");
+  if(sig.type!=="WAIT"&&sig.entry){x.setLineDash([5,5]);x.strokeStyle=sig.type==="BUY"?"#76dda7":"#ff737d";x.beginPath();x.moveTo(pad.l,y(sig.entry));x.lineTo(w-pad.r,y(sig.entry));x.stroke();x.setLineDash([])}
+  x.fillStyle="#f2f4f7";x.textAlign="left";x.font="bold 11px -apple-system,BlinkMacSystemFont,sans-serif";x.fillText("OHLC · EMA20 · EMA50",pad.l,12)
+}
+function setBadge(el,type){if(!el)return;el.className="badge "+(type==="BUY"?"buy":type==="SELL"?"sell":"wait");el.textContent=type==="BUY"?"COMPRA":type==="SELL"?"VENTA / CORTO":"ESPERAR"}
+function saveSignal(asset,tf,sig){if(sig.type==="WAIT")return;let h=[];try{h=JSON.parse(localStorage.getItem("atalayaSignals")||"[]")}catch(_){}const key=asset+"|"+tf+"|"+sig.type+"|"+Math.round(sig.price*100);if(h.some(x=>x.key===key))return;h.unshift({key,asset,tf,type:sig.type,price:sig.price,entry:sig.entry,sl:sig.sl,tp:sig.tp,reason:sig.reason,time:new Date().toLocaleString("es-ES")});localStorage.setItem("atalayaSignals",JSON.stringify(h.slice(0,50)))}
+function renderHistory(){const box=document.getElementById("historyList");if(!box)return;let h=[];try{h=JSON.parse(localStorage.getItem("atalayaSignals")||"[]")}catch(_){}if(!h.length){box.innerHTML='<p class="muted">Todavía no hay señales registradas.</p>';return}box.innerHTML=h.map(x=>`<div class="history-item"><strong>${x.asset} · ${x.type==="BUY"?"COMPRA":"VENTA / CORTO"}</strong><small>${x.time} · Entrada ${fmt(x.entry)} · SL ${fmt(x.sl)} · TP ${fmt(x.tp)}</small><small>${x.reason}</small></div>`).join("")}
+async function loadAsset(asset,tf){
+  const boxes=document.querySelectorAll(`.real-chart[data-asset="${asset}"][data-tf="${tf}"]`);boxes.forEach(b=>b.querySelector("[data-chart-status]").textContent="conectando con mercado…");
+  try{
+    const cs=await apiCandles(asset,tf),sig=signal(cs);results[asset+"|"+tf]={cs,sig};
+    boxes.forEach(box=>{draw(box.querySelector("canvas"),cs,sig);box.querySelector("[data-chart-status]").textContent="datos reales · OHLC";box.querySelector("[data-last-price]").textContent="Precio "+fmt(sig.price)});
+    const sb=document.querySelector(`[data-signal-box="${asset}"]`);if(sb){setBadge(sb.querySelector("[data-chart-signal]"),sig.type);sb.querySelector("[data-sig-direction]").textContent=sig.type==="BUY"?"COMPRA":sig.type==="SELL"?"VENTA":"ESPERAR";sb.querySelector("[data-sig-entry]").textContent=fmt(sig.entry);sb.querySelector("[data-sig-sl]").textContent=fmt(sig.sl);sb.querySelector("[data-sig-tp]").textContent=fmt(sig.tp);sb.querySelector("[data-sig-reason]").textContent=sig.reason+" · RSI "+fmt(sig.rsi,1)}
+    document.querySelectorAll(`[data-price="${asset}"]`).forEach(e=>e.textContent=fmt(sig.price));document.querySelectorAll(`[data-signal="${asset}"]`).forEach(e=>setBadge(e,sig.type));saveSignal(asset,tf,sig);renderHistory();return {asset,sig}
+  }catch(err){boxes.forEach(box=>{box.querySelector("[data-chart-status]").textContent="Mercado no disponible · Reintentar"});console.error("Atalaya",asset,tf,err);return {asset,error:String(err)}}
+}
+async function refreshAll(){const st=document.getElementById("engineStatus");if(st)st.textContent="Motor real · actualizando…";const out=await Promise.all(Object.keys(CFG).map(a=>loadAsset(a,"15m")));const good=out.filter(x=>x.sig);if(st)st.textContent=good.length===4?"Motor real · 4 mercados conectados":good.length?"Motor real · conexión parcial":"Motor real · sin datos";if(good.length){const best=good.find(x=>x.sig.type!=="WAIT")||good[0];updateBest(best.asset,best.sig)}}
+function updateBest(asset,sig){const d=document.getElementById("bestDirection"),s=document.getElementById("bestSymbol"),p=document.getElementById("bestPrice"),b=document.getElementById("bestBadge"),rr=document.getElementById("bestRR"),lv=document.getElementById("bestLevels"),ln=document.getElementById("bestDetail"),map={BUY:"DIRECCIÓN · COMPRA",SELL:"DIRECCIÓN · VENTA / CORTO",WAIT:"ESPERAR CONFIRMACIÓN"};if(s)s.textContent=asset;if(d)d.textContent=map[sig.type];if(p)p.textContent=fmt(sig.price);if(rr)rr.textContent="1:2";if(b)setBadge(b,sig.type);if(lv)lv.textContent=`EMA20 ${fmt(sig.ema20)} · EMA50 ${fmt(sig.ema50)} · RSI ${fmt(sig.rsi,1)} · ATR ${fmt(sig.atr)}`;if(ln)ln.href="#graphs-"+asset+"-15m"}
+function boot(){
+  document.addEventListener("click",e=>{const b=e.target.closest?.(".retry-chart");if(!b)return;const box=b.closest(".real-chart");if(box)loadAsset(box.dataset.asset,box.dataset.tf)});
+  renderHistory();document.getElementById("refreshBtn")?.addEventListener("click",e=>{e.preventDefault();refreshAll()});refreshAll();
+  window.addEventListener("hashchange",()=>setTimeout(()=>{const sec=location.hash.slice(1);if(sec.startsWith("graphs-")){const p=sec.split("-"),asset=p[1],tf=p[2],r=results[asset+"|"+tf],box=document.querySelector(`.real-chart[data-asset="${asset}"][data-tf="${tf}"]`);if(r&&box)draw(box.querySelector("canvas"),r.cs,r.sig);else if(CFG[asset]&&TF[tf])loadAsset(asset,tf)}renderHistory()},30));
+  window.addEventListener("resize",()=>document.querySelectorAll(".real-chart").forEach(box=>{const r=results[box.dataset.asset+"|"+box.dataset.tf];if(r)draw(box.querySelector("canvas"),r.cs,r.sig)}));
+  setInterval(()=>{const sec=location.hash.slice(1);if(sec.startsWith("graphs-")){const p=sec.split("-"),asset=p[1],tf=p[2];if(CFG[asset]&&TF[tf])loadAsset(asset,tf)}else refreshAll()},30000)
+}
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);else boot();
+})();
+</script>
+</body></html>
