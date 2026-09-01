@@ -1,4 +1,4 @@
-import type { Candle } from "@/lib/trading/types";
+import type { Candle } from "../trading/types";
 
 export function unwrapBinancePayload(raw: unknown): unknown {
   if (raw && typeof raw === "object" && "data" in raw && "stream" in raw) {
@@ -40,4 +40,27 @@ export function parseBinanceAggTrade(raw: unknown): { price: number; ts: number 
   const ts = Math.floor(Number(o.T) / 1000);
   if (!(price > 0) || !Number.isFinite(ts)) return null;
   return { price, ts };
+}
+
+export function parseBinanceMiniTicker(raw: unknown): { symbol: string; price: number } | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as { e?: string; s?: string; c?: string };
+  if (o.e && o.e !== "24hrMiniTicker") return null;
+  const symbol = typeof o.s === "string" ? o.s : "";
+  const price = Number(o.c);
+  if (!symbol || !(price > 0)) return null;
+  return { symbol, price };
+}
+
+export function parseBitgetTicker(raw: unknown): { instId: string; price: number } | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as { arg?: { channel?: string; instId?: string }; data?: unknown };
+  const rows = Array.isArray(o.data) ? o.data : [];
+  const last = rows.at(-1);
+  if (!last || typeof last !== "object") return null;
+  const row = last as { instId?: string; lastPr?: string; last?: string };
+  const instId = row.instId || o.arg?.instId || "";
+  const price = Number(row.lastPr ?? row.last);
+  if (!instId || !(price > 0)) return null;
+  return { instId, price };
 }

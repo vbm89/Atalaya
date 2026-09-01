@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { getChartSeries } from "@/lib/market/chart.fn";
 import { useChartLive, type TickHandler } from "@/lib/chart/live";
+import { useLiveQuotes } from "@/lib/chart/live-quotes";
 import {
   CHART_TFS,
   DEFAULT_OVERLAYS,
@@ -203,6 +204,7 @@ function ChartMarketList({
 }) {
   const rest = ASSETS.filter((a) => !favs.includes(a.id));
   const favAssets = ASSETS.filter((a) => favs.includes(a.id));
+  const liveQuotes = useLiveQuotes();
 
   return (
     <div className="atalaya-charts-list" data-chart-list="1">
@@ -219,7 +221,7 @@ function ChartMarketList({
                 key={a.id}
                 id={a.id}
                 starred
-                price={snapshot?.assets.find((x) => x.id === a.id)?.price ?? null}
+                price={liveQuotes[a.id] ?? snapshot?.assets.find((x) => x.id === a.id)?.price ?? null}
                 digits={a.digits}
                 onPick={() => onPick(a.id)}
                 onFav={() => onFav(a.id)}
@@ -272,7 +274,9 @@ function SymbolRow({
         <p className="text-xs text-muted">{CHART_ASSET_BLURB[id]}</p>
       </button>
       {price != null ? (
-        <p className="px-2 font-mono text-sm tabular">{formatPrice(price, digits)}</p>
+        <p className="px-2 font-mono text-sm tabular" data-live-price={id}>
+          {formatPrice(price, digits)}
+        </p>
       ) : null}
       <button
         type="button"

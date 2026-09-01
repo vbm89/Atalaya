@@ -231,14 +231,17 @@ export function AssetCard({
 export function MarketTile({
   asset,
   onOpen,
+  livePrice,
 }: {
   asset: AssetAnalysis;
   onOpen: () => void;
+  livePrice?: number | null;
 }) {
   const chg = asset.dayChangePct;
   const up = chg == null ? null : chg >= 0;
   const isXau = asset.id === "XAUUSD";
-  const displayPrice = isXau ? asset.priceSpot : asset.price;
+  const snapshotPrice = isXau ? asset.priceSpot : asset.price;
+  const displayPrice = livePrice != null && livePrice > 0 ? livePrice : snapshotPrice;
   const state = setupStateEs(asset.setupState);
   const stateCls =
     asset.setupState === "entry"
@@ -263,7 +266,10 @@ export function MarketTile({
       <div className="w-16 shrink-0">
         <Sparkline values={asset.sparkline} positive={up} />
       </div>
-      <p className="shrink-0 text-right font-mono text-sm font-medium tabular leading-none">
+      <p
+        className="shrink-0 text-right font-mono text-sm font-medium tabular leading-none"
+        data-live-price={asset.id}
+      >
         {displayPrice == null ? "—" : formatPrice(displayPrice, asset.digits)}
       </p>
     </button>

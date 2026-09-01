@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, House, BarChart3, CalendarDays, BookOpen, GraduationCap, Ellipsis, Settings } from "lucide-react";
+import { RefreshCw, House, BarChart3, CalendarDays, BookOpen, GraduationCap, Ellipsis, Settings, Download } from "lucide-react";
 import { getMarketAnalysis } from "@/lib/market/analysis.fn";
 import { getWatchHealth, getWatchEpisode, getWatchSnapshots, type WatchEpisodeView } from "@/lib/watch/watch.fn";
 import type { AnalysisSnapshot, AssetAnalysis, AssetId } from "@/lib/trading/types";
@@ -14,6 +14,7 @@ import { CalendarList } from "./calendar-list";
 import { AccountPanel, useAccountSettings, useCosts } from "./account-panel";
 import { ChartsScreen, type ChartIntent } from "@/components/charts/charts-screen";
 import { hasChartableSetup, SETUP_CHART_TF, chartIntentFromAnalysis, frozenLevelsFromEpisode } from "@/lib/chart/setup-overlay";
+import { useLiveQuotes } from "@/lib/chart/live-quotes";
 import { getAsset } from "@/lib/trading/assets";
 import { foldWatchBook, type WatchBook } from "@/lib/watch/memory";
 import { readWatchBook, writeWatchBook } from "@/lib/watch/persist";
@@ -174,6 +175,7 @@ export function Dashboard() {
     refetchInterval: 30_000,
     retry: 0,
   });
+  const liveQuotes = useLiveQuotes();
 
   useEffect(() => {
     if (query.data) writeCache(query.data);
@@ -374,7 +376,14 @@ export function Dashboard() {
                 {snapshot
                   ? snapshot.assets.map((a) => {
                       const shown = overlayAsset(a, episodeFocus);
-                      return <MarketTile key={a.id} asset={shown} onOpen={() => setOpenId(a.id)} />;
+                      return (
+                        <MarketTile
+                          key={a.id}
+                          asset={shown}
+                          livePrice={liveQuotes[a.id] ?? null}
+                          onOpen={() => setOpenId(a.id)}
+                        />
+                      );
                     })
                   : Array.from({ length: 4 }).map((_, i) => (
                       <Skeleton key={i} className="h-16 rounded-[var(--radius-lg)]" />
@@ -567,6 +576,14 @@ export function Dashboard() {
               <Settings className="size-4 text-muted" />
               Ajustes
             </button>
+            <a
+              href="/atalaya-source-236.zip"
+              download="atalaya-source-236.zip"
+              className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-sm"
+            >
+              <Download className="size-4 text-muted" />
+              Descargar código (ZIP)
+            </a>
           </div>
         </div>
       ) : null}
