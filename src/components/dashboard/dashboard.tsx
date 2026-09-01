@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, House, BarChart3, CalendarDays, BookOpen, GraduationCap, Ellipsis, Settings, Download } from "lucide-react";
 import { getMarketAnalysis } from "@/lib/market/analysis.fn";
@@ -14,7 +14,7 @@ import { CalendarList } from "./calendar-list";
 import { AccountPanel, useAccountSettings, useCosts } from "./account-panel";
 import { ChartsScreen, type ChartIntent } from "@/components/charts/charts-screen";
 import { hasChartableSetup, SETUP_CHART_TF, chartIntentFromAnalysis, frozenLevelsFromEpisode } from "@/lib/chart/setup-overlay";
-import { useLiveQuotes, useLiveQuoteSources } from "@/lib/chart/live-quotes";
+import { usePullToRefresh } from "./pull-refresh";
 import { getAsset } from "@/lib/trading/assets";
 import { foldWatchBook, type WatchBook } from "@/lib/watch/memory";
 import { readWatchBook, writeWatchBook } from "@/lib/watch/persist";
@@ -134,6 +134,7 @@ function overlayWatch(
 
 export function Dashboard() {
   const qc = useQueryClient();
+  const homeScrollRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<"markets" | "calendar" | "charts" | "history" | "learn" | "settings">("markets");
   const [moreOpen, setMoreOpen] = useState(false);
   const [openId, setOpenId] = useState<AssetId | null>(null);
@@ -175,8 +176,6 @@ export function Dashboard() {
     refetchInterval: 30_000,
     retry: 0,
   });
-  const liveQuotes = useLiveQuotes();
-  const liveSources = useLiveQuoteSources();
 
   useEffect(() => {
     if (query.data) writeCache(query.data);
@@ -264,6 +263,10 @@ export function Dashboard() {
   const rawOpen = snapshot?.assets.find((a) => a.id === openId) ?? null;
   const openAsset = rawOpen ? overlayAsset(rawOpen, episodeFocus) : null;
   const sheetOpen = openId != null;
+  const pullRefresh = useCallback(() => {
+    refresh.mutate();
+  }, [refresh]);
+  usePullToRefresh(homeScrollRef, pullRefresh, tab !== "charts" && !sheetOpen);
   const error =
     refresh.error instanceof Error
       ? refresh.error.message
@@ -331,11 +334,19 @@ export function Dashboard() {
           />
         ) : (
           <div
+            ref={homeScrollRef}
             data-home-scroll
             className="atalaya-home"
             inert={sheetOpen || undefined}
             aria-hidden={sheetOpen}
           >
+            <div
+              data-pull-refresh
+              className="atalaya-pull"
+              aria-hidden
+            >
+              {refresh.isPending ? "Actualizando…" : "Soltar para actualizar"}
+            </div>
             {snapshot ? (
               <FeedStatus
                 assets={snapshot.assets}
@@ -381,8 +392,6 @@ export function Dashboard() {
                         <MarketTile
                           key={a.id}
                           asset={shown}
-                          livePrice={liveQuotes[a.id] ?? null}
-                          delayed={liveSources[a.id] != null && liveSources[a.id] !== "ws"}
                           onOpen={() => setOpenId(a.id)}
                         />
                       );

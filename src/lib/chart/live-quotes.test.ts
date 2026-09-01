@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { applyLiveQuote, assetIdFromTicker, liveQuotesSnapshot } from "./live-quotes.ts";
+import { applyLiveQuote, assetIdFromTicker, liveQuotesSnapshot, subscribeLiveQuotes } from "./live-quotes.ts";
 import { parseBinanceAggTrade, parseBitgetTicker, unwrapBinancePayload } from "./stream.ts";
 
 describe("live quote parsers", () => {
@@ -99,5 +99,15 @@ describe("live quote store", () => {
     assert.equal(applyLiveQuote("WTI", 87.5, "ws"), true);
     assert.equal(applyLiveQuote("WTI", 87.1, "rest"), false);
     assert.equal(liveQuotesSnapshot().WTI, 87.5);
+  });
+
+  it("exposes a shared live subscription without inventing ticks", () => {
+    assert.equal(typeof subscribeLiveQuotes, "function");
+    let n = 0;
+    const off = subscribeLiveQuotes(() => {
+      n += 1;
+    });
+    assert.ok(n >= 1);
+    off();
   });
 });

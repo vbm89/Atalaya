@@ -305,32 +305,28 @@ function stopQuotes() {
   binance = null;
 }
 
+export function subscribeLiveQuotes(fn: () => void): () => void {
+  listeners.add(fn);
+  startQuotes();
+  fn();
+  return () => {
+    listeners.delete(fn);
+    stopQuotes();
+  };
+}
+
+export function liveQuoteRefCount(): number {
+  return refs;
+}
+
 export function useLiveQuotes(): LiveQuoteMap {
   const [map, setMap] = useState<LiveQuoteMap>(() => quotes);
-  useEffect(() => {
-    const fn = () => setMap(quotes);
-    listeners.add(fn);
-    startQuotes();
-    fn();
-    return () => {
-      listeners.delete(fn);
-      stopQuotes();
-    };
-  }, []);
+  useEffect(() => subscribeLiveQuotes(() => setMap(quotes)), []);
   return map;
 }
 
 export function useLiveQuoteSources(): LiveQuoteSources {
   const [map, setMap] = useState<LiveQuoteSources>(() => sources);
-  useEffect(() => {
-    const fn = () => setMap(sources);
-    listeners.add(fn);
-    startQuotes();
-    fn();
-    return () => {
-      listeners.delete(fn);
-      stopQuotes();
-    };
-  }, []);
+  useEffect(() => subscribeLiveQuotes(() => setMap(sources)), []);
   return map;
 }

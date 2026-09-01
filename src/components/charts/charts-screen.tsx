@@ -14,8 +14,7 @@ import {
 } from "lucide-react";
 import { getChartSeries } from "@/lib/market/chart.fn";
 import { useChartLive, type TickHandler } from "@/lib/chart/live";
-import { useLiveQuotes, useLiveQuoteSources } from "@/lib/chart/live-quotes";
-import { visualCardPrice } from "@/lib/chart/quote-view";
+import { subscribeLiveQuotes, liveQuotesSnapshot } from "@/lib/chart/live-quotes";
 import {
   CHART_TFS,
   DEFAULT_OVERLAYS,
@@ -30,6 +29,7 @@ import { ASSETS } from "@/lib/trading/assets";
 import type { AnalysisSnapshot, AssetId } from "@/lib/trading/types";
 import { formatPrice } from "@/lib/utils";
 import { CandleChart, type CandleChartHandle } from "./candle-chart";
+import { LiveQuoteReadout } from "@/components/dashboard/live-quote-readout";
 
 export type { ChartIntent };
 
@@ -205,8 +205,6 @@ function ChartMarketList({
 }) {
   const rest = ASSETS.filter((a) => !favs.includes(a.id));
   const favAssets = ASSETS.filter((a) => favs.includes(a.id));
-  const liveQuotes = useLiveQuotes();
-  const liveSources = useLiveQuoteSources();
 
   return (
     <div className="atalaya-charts-list" data-chart-list="1">
@@ -220,20 +218,13 @@ function ChartMarketList({
           <ul className="mt-2 space-y-1">
             {favAssets.map((a) => {
               const snap = snapshot?.assets.find((x) => x.id === a.id);
-              const shown = visualCardPrice({
-                id: a.id,
-                live: liveQuotes[a.id],
-                snapshotPrice: snap?.price,
-                snapshotSpot: snap?.priceSpot,
-              });
               return (
               <SymbolRow
                 key={a.id}
                 id={a.id}
                 starred
-                price={shown.main}
-                proxy={shown.proxy}
-                delayed={liveSources[a.id] != null && liveSources[a.id] !== "ws"}
+                snapshotPrice={snap?.price}
+                snapshotSpot={snap?.priceSpot}
                 digits={a.digits}
                 onPick={() => onPick(a.id)}
                 onFav={() => onFav(a.id)}
@@ -250,20 +241,13 @@ function ChartMarketList({
         <ul className="mt-2 space-y-1">
           {(favAssets.length ? rest : ASSETS).map((a) => {
               const snap = snapshot?.assets.find((x) => x.id === a.id);
-              const shown = visualCardPrice({
-                id: a.id,
-                live: liveQuotes[a.id],
-                snapshotPrice: snap?.price,
-                snapshotSpot: snap?.priceSpot,
-              });
               return (
             <SymbolRow
               key={a.id}
               id={a.id}
               starred={favs.includes(a.id)}
-              price={shown.main}
-              proxy={shown.proxy}
-              delayed={liveSources[a.id] != null && liveSources[a.id] !== "ws"}
+              snapshotPrice={snap?.price}
+              snapshotSpot={snap?.priceSpot}
               digits={a.digits}
               onPick={() => onPick(a.id)}
               onFav={() => onFav(a.id)}
@@ -279,18 +263,16 @@ function ChartMarketList({
 function SymbolRow({
   id,
   starred,
-  price,
-  proxy,
-  delayed,
+  snapshotPrice,
+  snapshotSpot,
   digits,
   onPick,
   onFav,
 }: {
   id: AssetId;
   starred: boolean;
-  price: number | null;
-  proxy?: number | null;
-  delayed?: boolean;
+  snapshotPrice: number | null | undefined;
+  snapshotSpot: number | null | undefined;
   digits: number;
   onPick: () => void;
   onFav: () => void;
@@ -301,19 +283,12 @@ function SymbolRow({
         <p className="text-sm font-medium">{id}</p>
         <p className="text-xs text-muted">{CHART_ASSET_BLURB[id]}</p>
       </button>
-      {price != null ? (
-        <p className="px-2 text-right font-mono text-sm tabular" data-live-price={id} data-live-delayed={delayed ? "1" : "0"}>
-          {formatPrice(price, digits)}
-          {id === "XAUUSD" && proxy != null ? (
-            <span className="mt-0.5 block text-[10px] text-wait">
-              PROXY {formatPrice(proxy, digits)}
-              {delayed ? " · RETRASADO" : ""}
-            </span>
-          ) : delayed ? (
-            <span className="mt-0.5 block text-[10px] text-wait">RETRASADO</span>
-          ) : null}
-        </p>
-      ) : null}
+      <LiveQuoteReadout
+        id={id}
+        digits={digits}
+        snapshotPrice={snapshotPrice}
+        snapshotSpot={snapshotSpot}
+      />
       <button
         type="button"
         className="flex size-11 items-center justify-center text-muted"
@@ -374,11 +349,12 @@ function ChartWorkspace({
   const analysis = snapshot?.assets.find((a) => a.id === assetId) ?? null;
   const series = query.data;
   const live = useChartLive(series);
-  const liveQuotes = useLiveQuotes();
-  const lastLive = liveQuotes[assetId] ?? null;
   useEffect(() => {
-    if (lastLive != null) live.nudgeLast(lastLive);
-  }, [lastLive, live.nudgeLast]);
+    return subscribeLiveQuotes(() => {
+      const p = liveQuotesSnapshot()[assetId];
+      if (p != null) live.nudgeLast(p);
+    });
+  }, [assetId, live.nudgeLast]);
   const starred = favs.includes(assetId);
   const seedClose =
     live.key === `${assetId}:${tf}`
@@ -454,9 +430,8 @@ function ChartWorkspace({
             <LivePrice
               assetId={assetId}
               digits={series.digits}
-              seed={lastLive ?? seedClose}
+              seed={seedClose}
               subscribe={live.subscribe}
-              quote={lastLive}
             />
           ) : (
             <span className="flex-1" />
@@ -527,7 +502,6 @@ function ChartWorkspace({
             getBars={live.getBars}
             hudEl={hudEl.current}
             visibleLevels={levelsOn}
-            lastPrice={lastLive}
           />
         )}
       </div>
@@ -630,30 +604,40 @@ function LivePrice({
   digits,
   seed,
   subscribe,
-  quote,
 }: {
   assetId: AssetId;
   digits: number;
   seed: number | null;
   subscribe: (fn: TickHandler) => () => void;
-  quote: number | null;
 }) {
   const ref = useRef<HTMLParagraphElement>(null);
-  const shown = quote ?? seed;
   useEffect(() => {
-    if (ref.current && shown != null) ref.current.textContent = formatPrice(shown, digits);
-  }, [shown, digits]);
-  useEffect(() => {
-    if (quote != null) return;
-    return subscribe((c) => {
-      if (ref.current) ref.current.textContent = formatPrice(c.close, digits);
+    const write = (n: number) => {
+      if (ref.current) ref.current.textContent = formatPrice(n, digits);
+    };
+    const q0 = liveQuotesSnapshot()[assetId];
+    if (q0 != null) write(q0);
+    else if (seed != null) write(seed);
+    const offLive = subscribeLiveQuotes(() => {
+      const q = liveQuotesSnapshot()[assetId];
+      if (q != null) write(q);
     });
-  }, [subscribe, digits, quote, assetId]);
+    const offBar = subscribe((c) => {
+      if (liveQuotesSnapshot()[assetId] != null) return;
+      write(c.close);
+    });
+    return () => {
+      offLive();
+      offBar();
+    };
+  }, [subscribe, digits, seed, assetId]);
+  const q0 = liveQuotesSnapshot()[assetId];
+  const shown = q0 ?? seed;
   return (
     <p
       ref={ref}
       data-chart-price
-      data-chart-live={quote != null ? "1" : "0"}
+      data-chart-live={q0 != null ? "1" : "0"}
       className="min-w-0 flex-1 truncate text-right font-mono text-sm tabular"
     >
       {shown != null ? formatPrice(shown, digits) : ""}

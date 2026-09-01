@@ -169,6 +169,20 @@
   padding-left: max(1rem, var(--safe-left));
 }
 
+.atalaya-pull {
+  display: flex;
+  height: 0;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  opacity: 0;
+  pointer-events: none;
+}
+
 .atalaya-sheet {
   position: absolute;
   inset: 0;

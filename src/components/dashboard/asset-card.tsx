@@ -2,7 +2,6 @@ import { ChevronRight, HelpCircle } from "lucide-react";
 import { cn, formatDateTime, formatPct, formatPrice, decodeEntities } from "@/lib/utils";
 import type { AssetAnalysis, Timeframe } from "@/lib/trading/types";
 import { hasChartableSetup } from "@/lib/chart/setup-overlay";
-import { visualCardPrice } from "@/lib/chart/quote-view";
 import { setupDistance, distanceUnavailableLabel } from "@/lib/chart/zone-distance";
 import type { AssetWatch } from "@/lib/watch/memory";
 import { setupStateEs, watchPhaseCaption } from "@/lib/watch/memory";
@@ -10,6 +9,7 @@ import { assetDataLamp } from "@/lib/watch/feed-lamp";
 import { WatchPhaseBadge } from "./signal-badge";
 import { Sparkline } from "./sparkline";
 import { DataLampChip } from "./data-lamp";
+import { LiveQuoteReadout } from "./live-quote-readout";
 
 const TF_ORDER: Timeframe[] = ["5m", "15m", "1h", "4h"];
 
@@ -232,23 +232,12 @@ export function AssetCard({
 export function MarketTile({
   asset,
   onOpen,
-  livePrice,
-  delayed,
 }: {
   asset: AssetAnalysis;
   onOpen: () => void;
-  livePrice?: number | null;
-  delayed?: boolean;
 }) {
   const chg = asset.dayChangePct;
   const up = chg == null ? null : chg >= 0;
-  const shown = visualCardPrice({
-    id: asset.id,
-    live: livePrice,
-    snapshotPrice: asset.price,
-    snapshotSpot: asset.priceSpot,
-  });
-  const delayedNow = delayed === true;
   const state = setupStateEs(asset.setupState);
   const stateCls =
     asset.setupState === "entry"
@@ -273,21 +262,12 @@ export function MarketTile({
       <div className="w-16 shrink-0">
         <Sparkline values={asset.sparkline} positive={up} />
       </div>
-      <p
-        className="shrink-0 text-right font-mono text-sm font-medium tabular leading-none"
-        data-live-price={asset.id}
-        data-live-delayed={delayedNow ? "1" : "0"}
-      >
-        {shown.main == null ? "—" : formatPrice(shown.main, asset.digits)}
-        {asset.id === "XAUUSD" && shown.proxy != null ? (
-          <span className="mt-1 block text-[10px] font-medium tracking-wide text-wait">
-            PROXY {formatPrice(shown.proxy, asset.digits)}
-            {delayedNow ? " · RETRASADO" : ""}
-          </span>
-        ) : delayedNow ? (
-          <span className="mt-1 block text-[10px] font-medium tracking-wide text-wait">RETRASADO</span>
-        ) : null}
-      </p>
+      <LiveQuoteReadout
+        id={asset.id}
+        digits={asset.digits}
+        snapshotPrice={asset.price}
+        snapshotSpot={asset.priceSpot}
+      />
     </button>
   );
 }

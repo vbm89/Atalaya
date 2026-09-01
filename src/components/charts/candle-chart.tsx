@@ -19,6 +19,7 @@ import {
 import { ema, rsiWilder } from "@/lib/trading/indicators";
 import type { ChartOverlays, ChartSeries } from "@/lib/chart/types";
 import type { TickHandler } from "@/lib/chart/live";
+import { liveQuotesSnapshot, subscribeLiveQuotes } from "@/lib/chart/live-quotes";
 import { chartSetupLevels, setupLevelsKey, setupVisiblePriceRange, type ChartSetupLevels } from "@/lib/chart/setup-overlay";
 import {
   CHART_BAR_SPACING,
@@ -673,29 +674,29 @@ const CandleChartInner = forwardRef<
   }, [subscribeTick, getBars, series.digits]);
 
   useEffect(() => {
-    const candle = candleRef.current;
-    if (!candle) return;
-    if (lastPrice == null || !(lastPrice > 0) || !Number.isFinite(lastPrice)) {
-      if (lastLineRef.current) {
-        candle.removePriceLine(lastLineRef.current);
-        lastLineRef.current = null;
+    const apply = (price: number | null | undefined) => {
+      const candle = candleRef.current;
+      if (!candle) return;
+      if (price == null || !(price > 0) || !Number.isFinite(price)) return;
+      if (!lastLineRef.current) {
+        const c = colors();
+        lastLineRef.current = candle.createPriceLine({
+          price,
+          title: "Last",
+          color: c.accent,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+        });
+        return;
       }
-      return;
-    }
-    if (!lastLineRef.current) {
-      const c = colors();
-      lastLineRef.current = candle.createPriceLine({
-        price: lastPrice,
-        title: "Last",
-        color: c.accent,
-        lineWidth: 1,
-        lineStyle: LineStyle.Dotted,
-        axisLabelVisible: true,
-      });
-      return;
-    }
-    lastLineRef.current.applyOptions({ price: lastPrice });
-  }, [lastPrice, chartBoot]);
+      lastLineRef.current.applyOptions({ price });
+    };
+    apply(liveQuotesSnapshot()[series.assetId] ?? lastPrice);
+    return subscribeLiveQuotes(() => {
+      apply(liveQuotesSnapshot()[series.assetId]);
+    });
+  }, [series.assetId, chartBoot, lastPrice]);
 
   return (
     <div className="atalaya-chart">
