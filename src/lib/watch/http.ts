@@ -27,6 +27,11 @@ export async function handleWatchTick(request: Request): Promise<Response> {
           return 0;
         }
       },
+      remember: async (work) => {
+        const { rememberAfterTick, writeTerminalPostMortems } = await import("@/lib/memory/persist");
+        await rememberAfterTick(sql, work);
+        await writeTerminalPostMortems(sql, work.touched, nowMs);
+      },
     });
 
     const status =

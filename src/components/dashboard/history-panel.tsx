@@ -3,6 +3,7 @@ import { getWatchHistory, getWatchEpisode } from "@/lib/watch/watch.fn";
 import { historyCardModel } from "@/lib/watch/history-view";
 import type { AssetId } from "@/lib/trading/types";
 import type { HistoryRow } from "@/lib/watch/store";
+import { EpisodeMemory } from "./episode-memory";
 
 export function HistoryPanel({
   onOpenEpisode,
@@ -100,6 +101,10 @@ export function HistoryPanel({
               >
                 VER GRÁFICO
               </button>
+              <EpisodeMemory
+                episodeId={card.episodeId}
+                allowJournal={row.episode.openedState === "entry" || row.episode.currentState === "entry"}
+              />
             </article>
           </li>
         );

@@ -1,5 +1,5 @@
-import type { AssetId, Candle } from "../trading/types";
-import { foldEpisode, type FoldInput, type SignalEventDraft } from "./episode";
+import type { AssetId, CalendarEvent, Candle } from "../trading/types";
+import { foldEpisode, type EpisodeDraft, type FoldInput, type SignalEventDraft } from "./episode";
 import { slotOpenSec, slotSecFromNow } from "./identity";
 import { resolveOutcome } from "./outcome";
 import { FEED_GRACE_MS } from "./schedule";
@@ -10,6 +10,11 @@ export const FEED_RETRY_MS = 20_000;
 export interface WatchLoad {
   assets: FoldInput[];
   m15ByAsset: Partial<Record<AssetId, Candle[]>>;
+  h1ByAsset?: Partial<Record<AssetId, Candle[]>>;
+  h4ByAsset?: Partial<Record<AssetId, Candle[]>>;
+  calendar?: CalendarEvent[];
+  sourceByAsset?: Partial<Record<AssetId, string | null>>;
+  instrumentByAsset?: Partial<Record<AssetId, string | null>>;
   errors: string[];
 }
 
@@ -30,6 +35,14 @@ export interface TickResult {
   }>;
   retryCount: number;
   pushed: number;
+}
+
+export interface MemoryTickWork {
+  slot: number;
+  nowMs: number;
+  loaded: WatchLoad;
+  born: EpisodeDraft[];
+  touched: EpisodeDraft[];
 }
 
 function emptyTick(
@@ -56,15 +69,32 @@ export function m15CoversSlot(candles: Candle[] | undefined, slotSec: number): b
   return candles.some((c) => c.time === open);
 }
 
+async function safeRemember(
+  fn: ((work: MemoryTickWork) => Promise<void>) | undefined,
+  work: MemoryTickWork,
+): Promise<void> {
+  if (!fn) return;
+  try {
+    await fn(work);
+  } catch (e) {
+    console.info("[memory] persist failed", {
+      error: e instanceof Error ? e.message : "error",
+      slot: work.slot,
+    });
+  }
+}
+
 /**
  * One 15M watch cycle. Caller supplies the analysis (same V1 via analyzeAsset
  * in production). Push is optional and server-only.
+ * `remember` is a sidecar (cinta/archivo/SHA). Failure never changes V1.
  */
 export async function runWatchTick(args: {
   nowMs: number;
   store: WatchStore;
   load: () => Promise<WatchLoad>;
   notify?: (events: SignalEventDraft[]) => Promise<number>;
+  remember?: (work: MemoryTickWork) => Promise<void>;
 }): Promise<TickResult> {
   const started = Date.now();
   const slot = slotSecFromNow(args.nowMs);
@@ -103,6 +133,13 @@ export async function runWatchTick(args: {
       await args.store.completeEval(slot, args.nowMs, "lag", error, durationMs, {
         errors: loaded.errors,
       });
+      await safeRemember(args.remember, {
+        slot,
+        nowMs: args.nowMs,
+        loaded,
+        born: [],
+        touched: [],
+      });
       console.info("[watch] tick", {
         slot,
         status: "lag",
@@ -119,6 +156,8 @@ export async function runWatchTick(args: {
 
     const assets: TickResult["assets"] = [];
     const notifyQueue: SignalEventDraft[] = [];
+    const born: EpisodeDraft[] = [];
+    const touched: EpisodeDraft[] = [];
     for (const asset of loaded.assets) {
       const prev = await args.store.getOpenEpisode(asset.id);
       const folded = foldEpisode(prev, asset, slot, args.nowMs);
@@ -151,6 +190,12 @@ export async function runWatchTick(args: {
         notifyQueue.push(ev);
       }
       await args.store.upsertSnapshot(folded.snapshot);
+      if (folded.closePrevious) touched.push(folded.closePrevious);
+      if (folded.episode) {
+        touched.push(folded.episode);
+        const isBirth = folded.events.some((e) => e.fromState === "wait" && e.toState !== "wait");
+        if (isBirth) born.push(folded.episode);
+      }
       assets.push({
         id: asset.id,
         state: folded.snapshot.state,
@@ -175,6 +220,13 @@ export async function runWatchTick(args: {
       assets,
       errors: loaded.errors,
       pushed,
+    });
+    await safeRemember(args.remember, {
+      slot,
+      nowMs: args.nowMs,
+      loaded,
+      born,
+      touched,
     });
     console.info("[watch] tick", {
       slot,

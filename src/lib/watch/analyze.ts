@@ -84,14 +84,28 @@ export async function loadWatchMarket(nowMs: number): Promise<WatchLoad> {
   });
 
   const m15ByAsset: Partial<Record<AssetId, Candle[]>> = {};
+  const h1ByAsset: Partial<Record<AssetId, Candle[]>> = {};
+  const h4ByAsset: Partial<Record<AssetId, Candle[]>> = {};
+  const sourceByAsset: Partial<Record<AssetId, string | null>> = {};
+  const instrumentByAsset: Partial<Record<AssetId, string | null>> = {};
   for (let i = 0; i < ASSETS.length; i += 1) {
     const id = ASSETS[i]!.id;
-    m15ByAsset[id] = packs[i]?.tfs["15m"].candles;
+    const pack = packs[i];
+    m15ByAsset[id] = pack?.tfs["15m"].candles;
+    h1ByAsset[id] = pack?.tfs["1h"].candles;
+    h4ByAsset[id] = pack?.tfs["4h"].candles;
+    sourceByAsset[id] = pack?.tfs["15m"].source ?? pack?.dataSource ?? null;
+    instrumentByAsset[id] = pack?.feedSymbol ?? null;
   }
 
   return {
     assets: analyzed.map((a) => foldInputFromAnalysis(a, nowMs)),
     m15ByAsset,
+    h1ByAsset,
+    h4ByAsset,
+    calendar: calendar.events,
+    sourceByAsset,
+    instrumentByAsset,
     errors,
   };
 }
