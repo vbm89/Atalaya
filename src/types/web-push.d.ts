@@ -9,6 +9,8 @@ declare module "web-push" {
     options?: {
       vapidDetails?: { subject: string; publicKey: string; privateKey: string };
       TTL?: number;
+      urgency?: "very-low" | "low" | "normal" | "high";
+      contentEncoding?: "aes128gcm" | "aesgcm";
     },
   ): Promise<unknown>;
 }

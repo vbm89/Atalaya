@@ -93,6 +93,49 @@ export function signedPriceMove(direction: Direction, entry: number, exit: numbe
   return direction === "buy" ? exit - entry : entry - exit;
 }
 
+/**
+ * Overnight swap in USD.
+ * Cards say Swap type = points (IMG_7934/7941/7940/7939).
+ * Two MT4 conversions:
+ *   tickValue:  raw × tickValueUsd × volume × nights
+ *   point×size: raw × 10^(-digits) × contractSize × volume × nights
+ * If they disagree (BTCUSD), refuse — do not invent.
+ */
+export function overnightSwapUsd(
+  c: BrokerContract,
+  direction: Direction,
+  volume: number,
+  nights: number,
+): { usd: number | null; reason: string | null } {
+  if (!(nights > 0)) return { usd: 0, reason: null };
+  if (c.swapLong == null || c.swapShort == null || c.swapType == null) {
+    return { usd: null, reason: "P/L NO CALCULABLE — swap no confirmado y la operación cruza noches." };
+  }
+  const raw = direction === "buy" ? c.swapLong : c.swapShort;
+  if (c.swapType === "usd") return { usd: raw * volume * nights, reason: null };
+  if (c.swapType === "points") {
+    const viaTick =
+      c.tickValueUsd != null && c.tickValueUsd > 0 ? raw * c.tickValueUsd * volume * nights : null;
+    const point = c.digits != null ? 10 ** -c.digits : null;
+    const viaContract =
+      point != null && c.contractSize != null && c.contractSize > 0
+        ? raw * point * c.contractSize * volume * nights
+        : null;
+    if (viaTick != null && viaContract != null && Math.abs(viaTick - viaContract) > 1e-6) {
+      return {
+        usd: null,
+        reason: `SWAP NO CALCULABLE — ficha en points; tickValue (${viaTick}) y point×contrato (${viaContract}) discrepan. Falta un cierre overnight real.`,
+      };
+    }
+    const usd = viaTick ?? viaContract;
+    if (usd == null) {
+      return { usd: null, reason: "P/L NO CALCULABLE — swap en points sin tickValue/contrato." };
+    }
+    return { usd, reason: null };
+  }
+  return { usd: null, reason: "P/L NO CALCULABLE — tipo de swap no soportado." };
+}
+
 export function calculateTradePl(input: TradeInput): TradePl {
   const c = input.contract ?? BROKER_CONTRACTS[input.assetId];
   const base = {
@@ -133,12 +176,14 @@ export function calculateTradePl(input: TradeInput): TradePl {
   let swapUsd: number | null = 0;
   const nights = input.nightsHeld ?? 0;
   if (nights > 0) {
-    if (c.swapLong == null || c.swapShort == null) {
-      swapUsd = null;
-    } else {
-      const perLot = input.direction === "buy" ? c.swapLong : c.swapShort;
-      swapUsd = perLot * input.volume * nights;
+    const overnight = overnightSwapUsd(c, input.direction, input.volume, nights);
+    if (overnight.usd == null) {
+      return fail(
+        { ...base, ticks, usdPerPricePerLot: usdPer },
+        overnight.reason ?? "P/L NO CALCULABLE — swap no confirmado y la operación cruza noches.",
+      );
     }
+    swapUsd = overnight.usd;
   }
 
   let commissionUsd: number | null = 0;

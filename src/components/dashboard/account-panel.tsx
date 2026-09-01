@@ -444,7 +444,9 @@ function CaptureFacts({ id }: { id: AssetId }) {
             ? "PENDIENTE"
             : c.swapType === "percent"
               ? `${formatCaptureNumber(c.swapLong)} %`
-              : usd(c.swapLong)}
+              : c.swapType === "points"
+                ? `${formatCaptureNumber(c.swapLong)} puntos`
+                : usd(c.swapLong)}
         </dd>
       </div>
       <div className="flex justify-between gap-3">
@@ -454,13 +456,16 @@ function CaptureFacts({ id }: { id: AssetId }) {
             ? "PENDIENTE"
             : c.swapType === "percent"
               ? `${formatCaptureNumber(c.swapShort)} %`
-              : usd(c.swapShort)}
+              : c.swapType === "points"
+                ? `${formatCaptureNumber(c.swapShort)} puntos`
+                : usd(c.swapShort)}
         </dd>
       </div>
       <p className="pt-1 text-subtle">
         P/L USD = (movimiento / tick size) × tick value × lote. No se usa el tamaño de contrato si
         discrepa del tick value (BTCUSD: 1,00 USD por tick de 0,01). EUR solo con tipo de cambio
-        USD/EUR; no se inventa.
+        USD/EUR; no se inventa. Swap de las fichas MT4: points (no USD). Overnight solo si
+        coinciden tickValue y point×contrato; si no (BTCUSD), SWAP NO CALCULABLE.
       </p>
     </dl>
   );

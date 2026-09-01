@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { BROKER_CONTRACTS } from "./broker-contract.ts";
-import { calculateTradePl, signedPriceMove } from "./broker-pl.ts";
+import { calculateTradePl, overnightSwapUsd, signedPriceMove } from "./broker-pl.ts";
 
 describe("dirección BUY/SELL", () => {
   it("buy profits when exit > entry", () => {
@@ -155,6 +155,48 @@ describe("swap y spread flotante", () => {
     });
     assert.equal(r.swapUsd, -50.8);
     assert.equal(r.netUsd, -50.8);
+  });
+
+  it("US100 points × tickValue 0.01, not the raw -5.74 as USD", () => {
+    const s = overnightSwapUsd(BROKER_CONTRACTS.US100, "buy", 1, 1);
+    assert.ok(s.usd != null);
+    assert.ok(Math.abs((s.usd ?? 0) - -0.0574) < 1e-9);
+  });
+
+  it("WTI points × tickValue 10 → 51.80 USD per lot, not 5.18 USD", () => {
+    const s = overnightSwapUsd(BROKER_CONTRACTS.WTI, "buy", 1, 1);
+    assert.ok(s.usd != null);
+    assert.ok(Math.abs((s.usd ?? 0) - 51.8) < 1e-9);
+  });
+
+  it("BTC overnight swap is not invented when tickValue and point×contrato disagree", () => {
+    const s = overnightSwapUsd(BROKER_CONTRACTS.BTCUSD, "buy", 1, 1);
+    assert.equal(s.usd, null);
+    assert.match(s.reason ?? "", /discrepan/);
+    const r = calculateTradePl({
+      assetId: "BTCUSD",
+      direction: "buy",
+      entry: 80_000,
+      exit: 80_000,
+      volume: 0.01,
+      nightsHeld: 1,
+    });
+    assert.equal(r.calculable, false);
+    assert.match(r.reason ?? "", /SWAP NO CALCULABLE|discrepan/);
+  });
+
+  it("BTC same-day (nightsHeld 0) still calculates without swap", () => {
+    const r = calculateTradePl({
+      assetId: "BTCUSD",
+      direction: "sell",
+      entry: 80_000,
+      exit: 79_900,
+      volume: 0.01,
+      nightsHeld: 0,
+    });
+    assert.equal(r.calculable, true);
+    assert.equal(r.swapUsd, 0);
+    assert.equal(r.grossUsd, 100);
   });
 
   it("does not subtract an invented spread", () => {

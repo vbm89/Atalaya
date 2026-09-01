@@ -6,10 +6,46 @@ export interface VapidKeys {
   subject: string;
 }
 
+/** Apple and RFC 8292 reject mailto:…@….local. Always a real https origin. */
+export const DEFAULT_VAPID_SUBJECT = "https://atalaya-nu.vercel.app";
+
+export function resolveVapidSubject(raw: string | undefined | null): {
+  subject: string;
+  kind: "https" | "mailto";
+  overridden: boolean;
+} {
+  const t = (raw ?? "").trim();
+  if (!t) return { subject: DEFAULT_VAPID_SUBJECT, kind: "https", overridden: false };
+  if (/^https:\/\//i.test(t) && !/\.local(?:[:/?#]|$)/i.test(t)) {
+    return { subject: t, kind: "https", overridden: false };
+  }
+  const mail = /^mailto:([^\s@]+)@([^\s@]+)$/i.exec(t);
+  if (mail) {
+    const domain = mail[2] ?? "";
+    if (domain.includes(".") && !/\.local$/i.test(domain)) {
+      return { subject: t, kind: "mailto", overridden: false };
+    }
+  }
+  return { subject: DEFAULT_VAPID_SUBJECT, kind: "https", overridden: true };
+}
+
+export function inspectVapidEnv(): {
+  configured: boolean;
+  subjectKind: "https" | "mailto";
+  subjectOverridden: boolean;
+} {
+  const info = resolveVapidSubject(process.env.VAPID_SUBJECT);
+  return {
+    configured: vapidEnvKeys() != null,
+    subjectKind: info.kind,
+    subjectOverridden: info.overridden,
+  };
+}
+
 export function vapidEnvKeys(): VapidKeys | null {
   const publicKey = process.env.VAPID_PUBLIC_KEY?.trim() || process.env.VITE_VAPID_PUBLIC_KEY?.trim();
   const privateKey = process.env.VAPID_PRIVATE_KEY?.trim();
-  const subject = process.env.VAPID_SUBJECT?.trim() || "mailto:noreply@atalaya.local";
+  const subject = resolveVapidSubject(process.env.VAPID_SUBJECT).subject;
   if (!publicKey || !privateKey) return null;
   return { publicKey, privateKey, subject };
 }
@@ -33,7 +69,7 @@ export async function loadVapidKeys(sql: SqlQuery): Promise<VapidKeys | null> {
     const map = new Map(rows.map((r) => [r.key, r.value]));
     const publicKey = map.get("vapid_public");
     const privateKey = map.get("vapid_private");
-    const subject = map.get("vapid_subject") || "mailto:noreply@atalaya.local";
+    const subject = resolveVapidSubject(map.get("vapid_subject")).subject;
     if (publicKey && privateKey) return { publicKey, privateKey, subject };
   } catch {
     /* table may be absent */

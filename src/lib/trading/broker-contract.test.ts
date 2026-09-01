@@ -102,6 +102,19 @@ describe("captura MT4 — tamaños y ticks", () => {
       assert.equal(BROKER_CONTRACTS[id].spreadType, "floating");
     }
   });
+
+  it("swap type is points on the four MT4 cards, not USD", () => {
+    for (const id of ["XAUUSD", "BTCUSD", "US100", "WTI"] as const) {
+      assert.equal(BROKER_CONTRACTS[id].swapType, "points");
+    }
+    assert.equal(BROKER_CONTRACTS.XAUUSD.swapLong, -50.8);
+    assert.equal(BROKER_CONTRACTS.XAUUSD.swapShort, 18.2);
+    assert.equal(BROKER_CONTRACTS.BTCUSD.swapLong, -10);
+    assert.equal(BROKER_CONTRACTS.US100.swapLong, -5.74);
+    assert.equal(BROKER_CONTRACTS.US100.swapShort, -1.04);
+    assert.equal(BROKER_CONTRACTS.WTI.swapLong, 5.18);
+    assert.equal(BROKER_CONTRACTS.WTI.swapShort, -29);
+  });
 });
 
 describe("lote mínimo y paso", () => {

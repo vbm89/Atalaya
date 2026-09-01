@@ -26,8 +26,11 @@ const ENDPOINT_KEY = "atalaya:push-endpoint:v1";
 
 type ServerStatus = {
   vapidConfigured: boolean;
+  vapidSubjectKind?: "https" | "mailto";
+  vapidSubjectOverridden?: boolean;
   activeSubscriptions: number;
   disabledSubscriptions: number;
+  subscriptionHosts?: string[];
   thisDeviceRegistered: boolean | null;
   lastEvents: Array<{
     assetId: string;
@@ -208,6 +211,8 @@ export function AlertsPanel() {
   const needsPin = gate != null && (gate.pinSet || gate.open);
   const canEnable = state === "off" || state === "granted-no-sub" || state === "local-only" || state === "error";
   const pushableUnsent = server?.lastEvents.filter((e) => e.pushable && !e.notified).length ?? 0;
+  const lastSendError = server?.lastEvents.find((e) => e.notifyLastError)?.notifyLastError ?? null;
+  const hostLine = server?.subscriptionHosts?.length ? server.subscriptionHosts.join(", ") : null;
 
   return (
     <section className="rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]">
@@ -228,14 +233,22 @@ export function AlertsPanel() {
       </div>
       {server ? (
         <p className="mt-2 text-xs leading-relaxed text-subtle" data-push-server>
-          Servidor: {server.vapidConfigured ? "VAPID listo" : "VAPID ausente"} ·{" "}
+          Servidor: {server.vapidConfigured ? "VAPID listo" : "VAPID ausente"}
+          {server.vapidSubjectKind ? ` · subject ${server.vapidSubjectKind}` : ""}
+          {server.vapidSubjectOverridden ? " (el .local se sustituyó)" : ""} ·{" "}
           {server.activeSubscriptions} dispositivo{server.activeSubscriptions === 1 ? "" : "s"} en Neon
+          {hostLine ? ` · ${hostLine}` : ""}
           {server.thisDeviceRegistered === true
             ? " · este dispositivo registrado"
             : server.thisDeviceRegistered === false
               ? " · este dispositivo NO está en Neon"
               : ""}
           {pushableUnsent ? ` · ${pushableUnsent} PENDING/ENTRADA sin Push enviado` : ""}
+        </p>
+      ) : null}
+      {lastSendError ? (
+        <p className="mt-2 text-xs leading-relaxed text-wait" data-push-last-error>
+          Último envío PENDING/ENTRADA: {lastSendError}
         </p>
       ) : null}
       {state === "ios-browser" ? (

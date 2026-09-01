@@ -7,7 +7,7 @@ import { TF_STEP_SEC } from "../trading/integrity.ts";
 import type { AssetId, Candle, SetupProposal, AssetAnalysis } from "../trading/types.ts";
 import { chartSetupLevels, hasChartableSetup, setupChartTf } from "../chart/setup-overlay.ts";
 import { parseWatchLink, watchLinkPath } from "./link.ts";
-import { dispatchEventPushes } from "./notify.ts";
+import { dispatchEventPushes, formatPushSendError, pushEndpointHost } from "./notify.ts";
 import { buildPushPayload } from "./payload.ts";
 import { shouldPushState } from "./policy.ts";
 import { DEFAULT_PUSH_PREFS } from "./push-prefs.ts";
@@ -89,6 +89,14 @@ describe("push policy", () => {
     assert.equal(shouldPushState("pending"), true);
     assert.equal(shouldPushState("map"), false);
     assert.equal(shouldPushState("wait"), false);
+  });
+
+  it("maps Apple 403 to a stored HTTP error, 410 to gone", () => {
+    assert.equal(formatPushSendError({ statusCode: 410, body: "Gone" }), "gone");
+    assert.equal(formatPushSendError({ statusCode: 404 }), "gone");
+    assert.match(formatPushSendError({ statusCode: 403, body: "BadJwtToken" }), /HTTP 403/);
+    assert.match(formatPushSendError({ statusCode: 403, body: "BadJwtToken" }), /BadJwtToken/);
+    assert.equal(pushEndpointHost("https://web.push.apple.com/abc"), "web.push.apple.com");
   });
 
   it("payload is brief and is not an order", () => {
@@ -277,6 +285,44 @@ describe("notify claim is one-shot", () => {
     assert.equal(n2.claimed, 1);
     assert.equal(n2.failed, 0);
     assert.equal(sent.length, 1);
+  });
+
+  it("stores the provider HTTP detail instead of a bare proveedor", async () => {
+    const store = createMemoryStore();
+    const send = async () => "proveedor HTTP 403 · BadJwtToken";
+    await store.upsertPushSub({ endpoint: "https://web.push.apple.com/1", p256dh: "a", auth: "b" }, null);
+    const setup: SetupProposal = {
+      state: "pending",
+      kind: "continuation",
+      direction: "buy",
+      zone: { low: 1, high: 2 },
+      invalidation: 0.5,
+      stopLoss: 0.5,
+      takeProfit1: 3,
+      takeProfit2: null,
+      riskReward: 2,
+      quality: "media",
+      qualityPhase: "final",
+      supersedeLevel: null,
+      missingForEntry: null,
+      slWide: false,
+      warnings: [],
+      managementNote: "",
+      entryLabel: "2",
+    };
+    const now = Date.parse("2026-08-29T08:15:08.000Z");
+    const f = foldEpisode(
+      null,
+      { id: "XAUUSD", setupState: "pending", setup, waitReason: null, digits: 2 },
+      Math.floor(now / 1000),
+      now,
+    );
+    await store.upsertEpisode(f.episode!);
+    for (const ev of f.events) await store.insertEvent(ev);
+    const n = await dispatchEventPushes(store, f.events, send, now);
+    assert.equal(n.failed, 1);
+    const inbox = await store.listInbox(20);
+    assert.equal(inbox[0]?.notifyLastError, "proveedor HTTP 403 · BadJwtToken");
   });
 
   it("new episode_id gets a new push", async () => {

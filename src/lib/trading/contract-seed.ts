@@ -18,7 +18,7 @@ export interface CaptureSpec {
   spreadFloating: boolean;
   swapLong: number | null;
   swapShort: number | null;
-  swapType: "usd" | "percent" | null;
+  swapType: "points" | "usd" | "percent" | null;
   minLot: number | null;
   lotStep: number | null;
 }

@@ -11,7 +11,7 @@ export interface PushSub {
   auth: string;
 }
 
-export type PushSender = (sub: PushSub, payload: PushPayload) => Promise<"ok" | "gone" | "error">;
+export type PushSender = (sub: PushSub, payload: PushPayload) => Promise<"ok" | "gone" | string>;
 
 export interface NotifyResult {
   considered: number;
@@ -24,6 +24,24 @@ export interface NotifyResult {
 
 function keyOf(ev: SignalEventDraft): string {
   return `${ev.episodeId}|${ev.slot}|${ev.fromState}|${ev.toState}`;
+}
+
+export function pushEndpointHost(endpoint: string): string {
+  try {
+    return new URL(endpoint).hostname;
+  } catch {
+    return "unknown";
+  }
+}
+
+/** Map web-push WebPushError into a short lastError. 404/410 → gone. */
+export function formatPushSendError(e: unknown): "gone" | string {
+  const err = e as { statusCode?: number; message?: string; body?: string };
+  const status = typeof err.statusCode === "number" ? err.statusCode : 0;
+  if (status === 404 || status === 410) return "gone";
+  const body = typeof err.body === "string" ? err.body.replace(/\s+/g, " ").slice(0, 80) : "";
+  const bit = status ? `HTTP ${status}` : (err.message ?? "sin-codigo").slice(0, 80);
+  return body ? `proveedor ${bit} · ${body}` : `proveedor ${bit}`;
 }
 
 export async function dispatchEventPushes(
@@ -83,7 +101,7 @@ export async function dispatchEventPushes(
         const status = await send(sub, payload);
         if (status === "gone") await store.disablePushSub(sub.endpoint, "gone");
         else if (status === "ok") ok += 1;
-        else lastError = "proveedor";
+        else lastError = status && status !== "error" ? status : "proveedor";
       } catch (e) {
         lastError = e instanceof Error ? e.message : "error";
         await store.disablePushSub(sub.endpoint, lastError).catch(() => undefined);
@@ -100,13 +118,13 @@ export async function dispatchEventPushes(
   return result;
 }
 
-export async function sendWebPush(sub: PushSub, payload: PushPayload): Promise<"ok" | "gone" | "error"> {
+export async function sendWebPush(sub: PushSub, payload: PushPayload): Promise<"ok" | "gone" | string> {
   const { getSql } = await import("@/lib/db");
   const { loadVapidKeys } = await import("./vapid");
   const webpush = await import("web-push");
   const sql = await getSql();
   const keys = await loadVapidKeys(sql);
-  if (!keys) return "error";
+  if (!keys) return "vapid ausente";
   try {
     await webpush.sendNotification(
       {
@@ -121,14 +139,18 @@ export async function sendWebPush(sub: PushSub, payload: PushPayload): Promise<"
           privateKey: keys.privateKey,
         },
         TTL: 3600,
+        urgency: "high",
+        contentEncoding: "aes128gcm",
       },
     );
     return "ok";
   } catch (e) {
-    const status = typeof e === "object" && e && "statusCode" in e ? Number((e as { statusCode: number }).statusCode) : 0;
-    if (status === 404 || status === 410) return "gone";
-    console.info("[watch] push send failed", { status, endpoint: sub.endpoint.slice(0, 48) });
-    return "error";
+    const mapped = formatPushSendError(e);
+    console.info("[watch] push send failed", {
+      mapped,
+      endpoint: sub.endpoint.slice(0, 48),
+    });
+    return mapped;
   }
 }
 

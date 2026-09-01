@@ -109,18 +109,25 @@ export const getPushStatus = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { getSql } = await import("@/lib/db");
     const { createPgStore } = await import("./store");
-    const { vapidConfigured } = await import("./vapid");
+    const { inspectVapidEnv } = await import("./vapid");
     const { shouldPushState } = await import("./policy");
+    const { pushEndpointHost } = await import("./notify");
     const sql = await getSql();
     const store = createPgStore(sql);
     const counts = await store.countPushSubs();
     const events = await store.listNotifyDebug(20);
     const endpoint = typeof data.endpoint === "string" ? data.endpoint : "";
     const thisDeviceRegistered = endpoint ? await store.hasPushSub(endpoint) : null;
+    const subs = await store.listActivePushSubs();
+    const hosts = [...new Set(subs.map((s) => pushEndpointHost(s.endpoint)))];
+    const vapid = inspectVapidEnv();
     return {
-      vapidConfigured: vapidConfigured(),
+      vapidConfigured: vapid.configured,
+      vapidSubjectKind: vapid.subjectKind,
+      vapidSubjectOverridden: vapid.subjectOverridden,
       activeSubscriptions: counts.active,
       disabledSubscriptions: counts.disabled,
+      subscriptionHosts: hosts,
       thisDeviceRegistered,
       lastEvents: events.map((e) => ({
         assetId: e.assetId,

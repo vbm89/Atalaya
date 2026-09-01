@@ -18,7 +18,7 @@ export type ProfitCalculation = "cfd";
 export type MarginCalculation = "contracts";
 export type PendingOrderPolicy = "gtc";
 export type SpreadType = "floating" | "fixed";
-export type SwapType = "usd";
+export type SwapType = "points" | "usd";
 
 export interface BrokerContract {
   assetKey: AssetId;
@@ -66,7 +66,7 @@ export const BROKER_CONTRACTS: Record<AssetId, BrokerContract> = {
     stopsLevel: 0,
     swapLong: -50.8,
     swapShort: 18.2,
-    swapType: "usd",
+    swapType: "points",
     marginCoverage: 50,
     marginPercent: 0.1,
     profitCalculation: "cfd",
@@ -87,7 +87,7 @@ export const BROKER_CONTRACTS: Record<AssetId, BrokerContract> = {
     stopsLevel: 0,
     swapLong: -10,
     swapShort: -10,
-    swapType: "usd",
+    swapType: "points",
     marginCoverage: 0.5,
     marginPercent: 0.2,
     profitCalculation: "cfd",
@@ -108,7 +108,7 @@ export const BROKER_CONTRACTS: Record<AssetId, BrokerContract> = {
     stopsLevel: 0,
     swapLong: -5.74,
     swapShort: -1.04,
-    swapType: "usd",
+    swapType: "points",
     marginCoverage: 0.5,
     marginPercent: 1,
     profitCalculation: "cfd",
@@ -129,7 +129,7 @@ export const BROKER_CONTRACTS: Record<AssetId, BrokerContract> = {
     stopsLevel: 0,
     swapLong: 5.18,
     swapShort: -29,
-    swapType: "usd",
+    swapType: "points",
     marginCoverage: 500,
     marginPercent: 0.5,
     profitCalculation: "cfd",
@@ -187,9 +187,9 @@ export const FIELD_SOURCE: Record<AssetId, Record<BrokerField, FieldProvenance>>
     lotStep: "owner_confirmed",
     digits: "mt4_capture",
     stopsLevel: "mt4_capture",
-    swapLong: "owner_confirmed",
-    swapShort: "owner_confirmed",
-    swapType: "owner_confirmed",
+    swapLong: "mt4_capture",
+    swapShort: "mt4_capture",
+    swapType: "mt4_capture",
     marginCoverage: "mt4_capture",
     marginPercent: "mt4_capture",
     profitCalculation: "mt4_capture",
