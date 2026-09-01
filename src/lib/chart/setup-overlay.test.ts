@@ -12,6 +12,7 @@ import {
   setupLevelsKey,
   setupStateCaption,
   setupVisiblePriceRange,
+  setupAutoscaleLocked,
 } from "./setup-overlay.ts";
 import type { AssetAnalysis, SetupProposal } from "../trading/types.ts";
 
@@ -154,6 +155,13 @@ describe("chart setup overlay", () => {
     assert.ok(range.max < 90000);
     assert.ok(range.min < lv.takeProfit2!);
     assert.ok(range.max > lv.stopLoss);
+  });
+
+  it("only US100 releases the setup-locked price autoscale; others stay locked", () => {
+    assert.equal(setupAutoscaleLocked("US100"), false);
+    assert.equal(setupAutoscaleLocked("XAUUSD"), true);
+    assert.equal(setupAutoscaleLocked("BTCUSD"), true);
+    assert.equal(setupAutoscaleLocked("WTI"), true);
   });
 
   it("XAU SPOT levels are shifted by +basis onto PROXY candles", () => {

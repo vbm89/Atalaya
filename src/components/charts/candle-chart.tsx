@@ -20,7 +20,7 @@ import { ema, rsiWilder } from "@/lib/trading/indicators";
 import type { ChartOverlays, ChartSeries } from "@/lib/chart/types";
 import type { TickHandler } from "@/lib/chart/live";
 import { liveQuotesSnapshot, subscribeLiveQuotes } from "@/lib/chart/live-quotes";
-import { chartSetupLevels, setupLevelsKey, setupVisiblePriceRange, type ChartSetupLevels } from "@/lib/chart/setup-overlay";
+import { chartSetupLevels, setupAutoscaleLocked, setupLevelsKey, setupVisiblePriceRange, type ChartSetupLevels } from "@/lib/chart/setup-overlay";
 import {
   CHART_BAR_SPACING,
   CHART_MIN_BAR_SPACING,
@@ -204,6 +204,18 @@ const CandleChartInner = forwardRef<
     const lv = frozenLevels ?? (analysis ? chartSetupLevels(analysis) : null);
     const last = getBars().at(-1)?.close ?? series.candles.at(-1)?.close ?? null;
     if (!candle) return;
+    if (!setupAutoscaleLocked(series.assetId)) {
+      candle.applyOptions({ autoscaleInfoProvider: undefined });
+      const scale = candle.priceScale();
+      if (lv) {
+        const range = setupVisiblePriceRange(lv, last);
+        scale.setAutoScale(false);
+        scale.setVisibleRange({ from: range.min, to: range.max });
+      } else {
+        scale.setAutoScale(true);
+      }
+      return;
+    }
     if (lv) {
       const range = setupVisiblePriceRange(lv, last);
       candle.applyOptions({

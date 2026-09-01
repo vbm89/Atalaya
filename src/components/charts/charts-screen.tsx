@@ -411,14 +411,18 @@ function ChartWorkspace({
           <Picker
             open={menu === "asset"}
             label={assetId}
+            menuWidth="asset"
             onToggle={() => onMenu(menu === "asset" ? null : "asset")}
             onClose={() => onMenu(null)}
           >
             {ASSETS.map((a) => (
-              <PickerItem key={a.id} active={a.id === assetId} onClick={() => onAsset(a.id)}>
-                {a.label}
-                <span className="ml-2 text-xs text-muted">{CHART_ASSET_BLURB[a.id]}</span>
-              </PickerItem>
+              <PickerItem
+                key={a.id}
+                active={a.id === assetId}
+                title={a.label}
+                detail={CHART_ASSET_BLURB[a.id]}
+                onClick={() => onAsset(a.id)}
+              />
             ))}
           </Picker>
           <Picker
@@ -428,9 +432,7 @@ function ChartWorkspace({
             onClose={() => onMenu(null)}
           >
             {CHART_TFS.map((t) => (
-              <PickerItem key={t.id} active={t.id === tf} onClick={() => onTf(t.id)}>
-                {t.label}
-              </PickerItem>
+              <PickerItem key={t.id} active={t.id === tf} title={t.label} onClick={() => onTf(t.id)} />
             ))}
           </Picker>
           {series ? (
@@ -784,12 +786,14 @@ function Picker({
   onToggle,
   onClose,
   children,
+  menuWidth = "default",
 }: {
   open: boolean;
   label: string;
   onToggle: () => void;
   onClose: () => void;
   children: ReactNode;
+  menuWidth?: "default" | "asset";
 }) {
   return (
     <div className="relative">
@@ -804,7 +808,13 @@ function Picker({
       {open ? (
         <>
           <button type="button" className="fixed inset-0 z-20" aria-label="Cerrar menú" onClick={onClose} />
-          <div className="absolute top-12 left-0 z-30 max-h-60 min-w-40 overflow-y-auto rounded-[var(--radius-md)] bg-elevated p-1 shadow-[var(--shadow-border)]">
+          <div
+            className={
+              menuWidth === "asset"
+                ? "absolute top-12 left-0 z-30 max-h-[min(24rem,70vh)] w-[min(22rem,calc(100vw-1.5rem))] overflow-y-auto rounded-[var(--radius-md)] bg-elevated p-1.5 shadow-[var(--shadow-border)]"
+                : "absolute top-12 left-0 z-30 max-h-60 min-w-40 overflow-y-auto rounded-[var(--radius-md)] bg-elevated p-1 shadow-[var(--shadow-border)]"
+            }
+          >
             {children}
           </div>
         </>
@@ -816,24 +826,35 @@ function Picker({
 function PickerItem({
   active,
   onClick,
-  children,
+  title,
+  detail,
 }: {
   active: boolean;
   onClick: () => void;
-  children: ReactNode;
+  title: string;
+  detail?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={
-        active
-          ? "flex h-11 w-full items-center rounded-[var(--radius-sm)] bg-surface px-3 text-left text-sm font-medium"
-          : "flex h-11 w-full items-center rounded-[var(--radius-sm)] px-3 text-left text-sm text-muted"
+        detail
+          ? active
+            ? "flex min-h-14 w-full items-center gap-3 rounded-[var(--radius-sm)] bg-surface px-3 py-2.5 text-left"
+            : "flex min-h-14 w-full items-center gap-3 rounded-[var(--radius-sm)] px-3 py-2.5 text-left"
+          : active
+            ? "flex h-11 w-full items-center gap-3 rounded-[var(--radius-sm)] bg-surface px-3 text-left"
+            : "flex h-11 w-full items-center gap-3 rounded-[var(--radius-sm)] px-3 text-left"
       }
     >
-      {children}
-      {active ? <span className="ml-auto text-buy">✓</span> : null}
+      <span className="min-w-0 flex-1">
+        <span className={`block text-sm font-medium ${active ? "text-fg" : "text-muted"}`}>{title}</span>
+        {detail ? <span className="mt-0.5 block text-xs leading-snug text-muted">{detail}</span> : null}
+      </span>
+      <span className={`w-4 shrink-0 text-center text-sm ${active ? "text-buy" : "text-transparent"}`} aria-hidden={!active}>
+        ✓
+      </span>
     </button>
   );
 }

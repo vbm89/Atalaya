@@ -270,3 +270,12 @@ export function setupVisiblePriceRange(
   const pad = Math.max(max - min, Number.EPSILON) * 0.14;
   return { min: min - pad, max: max + pad };
 }
+
+/**
+ * XAU/BTC/WTI keep the setup-locked price window (autoscaleInfoProvider).
+ * US100 does not: that lock blocks pinch-zoom/pan on the price scale.
+ * Levels still use the same prices; only the scale policy differs.
+ */
+export function setupAutoscaleLocked(assetId: AssetId): boolean {
+  return assetId !== "US100";
+}
