@@ -52,15 +52,45 @@ export function parseBinanceMiniTicker(raw: unknown): { symbol: string; price: n
   return { symbol, price };
 }
 
+function positive(n: unknown): number | null {
+  const x = Number(n);
+  return Number.isFinite(x) && x > 0 ? x : null;
+}
+
+/** US100/NDX lastPr is often a stale last trade. Other Bitget tickers keep lastPr. */
+export function bitgetLivePrice(
+  row: { lastPr?: string; last?: string; markPrice?: string; bidPr?: string; askPr?: string; indexPrice?: string },
+  instId: string,
+): number | null {
+  if (instId === "NDX100USDT") {
+    const mark = positive(row.markPrice);
+    if (mark != null) return mark;
+    const bid = positive(row.bidPr);
+    const ask = positive(row.askPr);
+    if (bid != null && ask != null) return (bid + ask) / 2;
+    const index = positive(row.indexPrice);
+    if (index != null) return index;
+  }
+  return positive(row.lastPr ?? row.last);
+}
+
 export function parseBitgetTicker(raw: unknown): { instId: string; price: number } | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as { arg?: { channel?: string; instId?: string }; data?: unknown };
   const rows = Array.isArray(o.data) ? o.data : [];
   const last = rows.at(-1);
   if (!last || typeof last !== "object") return null;
-  const row = last as { instId?: string; lastPr?: string; last?: string };
+  const row = last as {
+    instId?: string;
+    lastPr?: string;
+    last?: string;
+    markPrice?: string;
+    bidPr?: string;
+    askPr?: string;
+    indexPrice?: string;
+  };
   const instId = row.instId || o.arg?.instId || "";
-  const price = Number(row.lastPr ?? row.last);
-  if (!instId || !(price > 0)) return null;
+  const price = bitgetLivePrice(row, instId);
+  if (!instId || price == null) return null;
   return { instId, price };
 }

@@ -31,6 +31,57 @@ describe("live quote parsers", () => {
     const wrapped = unwrapBinancePayload({ stream: "btcusdt@aggTrade", data: { p: "1.5", T: 2 } });
     assert.equal(parseBinanceAggTrade(wrapped)?.price, 1.5);
   });
+
+  it("US100 prefers markPrice over a stale lastPr", () => {
+    const row = parseBitgetTicker({
+      arg: { channel: "ticker", instId: "NDX100USDT" },
+      data: [{ instId: "NDX100USDT", lastPr: "29235", markPrice: "29195", bidPr: "29197", askPr: "29198", indexPrice: "29155.23" }],
+    });
+    assert.equal(row?.instId, "NDX100USDT");
+    assert.equal(row?.price, 29195);
+  });
+
+  it("US100 falls back bid/ask then index then lastPr", () => {
+    assert.equal(
+      parseBitgetTicker({
+        data: [{ instId: "NDX100USDT", lastPr: "29235", bidPr: "29197", askPr: "29199", indexPrice: "29155" }],
+      })?.price,
+      29198,
+    );
+    assert.equal(
+      parseBitgetTicker({
+        data: [{ instId: "NDX100USDT", lastPr: "29235", indexPrice: "29155.5" }],
+      })?.price,
+      29155.5,
+    );
+    assert.equal(
+      parseBitgetTicker({
+        data: [{ instId: "NDX100USDT", lastPr: "29235" }],
+      })?.price,
+      29235,
+    );
+  });
+
+  it("does not apply the US100 markPrice rule to XAU/WTI/BTC", () => {
+    assert.equal(
+      parseBitgetTicker({
+        data: [{ instId: "XAUUSDT", lastPr: "4384.27", markPrice: "4380" }],
+      })?.price,
+      4384.27,
+    );
+    assert.equal(
+      parseBitgetTicker({
+        data: [{ instId: "CLUSDT", lastPr: "87.71", markPrice: "87.5" }],
+      })?.price,
+      87.71,
+    );
+    assert.equal(
+      parseBitgetTicker({
+        data: [{ instId: "BTCUSDT", lastPr: "77976.2", markPrice: "77900" }],
+      })?.price,
+      77976.2,
+    );
+  });
 });
 
 describe("live quote store", () => {
