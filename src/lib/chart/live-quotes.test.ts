@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { applyLiveQuote, assetIdFromTicker, liveQuotesSnapshot, subscribeLiveQuotes } from "./live-quotes.ts";
+import { applyLiveQuote, assetIdFromTicker, liveQuotesSnapshot, liveXauSpot, subscribeLiveQuotes } from "./live-quotes.ts";
 import { parseBinanceAggTrade, parseBitgetTicker, unwrapBinancePayload } from "./stream.ts";
 
 describe("live quote parsers", () => {
@@ -109,5 +109,6 @@ describe("live quote store", () => {
     });
     assert.ok(n >= 1);
     off();
+    assert.equal(liveXauSpot(), null);
   });
 });

@@ -3,15 +3,23 @@ import { describe, it } from "node:test";
 import { visualCardPrice, visualDelayed, wsTickIsFresh } from "./quote-view.ts";
 
 describe("visual card prices", () => {
-  it("never uses Bitget live as the XAUUSD main price", () => {
-    const v = visualCardPrice({
+  it("shows XAU spot only — never a PROXY field", () => {
+    const liveSpot = visualCardPrice({
       id: "XAUUSD",
-      live: 4389.04,
+      live: 4379.2,
       snapshotPrice: 4381.9,
       snapshotSpot: 4381.9,
     });
-    assert.equal(v.main, 4381.9);
-    assert.equal(v.proxy, 4389.04);
+    assert.equal(liveSpot.main, 4379.2);
+    assert.equal(liveSpot.proxy, null);
+    const frozen = visualCardPrice({
+      id: "XAUUSD",
+      live: null,
+      snapshotPrice: 4381.9,
+      snapshotSpot: 4381.9,
+    });
+    assert.equal(frozen.main, 4381.9);
+    assert.equal(frozen.proxy, null);
   });
 
   it("uses live as main for BTC/US100/WTI", () => {

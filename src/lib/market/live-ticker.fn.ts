@@ -23,17 +23,21 @@ interface BitgetTickers {
   }>;
 }
 
-/** Visual-only REST snapshot of Bitget tickers. Does not feed V1. */
+/** Visual-only REST snapshot. Does not feed V1. */
 export const getVisualTickers = createServerFn({ method: "POST" }).handler(async () => {
   const url = "https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES";
-  const res = await fetchJson<BitgetTickers>(url, { timeoutMs: 8000, retries: 1 });
-  const out: Partial<Record<AssetId, number>> = {};
+  const [res, spot] = await Promise.all([
+    fetchJson<BitgetTickers>(url, { timeoutMs: 8000, retries: 1 }),
+    import("./xau-spot").then((m) => m.loadXauSpotQuote()).catch(() => null),
+  ]);
+  const tickers: Partial<Record<AssetId, number>> = {};
   for (const row of res.data?.data ?? []) {
     const instId = row.instId || row.symbol || "";
     const id = INST[instId];
     if (!id) continue;
     const price = bitgetLivePrice(row, instId);
-    if (price != null) out[id] = price;
+    if (price != null) tickers[id] = price;
   }
-  return out;
+  const xauSpot = spot && spot.priceSpot != null && spot.priceSpot > 0 ? spot.priceSpot : null;
+  return { tickers, xauSpot };
 });

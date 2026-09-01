@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, House, BarChart3, CalendarDays, BookOpen, GraduationCap, Ellipsis, Settings, Download } from "lucide-react";
 import { getMarketAnalysis } from "@/lib/market/analysis.fn";
@@ -14,7 +14,7 @@ import { CalendarList } from "./calendar-list";
 import { AccountPanel, useAccountSettings, useCosts } from "./account-panel";
 import { ChartsScreen, type ChartIntent } from "@/components/charts/charts-screen";
 import { hasChartableSetup, SETUP_CHART_TF, chartIntentFromAnalysis, frozenLevelsFromEpisode } from "@/lib/chart/setup-overlay";
-import { usePullToRefresh } from "./pull-refresh";
+import { PullRefresh } from "./pull-refresh";
 import { getAsset } from "@/lib/trading/assets";
 import { foldWatchBook, type WatchBook } from "@/lib/watch/memory";
 import { readWatchBook, writeWatchBook } from "@/lib/watch/persist";
@@ -134,7 +134,6 @@ function overlayWatch(
 
 export function Dashboard() {
   const qc = useQueryClient();
-  const homeScrollRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<"markets" | "calendar" | "charts" | "history" | "learn" | "settings">("markets");
   const [moreOpen, setMoreOpen] = useState(false);
   const [openId, setOpenId] = useState<AssetId | null>(null);
@@ -263,10 +262,6 @@ export function Dashboard() {
   const rawOpen = snapshot?.assets.find((a) => a.id === openId) ?? null;
   const openAsset = rawOpen ? overlayAsset(rawOpen, episodeFocus) : null;
   const sheetOpen = openId != null;
-  const pullRefresh = useCallback(() => {
-    refresh.mutate();
-  }, [refresh]);
-  usePullToRefresh(homeScrollRef, pullRefresh, tab !== "charts" && !sheetOpen);
   const error =
     refresh.error instanceof Error
       ? refresh.error.message
@@ -331,22 +326,17 @@ export function Dashboard() {
               setTab("markets");
               setChartIntent(null);
             }}
+            onRefresh={() => refresh.mutate()}
           />
         ) : (
-          <div
-            ref={homeScrollRef}
-            data-home-scroll
+          <PullRefresh
             className="atalaya-home"
+            onRefresh={() => refresh.mutate()}
+            enabled={!sheetOpen}
+            data-home-scroll
             inert={sheetOpen || undefined}
             aria-hidden={sheetOpen}
           >
-            <div
-              data-pull-refresh
-              className="atalaya-pull"
-              aria-hidden
-            >
-              {refresh.isPending ? "Actualizando…" : "Soltar para actualizar"}
-            </div>
             {snapshot ? (
               <FeedStatus
                 assets={snapshot.assets}
@@ -464,7 +454,7 @@ export function Dashboard() {
                   : ""}
               </p>
             ) : null}
-          </div>
+          </PullRefresh>
         )}
 
         <AssetSheet
@@ -619,8 +609,8 @@ function DockBtn({
       onClick={onClick}
       className={
         active
-          ? "flex h-12 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium text-buy"
-          : "flex h-12 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] text-muted"
+          ? "flex h-11 flex-1 flex-col items-center justify-center gap-0 text-[10px] font-medium text-buy"
+          : "flex h-11 flex-1 flex-col items-center justify-center gap-0 text-[10px] text-muted"
       }
     >
       {children}

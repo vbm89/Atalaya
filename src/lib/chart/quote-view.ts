@@ -9,7 +9,7 @@ export function wsTickIsFresh(lastWsAt: number | undefined, now: number, staleMs
   return lastWsAt != null && now - lastWsAt < staleMs;
 }
 
-/** Visual card/list price. XAU main is always V1 spot; Bitget never masquerades as spot. */
+/** Visual card/list price. XAU main is V1/spot only — never Bitget proxy. */
 export function visualCardPrice(args: {
   id: AssetId;
   live: number | null | undefined;
@@ -20,7 +20,7 @@ export function visualCardPrice(args: {
   if (args.id === "XAUUSD") {
     const spot = args.snapshotSpot != null && args.snapshotSpot > 0 ? args.snapshotSpot : null;
     const snap = args.snapshotPrice != null && args.snapshotPrice > 0 ? args.snapshotPrice : null;
-    return { main: spot ?? snap, proxy: live };
+    return { main: live ?? spot ?? snap, proxy: null };
   }
   const snap = args.snapshotPrice != null && args.snapshotPrice > 0 ? args.snapshotPrice : null;
   return { main: live ?? snap, proxy: null };

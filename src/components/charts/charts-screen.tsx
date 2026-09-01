@@ -30,6 +30,7 @@ import type { AnalysisSnapshot, AssetId } from "@/lib/trading/types";
 import { formatPrice } from "@/lib/utils";
 import { CandleChart, type CandleChartHandle } from "./candle-chart";
 import { LiveQuoteReadout } from "@/components/dashboard/live-quote-readout";
+import { PullRefresh } from "@/components/dashboard/pull-refresh";
 
 export type { ChartIntent };
 
@@ -100,10 +101,12 @@ export const ChartsScreen = memo(function ChartsScreen({
   snapshot,
   intent,
   onBack,
+  onRefresh,
 }: {
   snapshot: AnalysisSnapshot | undefined;
   intent: ChartIntent | null;
   onBack: () => void;
+  onRefresh?: () => void;
 }) {
   const [assetId, setAssetId] = useState<AssetId | null>(intent?.assetId ?? null);
   const [tf, setTf] = useState<ChartTf>(intent?.tf ?? SETUP_CHART_TF);
@@ -140,6 +143,7 @@ export const ChartsScreen = memo(function ChartsScreen({
       <ChartMarketList
         snapshot={snapshot}
         favs={favs}
+        onRefresh={onRefresh}
         onFav={(id) =>
           setFavs((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
         }
@@ -197,17 +201,19 @@ function ChartMarketList({
   favs,
   onFav,
   onPick,
+  onRefresh,
 }: {
   snapshot: AnalysisSnapshot | undefined;
   favs: AssetId[];
   onFav: (id: AssetId) => void;
   onPick: (id: AssetId) => void;
+  onRefresh?: () => void;
 }) {
   const rest = ASSETS.filter((a) => !favs.includes(a.id));
   const favAssets = ASSETS.filter((a) => favs.includes(a.id));
 
   return (
-    <div className="atalaya-charts-list" data-chart-list="1">
+    <PullRefresh className="atalaya-charts-list" data-chart-list="1" onRefresh={onRefresh ?? (() => {})} enabled={Boolean(onRefresh)}>
       <div className="atalaya-charts-list-head">
         <p className="text-xs tracking-wider text-muted uppercase">Gráficos</p>
         <h1 className="text-xl font-semibold tracking-tight">Mercados</h1>
@@ -256,7 +262,7 @@ function ChartMarketList({
             })}
         </ul>
       </section>
-    </div>
+    </PullRefresh>
   );
 }
 

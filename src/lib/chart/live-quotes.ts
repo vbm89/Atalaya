@@ -45,6 +45,8 @@ let dead = true;
 let paused = false;
 let restInflight = false;
 let lastRestAt = 0;
+let xauSpot: number | null = null;
+let stopTimer = 0;
 
 function notify() {
   if (typeof requestAnimationFrame !== "function") {
@@ -65,8 +67,8 @@ export function applyLiveQuote(id: AssetId, price: number, source: LiveQuoteSour
   if (source === "ws") lastWsAt[id] = now;
   const srcChanged = sources[id] !== source;
   if (quotes[id] === price && !srcChanged) return false;
-  quotes = { ...quotes, [id]: price };
-  sources = { ...sources, [id]: source };
+  quotes[id] = price;
+  sources[id] = source;
   notify();
   return true;
 }
@@ -79,6 +81,10 @@ export function liveQuoteSources(): LiveQuoteSources {
   return sources;
 }
 
+export function liveXauSpot(): number | null {
+  return xauSpot;
+}
+
 export function assetIdFromTicker(instId: string): AssetId | null {
   return INST_TO_ASSET[instId] ?? null;
 }
@@ -89,7 +95,8 @@ function ingestBitget(raw: string) {
     const parsed = parseBitgetTicker(JSON.parse(raw));
     if (!parsed) return;
     const id = assetIdFromTicker(parsed.instId);
-    if (id) applyLiveQuote(id, parsed.price, "ws");
+    if (!id || id === "BTCUSD") return;
+    applyLiveQuote(id, parsed.price, "ws");
   } catch {
     /* ignore malformed */
   }
@@ -133,34 +140,32 @@ function stopWatch() {
 
 async function pullRestTickers() {
   if (dead || paused || restInflight) return;
+  if (typeof document !== "undefined" && document.hidden) return;
   const now = Date.now();
   if (now - lastRestAt < LIVE_REST_MS) return;
-  const stale = ASSET_IDS.some((id) => !wsTickIsFresh(lastWsAt[id], now));
-  if (!stale) return;
   restInflight = true;
   lastRestAt = now;
   try {
     const { getVisualTickers } = await import("@/lib/market/live-ticker.fn");
-    const rows = await getVisualTickers();
+    const pack = await getVisualTickers();
+    const rows = pack.tickers ?? {};
+    if (pack.xauSpot != null && pack.xauSpot > 0 && pack.xauSpot !== xauSpot) {
+      xauSpot = pack.xauSpot;
+      notify();
+    }
     const at = Date.now();
     for (const id of ASSET_IDS) {
+      if (id === "BTCUSD" && wsTickIsFresh(lastWsAt[id], at)) continue;
       if (wsTickIsFresh(lastWsAt[id], at)) continue;
       const price = rows[id];
       if (price != null) applyLiveQuote(id, price, "rest");
-      else if (sources[id] !== "snapshot") {
-        sources = { ...sources, [id]: "snapshot" };
+      else if (sources[id] !== "snapshot" && sources[id] !== "ws") {
+        sources[id] = "snapshot";
         notify();
       }
     }
   } catch {
-    const at = Date.now();
-    for (const id of ASSET_IDS) {
-      if (wsTickIsFresh(lastWsAt[id], at)) continue;
-      if (sources[id] === "ws" || sources[id] == null) {
-        sources = { ...sources, [id]: "snapshot" };
-      }
-    }
-    notify();
+    /* keep last quote */
   } finally {
     restInflight = false;
   }
@@ -252,28 +257,49 @@ function connectBinance() {
 
 function onVis() {
   if (dead) return;
-  if (document.hidden) {
-    paused = true;
-    stopPing();
-    stopWatch();
+  if (document.hidden) return;
+  paused = false;
+  if (!bitget) connectBitget();
+  if (!binance) connectBinance();
+  if (!watchId) startWatch();
+}
+
+function actuallyStop() {
+  dead = true;
+  paused = false;
+  if (typeof document !== "undefined") {
+    document.removeEventListener("visibilitychange", onVis);
+  }
+  stopPing();
+  stopWatch();
+  if (typeof window !== "undefined") {
     window.clearTimeout(retryId);
     window.clearTimeout(btcRetryId);
-    detach(bitget);
-    bitget = null;
-    detach(binance);
-    binance = null;
-    return;
+    window.clearTimeout(stopTimer);
+    stopTimer = 0;
   }
-  paused = false;
-  connectBitget();
-  connectBinance();
-  startWatch();
+  if (raf && typeof cancelAnimationFrame === "function") {
+    cancelAnimationFrame(raf);
+    raf = 0;
+  }
+  detach(bitget);
+  bitget = null;
+  detach(binance);
+  binance = null;
 }
 
 function startQuotes() {
   if (typeof window === "undefined" || typeof WebSocket === "undefined") return;
   refs += 1;
-  if (refs !== 1) return;
+  if (stopTimer) {
+    window.clearTimeout(stopTimer);
+    stopTimer = 0;
+  }
+  if (bitget || binance) {
+    dead = false;
+    return;
+  }
+  if (refs !== 1 && !dead) return;
   dead = false;
   paused = typeof document !== "undefined" && document.hidden;
   document.addEventListener("visibilitychange", onVis);
@@ -287,22 +313,16 @@ function startQuotes() {
 function stopQuotes() {
   refs = Math.max(0, refs - 1);
   if (refs > 0) return;
-  dead = true;
-  paused = false;
-  if (typeof document === "undefined") return;
-  document.removeEventListener("visibilitychange", onVis);
-  stopPing();
-  stopWatch();
-  window.clearTimeout(retryId);
-  window.clearTimeout(btcRetryId);
-  if (raf) {
-    cancelAnimationFrame(raf);
-    raf = 0;
+  if (typeof window === "undefined") {
+    actuallyStop();
+    return;
   }
-  detach(bitget);
-  bitget = null;
-  detach(binance);
-  binance = null;
+  window.clearTimeout(stopTimer);
+  stopTimer = window.setTimeout(() => {
+    stopTimer = 0;
+    if (refs > 0) return;
+    actuallyStop();
+  }, 2000);
 }
 
 export function subscribeLiveQuotes(fn: () => void): () => void {
@@ -321,12 +341,12 @@ export function liveQuoteRefCount(): number {
 
 export function useLiveQuotes(): LiveQuoteMap {
   const [map, setMap] = useState<LiveQuoteMap>(() => quotes);
-  useEffect(() => subscribeLiveQuotes(() => setMap(quotes)), []);
+  useEffect(() => subscribeLiveQuotes(() => setMap({ ...quotes })), []);
   return map;
 }
 
 export function useLiveQuoteSources(): LiveQuoteSources {
   const [map, setMap] = useState<LiveQuoteSources>(() => sources);
-  useEffect(() => subscribeLiveQuotes(() => setMap(sources)), []);
+  useEffect(() => subscribeLiveQuotes(() => setMap({ ...sources })), []);
   return map;
 }

@@ -1,13 +1,15 @@
-import { useEffect, type RefObject } from "react";
+import { useEffect, useRef, type HTMLAttributes, type ReactNode, type RefObject } from "react";
 
-const THRESHOLD = 64;
+const THRESHOLD = 52;
 
-/** iOS-style pull-to-refresh on a scroll container. Does not touch V1. */
 export function usePullToRefresh(
   scroller: RefObject<HTMLElement | null>,
   onRefresh: () => void,
   enabled: boolean,
 ) {
+  const cb = useRef(onRefresh);
+  cb.current = onRefresh;
+
   useEffect(() => {
     const el = scroller.current;
     if (!el || !enabled) return;
@@ -17,15 +19,16 @@ export function usePullToRefresh(
     const indicator = el.querySelector("[data-pull-refresh]") as HTMLElement | null;
 
     const setDy = (v: number) => {
-      dy = v;
+      dy = Math.max(0, v);
+      const shown = Math.min(72, dy * 0.5);
       if (indicator) {
-        indicator.style.height = `${Math.min(80, Math.max(0, v * 0.45))}px`;
-        indicator.style.opacity = v > 8 ? "1" : "0";
+        indicator.style.height = `${shown}px`;
+        indicator.style.opacity = shown > 6 ? "1" : "0";
       }
     };
 
     const onStart = (e: TouchEvent) => {
-      if (el.scrollTop > 0) {
+      if (el.scrollTop > 1) {
         pulling = false;
         return;
       }
@@ -35,12 +38,18 @@ export function usePullToRefresh(
     };
     const onMove = (e: TouchEvent) => {
       if (!pulling) return;
+      if (el.scrollTop > 1) {
+        pulling = false;
+        setDy(0);
+        return;
+      }
       const y = e.touches[0]?.clientY ?? startY;
-      const next = Math.max(0, y - startY);
-      if (next > 0 && el.scrollTop <= 0) {
+      const next = y - startY;
+      if (next > 8) {
         if (e.cancelable) e.preventDefault();
         setDy(next);
-      } else {
+      } else if (next < 0) {
+        pulling = false;
         setDy(0);
       }
     };
@@ -49,18 +58,43 @@ export function usePullToRefresh(
       pulling = false;
       const fire = dy >= THRESHOLD;
       setDy(0);
-      if (fire) onRefresh();
+      if (fire) cb.current();
     };
 
-    el.addEventListener("touchstart", onStart, { passive: true });
-    el.addEventListener("touchmove", onMove, { passive: false });
-    el.addEventListener("touchend", onEnd);
-    el.addEventListener("touchcancel", onEnd);
+    el.addEventListener("touchstart", onStart, { passive: true, capture: true });
+    el.addEventListener("touchmove", onMove, { passive: false, capture: true });
+    el.addEventListener("touchend", onEnd, { capture: true });
+    el.addEventListener("touchcancel", onEnd, { capture: true });
     return () => {
-      el.removeEventListener("touchstart", onStart);
-      el.removeEventListener("touchmove", onMove);
-      el.removeEventListener("touchend", onEnd);
-      el.removeEventListener("touchcancel", onEnd);
+      el.removeEventListener("touchstart", onStart, true);
+      el.removeEventListener("touchmove", onMove, true);
+      el.removeEventListener("touchend", onEnd, true);
+      el.removeEventListener("touchcancel", onEnd, true);
+      setDy(0);
     };
-  }, [scroller, onRefresh, enabled]);
+  }, [scroller, enabled]);
+}
+
+export function PullRefresh({
+  onRefresh,
+  enabled = true,
+  className,
+  children,
+  ...rest
+}: {
+  onRefresh: () => void;
+  enabled?: boolean;
+  className?: string;
+  children: ReactNode;
+} & HTMLAttributes<HTMLDivElement>) {
+  const ref = useRef<HTMLDivElement>(null);
+  usePullToRefresh(ref, onRefresh, enabled);
+  return (
+    <div ref={ref} className={className} data-pull-host="1" {...rest}>
+      <div data-pull-refresh className="atalaya-pull" aria-hidden>
+        Soltar para actualizar
+      </div>
+      {children}
+    </div>
+  );
 }
