@@ -59,20 +59,34 @@ export function BestOpportunityCard({
             </p>
           </div>
           <p className={setup.direction === "buy" ? "mt-1 text-sm font-medium text-buy" : "mt-1 text-sm font-medium text-sell"}>
-            {setup.direction === "buy" ? "LARGO" : "CORTO"}
+            {setup.direction === "buy" ? "COMPRA" : "VENTA"}
           </p>
-          <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            <div>
-              <dt className="text-xs text-subtle">Entrada</dt>
+          <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-2 text-sm">
+            <div className="col-span-3">
+              <dt className="text-xs text-subtle">Zona de entrada</dt>
               <dd className="font-mono tabular">
                 {formatPrice(setup.zone.low, asset.digits)} – {formatPrice(setup.zone.high, asset.digits)}
               </dd>
             </div>
             <div>
+              <dt className="text-xs text-subtle">TP1</dt>
+              <dd className="font-mono tabular">{formatPrice(setup.takeProfit1, asset.digits)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-subtle">TP2</dt>
+              <dd className="font-mono tabular">
+                {setup.takeProfit2 != null ? formatPrice(setup.takeProfit2, asset.digits) : "n/d"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-subtle">SL</dt>
+              <dd className="font-mono tabular">{formatPrice(setup.stopLoss, asset.digits)}</dd>
+            </div>
+            <div>
               <dt className="text-xs text-subtle">R:R</dt>
               <dd className="font-mono tabular">1:{setup.riskReward.toFixed(1).replace(".", ",")}</dd>
             </div>
-            <div className="col-span-2">
+            <div className="col-span-3">
               <dt className="text-xs text-subtle">Calidad {setup.quality}</dt>
               <dd className="mt-1 flex gap-1" aria-label={`calidad ${setup.quality}`}>
                 {Array.from({ length: 5 }, (_, i) => (
