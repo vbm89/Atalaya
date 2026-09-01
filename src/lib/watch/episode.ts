@@ -38,6 +38,9 @@ export interface SnapshotDraft {
   evaluatedAtMs: number;
   slot: number;
   episodeId: string | null;
+  /** Episode open wall clock. Copied from signal_episodes.opened_at — not invented. */
+  openedAtMs?: number | null;
+  closedAtMs?: number | null;
 }
 
 export interface FoldInput {

@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   SETUP_CHART_TF,
   activeFrozenOverlay,
+  activeStudyOverlay,
   chartIntentFromAnalysis,
   chartSetupLevels,
   chartSetupLevelsFromFrozen,
@@ -16,6 +17,11 @@ import {
   zoneBandAutoscaleRange,
   chartPriceLineSpecs,
   setupFillBands,
+  interpolateTimeCoordinate,
+  studyHorizonSec,
+  studyStartCaption,
+  studyStartClock,
+  msToUnixSec,
 } from "./setup-overlay.ts";
 import type { AssetAnalysis, SetupProposal } from "../trading/types.ts";
 
@@ -354,5 +360,149 @@ describe("ChartIntent freeze", () => {
     assert.equal(activeFrozenOverlay(freeze, "BTCUSD", "1h"), null);
     assert.equal(activeFrozenOverlay(freeze, "XAUUSD", "15m"), null);
     assert.equal(activeFrozenOverlay(freeze, "WTI", "15m"), null);
+  });
+});
+
+describe("temporal study overlay", () => {
+  it("interpolates 23:03 between 15m bars instead of snapping to a candle", () => {
+    const t0 = 1_000;
+    const t1 = 1_900;
+    const x = interpolateTimeCoordinate(1_180, [
+      { time: t0, x: 10 },
+      { time: t1, x: 100 },
+    ]);
+    assert.ok(x != null);
+    assert.equal(Math.round(x), 28);
+  });
+
+  it("extends the right edge past the last bar as time passes", () => {
+    const x = interpolateTimeCoordinate(2_800, [
+      { time: 1_000, x: 10 },
+      { time: 1_900, x: 100 },
+    ]);
+    assert.ok(x != null);
+    assert.ok(x > 100);
+  });
+
+  it("uses episode.openedAtMs, never openedSlot", () => {
+    const openedAtMs = Date.parse("2026-09-01T21:03:00Z");
+    const f = frozenLevelsFromEpisode(
+      {
+        episodeId: "ep-study-1",
+        assetId: "US100",
+        live: true,
+        state: "map",
+        direction: "sell",
+        zoneLow: 4000,
+        zoneHigh: 4005,
+        sl: 4010,
+        tp1: 3990,
+        tp2: 3980,
+        openedAtMs,
+        closedAtMs: null,
+        setup: setup({
+          direction: "sell",
+          zone: { low: 4000, high: 4005 },
+          stopLoss: 4010,
+          takeProfit1: 3990,
+          takeProfit2: 3980,
+        }),
+      },
+      2,
+    );
+    assert.ok(f);
+    assert.equal(f.openedAtMs, openedAtMs);
+    assert.equal(f.openedAtMs, Date.parse("2026-09-01T21:03:00Z"));
+    const lv = chartSetupLevelsFromFrozen(f);
+    assert.equal(lv.openedAtSec, Math.floor(openedAtMs / 1000));
+    assert.equal(lv.studyLive, true);
+    assert.equal(studyStartClock(openedAtMs), "23:03");
+    assert.equal(studyStartCaption(openedAtMs), "Inicio de estudio · 23:03");
+    const nowMs = Date.parse("2026-09-01T21:30:00Z");
+    assert.equal(studyHorizonSec(lv, nowMs), nowMs / 1000);
+    const sell = setupFillBands(lv);
+    assert.equal(sell.find((b) => b.kind === "risk")?.low, 4005);
+    assert.equal(sell.find((b) => b.kind === "risk")?.high, 4010);
+    assert.equal(sell.find((b) => b.kind === "zone")?.low, 4000);
+    assert.equal(sell.find((b) => b.kind === "zone")?.high, 4005);
+    assert.equal(sell.find((b) => b.kind === "reward")?.high, 4000);
+    assert.equal(sell.find((b) => b.kind === "reward")?.low, 3980);
+  });
+
+  it("buy geometry is SL below the zone and reward above", () => {
+    const openedAtMs = Date.parse("2026-09-01T21:03:00Z");
+    const lv = chartSetupLevels(
+      asset({
+        setupState: "map",
+        setup: setup({
+          direction: "buy",
+          zone: { low: 4000, high: 4005 },
+          stopLoss: 3990,
+          takeProfit1: 4015,
+          takeProfit2: 4025,
+        }),
+      }),
+      { openedAtMs, closedAtMs: null },
+    )!;
+    const fills = setupFillBands(lv);
+    assert.equal(fills.find((b) => b.kind === "risk")?.low, 3990);
+    assert.equal(fills.find((b) => b.kind === "risk")?.high, 4000);
+    assert.equal(fills.find((b) => b.kind === "reward")?.low, 4005);
+    assert.equal(fills.find((b) => b.kind === "reward")?.high, 4025);
+  });
+
+  it("closed episode freezes the right edge at closedAt, not now", () => {
+    const openedAtMs = Date.parse("2026-09-01T21:03:00Z");
+    const closedAtMs = Date.parse("2026-09-01T21:45:00Z");
+    const later = Date.parse("2026-09-01T22:10:00Z");
+    const lv = chartSetupLevelsFromFrozen(
+      frozenLevelsFromEpisode(
+        {
+          episodeId: "ep-closed",
+          assetId: "BTCUSD",
+          live: false,
+          state: "wait",
+          direction: "sell",
+          zoneLow: 77800,
+          zoneHigh: 77900,
+          sl: 78150,
+          tp1: 77500,
+          tp2: 77100,
+          openedAtMs,
+          closedAtMs,
+          setup: setup({ state: "entry" }),
+        },
+        2,
+      )!,
+    );
+    assert.equal(lv.studyLive, false);
+    assert.equal(studyHorizonSec(lv, later), closedAtMs / 1000);
+  });
+
+  it("stub capturedAtMs is not treated as a study start", () => {
+    const f = frozenLevelsFromSetup(asset({ setupState: "pending", setup: setup() }));
+    assert.equal(f?.openedAtMs, null);
+    assert.equal(msToUnixSec(1), null);
+    assert.equal(msToUnixSec(1_780_000_000), null);
+  });
+
+  it("study overlay follows the asset across TF; freeze overlay stays on the episode TF", () => {
+    const freeze = frozenLevelsFromSetup(
+      asset({ setupState: "pending", setup: setup() }),
+      "live",
+      { openedAtMs: Date.parse("2026-09-01T21:03:00Z"), closedAtMs: null },
+    );
+    assert.ok(freeze);
+    assert.equal(activeStudyOverlay(freeze, "BTCUSD")?.assetId, "BTCUSD");
+    assert.equal(activeStudyOverlay(freeze, "XAUUSD"), null);
+    assert.equal(activeFrozenOverlay(freeze, "BTCUSD", "5m"), null);
+  });
+
+  it("levels key ignores the moving now, so ticks do not rebuild the overlay", () => {
+    const clock = { openedAtMs: Date.parse("2026-09-01T21:03:00Z"), closedAtMs: null };
+    const a = chartSetupLevels(asset({ setupState: "map", setup: setup() }), clock)!;
+    const b = chartSetupLevels(asset({ setupState: "map", setup: setup(), lastDataAt: "later" }), clock)!;
+    assert.equal(setupLevelsKey(a), setupLevelsKey(b));
+    assert.notEqual(studyHorizonSec(a, clock.openedAtMs + 60_000), studyHorizonSec(a, clock.openedAtMs + 1_800_000));
   });
 });

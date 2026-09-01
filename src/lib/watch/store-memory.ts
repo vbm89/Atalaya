@@ -290,7 +290,16 @@ export function createMemoryStore(): WatchStore {
     },
 
     async listSnapshots() {
-      return [...snapshots.values()].sort((a, b) => a.assetId.localeCompare(b.assetId));
+      return [...snapshots.values()]
+        .sort((a, b) => a.assetId.localeCompare(b.assetId))
+        .map((s) => {
+          const ep = s.episodeId ? episodes.get(s.episodeId) : undefined;
+          return {
+            ...s,
+            openedAtMs: ep?.openedAtMs ?? s.openedAtMs ?? null,
+            closedAtMs: ep?.closedAtMs ?? s.closedAtMs ?? null,
+          };
+        });
     },
 
     async countOpenEpisodes() {

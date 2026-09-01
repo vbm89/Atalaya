@@ -19,7 +19,7 @@ import {
 import { ema, rsiWilder } from "@/lib/trading/indicators";
 import type { ChartOverlays, ChartSeries } from "@/lib/chart/types";
 import type { TickHandler } from "@/lib/chart/live";
-import { chartSetupLevels, setupAutoscaleLocked, setupLevelsKey, chartPriceLineSpecs, setupFillBands, type ChartSetupLevels } from "@/lib/chart/setup-overlay";
+import { chartSetupLevels, setupLevelsKey, chartPriceLineSpecs, setupFillBands, studyStartCaption, studyStartClock, type ChartSetupLevels, type StudyClock } from "@/lib/chart/setup-overlay";
 import {
   CHART_BAR_SPACING,
   CHART_MIN_BAR_SPACING,
@@ -34,7 +34,7 @@ import {
 } from "@/lib/chart/view";
 import type { AssetAnalysis, Candle } from "@/lib/trading/types";
 import { formatPrice } from "@/lib/utils";
-import { ZoneBand } from "./zone-band";
+import { StudyOverlay } from "./study-overlay";
 
 type CandleApi = ISeriesApi<"Candlestick">;
 type LineApi = ISeriesApi<"Line">;
@@ -65,6 +65,7 @@ function colors() {
     sell: cssVar("--color-sell", "#c45c5c"),
     wait: cssVar("--color-wait", "#c4a35a"),
     map: cssVar("--color-map", "#8fa3b8"),
+    entry: "#4d8ec9",
     accent: cssVar("--color-accent", "#c5ccd6"),
   };
 }
@@ -156,9 +157,10 @@ const CandleChartInner = forwardRef<
     getBars: () => Candle[];
     hudEl?: HTMLElement | null;
     visibleLevels?: { zone: boolean; sl: boolean; tp1: boolean; tp2: boolean };
+    studyClock?: StudyClock | null;
   }
 >(function CandleChartInner(
-  { series, overlays, analysis, frozenLevels, focusSetup, subscribeTick, getBars, hudEl, visibleLevels },
+  { series, overlays, analysis, frozenLevels, focusSetup, subscribeTick, getBars, hudEl, visibleLevels, studyClock },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -171,7 +173,7 @@ const CandleChartInner = forwardRef<
   const ema200Ref = useRef<LineApi | null>(null);
   const rsiRef = useRef<LineApi | null>(null);
   const linesRef = useRef<IPriceLine[]>([]);
-  const zoneRef = useRef<ZoneBand | null>(null);
+  const zoneRef = useRef<StudyOverlay | null>(null);
   const viewKeyRef = useRef("");
   const dataKeyRef = useRef("");
   const levelsKeyRef = useRef("");
@@ -179,7 +181,7 @@ const CandleChartInner = forwardRef<
   const marginKeyRef = useRef("");
   const viewTimerRef = useRef(0);
   const [chartBoot, setChartBoot] = useState(0);
-  const levels = frozenLevels ?? (analysis ? chartSetupLevels(analysis) : null);
+  const levels = frozenLevels ?? (analysis ? chartSetupLevels(analysis, studyClock) : null);
   const visKey = `${visibleLevels?.zone !== false ? 1 : 0}${visibleLevels?.sl !== false ? 1 : 0}${visibleLevels?.tp1 !== false ? 1 : 0}${visibleLevels?.tp2 !== false ? 1 : 0}`;
   const overlayKey = `${setupLevelsKey(levels)}:${visKey}`;
 
@@ -575,19 +577,28 @@ const CandleChartInner = forwardRef<
       }
 
       if (lv) {
-        const extras = [lv.stopLoss, lv.takeProfit1, lv.entry];
-        if (lv.takeProfit2 != null) extras.push(lv.takeProfit2);
-        const fills = setupFillBands(lv, visibleLevels).map((b) => ({
-          low: b.low,
-          high: b.high,
-          fill: withAlpha(
-            b.kind === "risk" ? c.sell : b.kind === "reward" ? c.buy : c.map,
-            b.kind === "zone" ? 0.07 : 0.05,
-          ),
-        }));
-        const band = new ZoneBand(fills, extras, setupAutoscaleLocked(series.assetId));
-        candle.attachPrimitive(band);
-        zoneRef.current = band;
+        if (lv.openedAtSec != null) {
+          const fills = setupFillBands(lv, visibleLevels).map((b) => ({
+            low: b.low,
+            high: b.high,
+            fill: withAlpha(
+              b.kind === "risk" ? c.sell : b.kind === "reward" ? c.buy : c.entry,
+              b.kind === "zone" ? 0.1 : 0.08,
+            ),
+          }));
+          const openedMs = lv.openedAtSec * 1000;
+          const overlay = new StudyOverlay({
+            fills,
+            startSec: lv.openedAtSec,
+            closedAtSec: lv.closedAtSec,
+            live: lv.studyLive,
+            lineColor: c.entry,
+            label: studyStartCaption(openedMs),
+            axisClock: studyStartClock(openedMs),
+          });
+          candle.attachPrimitive(overlay);
+          zoneRef.current = overlay;
+        }
 
         const add = (price: number, color: string) => {
           if (!Number.isFinite(price)) return;
@@ -603,7 +614,7 @@ const CandleChartInner = forwardRef<
           );
         };
         const toneColor = (tone: "sl" | "tp" | "zone") =>
-          tone === "sl" ? c.sell : tone === "tp" ? c.buy : c.map;
+          tone === "sl" ? c.sell : tone === "tp" ? c.buy : c.entry;
         for (const spec of chartPriceLineSpecs(lv, visibleLevels)) {
           add(spec.price, toneColor(spec.tone));
         }
@@ -678,6 +689,8 @@ const CandleChartInner = forwardRef<
           data-chart-tp1={levels.labelTp1}
           data-chart-tp2={levels.labelTp2 ?? ""}
           data-chart-freeze={frozenLevels ? "1" : "0"}
+          data-study-start={levels.openedAtSec ?? ""}
+          data-study-live={levels.studyLive ? "1" : "0"}
           className="sr-only"
         />
       ) : null}

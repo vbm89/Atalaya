@@ -23,7 +23,7 @@ import {
   type ChartTf,
   type LiveStatus,
 } from "@/lib/chart/types";
-import { SETUP_CHART_TF, hasChartableSetup, setupStateCaption, activeFrozenOverlay, chartSetupLevelsFromFrozen, type ChartIntent, type FrozenChartLevels } from "@/lib/chart/setup-overlay";
+import { SETUP_CHART_TF, hasChartableSetup, setupStateCaption, activeStudyOverlay, chartSetupLevelsFromFrozen, type ChartIntent, type FrozenChartLevels, type StudyClock } from "@/lib/chart/setup-overlay";
 import { CHART_ASSET_BLURB } from "@/lib/chart/labels";
 import { ASSETS } from "@/lib/trading/assets";
 import type { AnalysisSnapshot, AssetId } from "@/lib/trading/types";
@@ -103,11 +103,13 @@ export const ChartsScreen = memo(function ChartsScreen({
   intent,
   onBack,
   onRefresh,
+  studyClockByAsset,
 }: {
   snapshot: AnalysisSnapshot | undefined;
   intent: ChartIntent | null;
   onBack: () => void;
   onRefresh?: () => void;
+  studyClockByAsset?: Partial<Record<AssetId, StudyClock>>;
 }) {
   const [assetId, setAssetId] = useState<AssetId | null>(intent?.assetId ?? null);
   const [tf, setTf] = useState<ChartTf>(intent?.tf ?? SETUP_CHART_TF);
@@ -168,6 +170,7 @@ export const ChartsScreen = memo(function ChartsScreen({
       favs={favs}
       levelsOn={levelsOn}
       freeze={freeze}
+      studyClock={assetId != null ? studyClockByAsset?.[assetId] ?? null : null}
       chartRef={chartRef}
       hudEl={hudEl}
       onBackToList={() => {
@@ -317,6 +320,7 @@ function ChartWorkspace({
   favs,
   levelsOn,
   freeze,
+  studyClock,
   chartRef,
   hudEl,
   onBackToList,
@@ -335,6 +339,7 @@ function ChartWorkspace({
   favs: AssetId[];
   levelsOn: { zone: boolean; sl: boolean; tp1: boolean; tp2: boolean };
   freeze: FrozenChartLevels | null;
+  studyClock?: StudyClock | null;
   chartRef: RefObject<CandleChartHandle | null>;
   hudEl: RefObject<HTMLSpanElement | null>;
   onBackToList: () => void;
@@ -372,8 +377,14 @@ function ChartWorkspace({
       ? "closed"
       : live.status
     : "connecting";
-  const freezeActive = activeFrozenOverlay(freeze, assetId, tf);
-  const freezeLevels = freezeActive ? chartSetupLevelsFromFrozen(freezeActive) : null;
+  const freezeForAsset = activeStudyOverlay(freeze, assetId);
+  const freezeLevels = freezeForAsset
+    ? chartSetupLevelsFromFrozen({
+        ...freezeForAsset,
+        openedAtMs: freezeForAsset.openedAtMs ?? studyClock?.openedAtMs ?? null,
+        closedAtMs: freezeForAsset.closedAtMs ?? studyClock?.closedAtMs ?? null,
+      })
+    : null;
   const hasSetup = freezeLevels != null || (analysis != null && hasChartableSetup(analysis));
   const focusSetup = freezeLevels != null || hasSetup;
   const sourceBits = series
@@ -511,6 +522,7 @@ function ChartWorkspace({
             overlays={overlays}
             analysis={freeze && freeze.assetId === assetId ? null : analysis}
             frozenLevels={freezeLevels}
+            studyClock={studyClock ?? null}
             focusSetup={focusSetup}
             subscribeTick={live.subscribe}
             getBars={live.getBars}
@@ -596,7 +608,7 @@ function ChartWorkspace({
 
       {menu === "objects" ? (
         <Panel title="Objetos" onClose={() => onMenu(null)}>
-          <ObjectsFromEngine analysis={analysis} freeze={freezeActive} tf={tf} />
+          <ObjectsFromEngine analysis={analysis} freeze={freezeForAsset} tf={tf} />
         </Panel>
       ) : null}
 

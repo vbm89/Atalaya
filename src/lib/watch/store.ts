@@ -179,6 +179,8 @@ function rowToSnapshot(r: Record<string, unknown>): SnapshotDraft {
     evaluatedAtMs: ms(r.evaluated_at),
     slot: num(r.slot),
     episodeId: r.episode_id == null ? null : String(r.episode_id),
+    openedAtMs: r.ep_opened_at == null ? null : ms(r.ep_opened_at),
+    closedAtMs: r.ep_closed_at == null ? null : ms(r.ep_closed_at),
   };
 }
 
@@ -362,7 +364,10 @@ export function createPgStore(sql: SqlQuery): WatchStore {
 
     async listSnapshots() {
       const rows = await sql.query<Record<string, unknown>>(
-        `select * from watch_snapshots order by asset_id`,
+        `select s.*, e.opened_at as ep_opened_at, e.closed_at as ep_closed_at
+         from watch_snapshots s
+         left join signal_episodes e on e.episode_id = s.episode_id
+         order by s.asset_id`,
       );
       return rows.map(rowToSnapshot);
     },

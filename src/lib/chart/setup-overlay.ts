@@ -6,6 +6,8 @@ import type { EpisodeFreeze } from "../watch/freeze";
 /** V1 trigger is always a 15M close. Zone/SL/TP are price levels, not TF-bound. */
 export const SETUP_CHART_TF: ChartTf = "15m";
 
+const MADRID = "Europe/Madrid";
+
 /** Temporalidad inicial de VER GRÁFICO: la del trigger del motor, no una elección de UI. */
 export function setupChartTf(_asset: AssetAnalysis): ChartTf {
   return SETUP_CHART_TF;
@@ -13,6 +15,11 @@ export function setupChartTf(_asset: AssetAnalysis): ChartTf {
 
 export function hasChartableSetup(asset: AssetAnalysis): boolean {
   return asset.setup != null;
+}
+
+export interface StudyClock {
+  openedAtMs: number;
+  closedAtMs: number | null;
 }
 
 export interface ChartSetupLevels {
@@ -32,6 +39,11 @@ export interface ChartSetupLevels {
   labelTp2: string | null;
   labelInv: string;
   xauOnProxy: boolean;
+  /** Unix seconds. From episode.openedAtMs — not openedSlot, not last. */
+  openedAtSec: number | null;
+  /** Unix seconds when the episode closed. Null while the study is live. */
+  closedAtSec: number | null;
+  studyLive: boolean;
 }
 
 /**
@@ -53,6 +65,8 @@ export interface FrozenChartLevels {
   invalidation: number;
   digits: number;
   basis: number | null;
+  openedAtMs: number | null;
+  closedAtMs: number | null;
 }
 
 export interface ChartIntent {
@@ -62,21 +76,51 @@ export interface ChartIntent {
   freeze: FrozenChartLevels | null;
 }
 
+export function msToUnixSec(ms: number | null | undefined): number | null {
+  if (ms == null || !Number.isFinite(ms) || ms < 1_000_000_000_000) return null;
+  return Math.floor(ms / 1000);
+}
+
+export function studyStartClock(openedAtMs: number): string {
+  return new Intl.DateTimeFormat("es-ES", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: MADRID,
+  }).format(new Date(openedAtMs));
+}
+
+/** Discrete label at the study-start vertical. No legend box. */
+export function studyStartCaption(openedAtMs: number): string {
+  return `Inicio de estudio · ${studyStartClock(openedAtMs)}`;
+}
+
 /**
  * Map engine setup → chart coordinates.
  * XAU cards show SPOT; candles are PROXY, so we add basis back (the reverse of
  * applyBasisToSetup). No new levels are invented.
  */
-export function chartSetupLevels(asset: AssetAnalysis): ChartSetupLevels | null {
+export function chartSetupLevels(
+  asset: AssetAnalysis,
+  clock?: StudyClock | null,
+): ChartSetupLevels | null {
   const setup = asset.setup;
   if (!setup) return null;
-  return levelsFromSetup(setup, asset.setupState, asset.digits, asset.id === "XAUUSD" ? asset.basis : null);
+  return levelsFromSetup(
+    setup,
+    asset.setupState,
+    asset.digits,
+    asset.id === "XAUUSD" ? asset.basis : null,
+    clock,
+  );
 }
 
 export function chartSetupLevelsFromFrozen(f: FrozenChartLevels): ChartSetupLevels {
   const shift = f.assetId === "XAUUSD" && f.basis != null && Number.isFinite(f.basis) ? f.basis : 0;
   const toChart = (n: number) => n + shift;
   const d = f.digits;
+  const openedAtSec = msToUnixSec(f.openedAtMs);
+  const closedAtSec = msToUnixSec(f.closedAtMs);
   return {
     state: f.state,
     direction: f.direction,
@@ -94,6 +138,9 @@ export function chartSetupLevelsFromFrozen(f: FrozenChartLevels): ChartSetupLeve
     labelTp2: f.takeProfit2 != null ? formatPrice(f.takeProfit2, d) : null,
     labelInv: formatPrice(f.invalidation, d),
     xauOnProxy: shift !== 0,
+    openedAtSec,
+    closedAtSec,
+    studyLive: openedAtSec != null && closedAtSec == null,
   };
 }
 
@@ -102,12 +149,15 @@ function levelsFromSetup(
   assetState: SetupState,
   digits: number,
   basis: number | null | undefined,
+  clock?: StudyClock | null,
 ): ChartSetupLevels {
   const d = digits;
   const shift = basis != null && Number.isFinite(basis) ? basis : 0;
   const toChart = (n: number) => n + shift;
   const entrySpot = setup.direction === "sell" ? setup.zone.low : setup.zone.high;
   const state: SetupState = assetState === "wait" ? setup.state : assetState;
+  const openedAtSec = msToUnixSec(clock?.openedAtMs);
+  const closedAtSec = msToUnixSec(clock?.closedAtMs);
   return {
     state,
     direction: setup.direction,
@@ -125,12 +175,16 @@ function levelsFromSetup(
     labelTp2: setup.takeProfit2 != null ? formatPrice(setup.takeProfit2, d) : null,
     labelInv: formatPrice(setup.invalidation, d),
     xauOnProxy: shift !== 0,
+    openedAtSec,
+    closedAtSec,
+    studyLive: openedAtSec != null && closedAtSec == null,
   };
 }
 
 export function frozenLevelsFromSetup(
   asset: AssetAnalysis,
   episodeId = "live",
+  clock?: StudyClock | null,
 ): FrozenChartLevels | null {
   const setup = asset.setup;
   if (!setup) return null;
@@ -151,6 +205,8 @@ export function frozenLevelsFromSetup(
     invalidation: setup.invalidation,
     digits: asset.digits,
     basis: asset.id === "XAUUSD" ? asset.basis : null,
+    openedAtMs: clock?.openedAtMs ?? null,
+    closedAtMs: clock?.closedAtMs ?? null,
   };
 }
 
@@ -168,6 +224,8 @@ export function frozenLevelsFromEpisode(
     tp2: number | null;
     setup: SetupProposal | null;
     freeze?: EpisodeFreeze | null;
+    openedAtMs?: number | null;
+    closedAtMs?: number | null;
   },
   digits: number,
 ): FrozenChartLevels | null {
@@ -185,6 +243,18 @@ export function frozenLevelsFromEpisode(
       : ep.state === "wait"
         ? "entry"
         : ep.state;
+  const openedAtMs =
+    ep.openedAtMs != null && Number.isFinite(ep.openedAtMs) && ep.openedAtMs >= 1_000_000_000_000
+      ? ep.openedAtMs
+      : ep.freeze?.capturedAtMs != null &&
+          Number.isFinite(ep.freeze.capturedAtMs) &&
+          ep.freeze.capturedAtMs >= 1_000_000_000_000
+        ? ep.freeze.capturedAtMs
+        : null;
+  const closedAtMs =
+    ep.closedAtMs != null && Number.isFinite(ep.closedAtMs) && ep.closedAtMs >= 1_000_000_000_000
+      ? ep.closedAtMs
+      : null;
   return {
     episodeId: ep.episodeId,
     assetId: ep.assetId,
@@ -200,6 +270,8 @@ export function frozenLevelsFromEpisode(
     invalidation: setup?.invalidation ?? ep.sl,
     digits,
     basis: ep.assetId === "XAUUSD" ? (ep.freeze?.basis ?? null) : null,
+    openedAtMs,
+    closedAtMs: ep.live ? null : closedAtMs,
   };
 }
 
@@ -215,8 +287,21 @@ export function activeFrozenOverlay(
   return freeze;
 }
 
-export function chartIntentFromAnalysis(asset: AssetAnalysis): ChartIntent | null {
-  const freeze = frozenLevelsFromSetup(asset);
+/** Study bands are price+time; they stay valid on any TF of the same asset. */
+export function activeStudyOverlay(
+  freeze: FrozenChartLevels | null | undefined,
+  assetId: AssetId,
+): FrozenChartLevels | null {
+  if (!freeze) return null;
+  if (freeze.assetId !== assetId) return null;
+  return freeze;
+}
+
+export function chartIntentFromAnalysis(
+  asset: AssetAnalysis,
+  clock?: StudyClock | null,
+): ChartIntent | null {
+  const freeze = frozenLevelsFromSetup(asset, "live", clock);
   if (!freeze) return null;
   return { assetId: asset.id, tf: freeze.tf, nonce: Date.now(), freeze };
 }
@@ -231,7 +316,7 @@ export function setupStateCaption(state: SetupState): string {
 /** Stable key so the chart does not rebuild zone/SL/TP when the snapshot object is new but levels are the same. */
 export function setupLevelsKey(lv: ChartSetupLevels | null): string {
   if (!lv) return "";
-  return `${lv.state}|${lv.direction}|${lv.zoneLow}|${lv.zoneHigh}|${lv.stopLoss}|${lv.takeProfit1}|${lv.takeProfit2 ?? ""}|${lv.invalidation}`;
+  return `${lv.state}|${lv.direction}|${lv.zoneLow}|${lv.zoneHigh}|${lv.stopLoss}|${lv.takeProfit1}|${lv.takeProfit2 ?? ""}|${lv.invalidation}|${lv.openedAtSec ?? ""}|${lv.closedAtSec ?? ""}`;
 }
 
 function includeIfNear(
@@ -356,4 +441,55 @@ export function setupFillBands(lv: ChartSetupLevels, visible?: ChartLevelVisibil
     out.push({ low: Math.min(lv.zoneHigh, tp), high: Math.max(lv.zoneHigh, tp), kind: "reward" });
   }
   return out;
+}
+
+export interface TimePointX {
+  time: number;
+  x: number;
+}
+
+/**
+ * Map a unix-seconds timestamp onto the time axis, interpolating between bars.
+ * Does not snap 23:03 onto the 23:00 or 23:15 candle.
+ */
+export function interpolateTimeCoordinate(
+  timeSec: number,
+  points: readonly TimePointX[],
+): number | null {
+  if (!points.length || !Number.isFinite(timeSec)) return null;
+  const first = points[0]!;
+  const last = points[points.length - 1]!;
+  if (points.length === 1) return first.x;
+  if (timeSec <= first.time) {
+    const next = points[1]!;
+    const dt = next.time - first.time;
+    if (dt === 0) return first.x;
+    return first.x + ((timeSec - first.time) / dt) * (next.x - first.x);
+  }
+  if (timeSec >= last.time) {
+    const prev = points[points.length - 2]!;
+    const dt = last.time - prev.time;
+    if (dt === 0) return last.x;
+    return last.x + ((timeSec - last.time) / dt) * (last.x - prev.x);
+  }
+  let lo = 0;
+  let hi = points.length - 1;
+  while (lo + 1 < hi) {
+    const mid = (lo + hi) >> 1;
+    if (points[mid]!.time <= timeSec) lo = mid;
+    else hi = mid;
+  }
+  const a = points[lo]!;
+  const b = points[hi]!;
+  const dt = b.time - a.time;
+  if (dt === 0) return a.x;
+  return a.x + ((timeSec - a.time) / dt) * (b.x - a.x);
+}
+
+/** Right edge: now while live, closedAt when the episode has ended. */
+export function studyHorizonSec(lv: ChartSetupLevels, nowMs: number): number | null {
+  if (lv.openedAtSec == null) return null;
+  if (lv.closedAtSec != null) return Math.max(lv.openedAtSec, lv.closedAtSec);
+  if (!Number.isFinite(nowMs) || nowMs <= 0) return lv.openedAtSec;
+  return Math.max(lv.openedAtSec, nowMs / 1000);
 }
