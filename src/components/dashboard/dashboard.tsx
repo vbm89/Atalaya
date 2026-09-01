@@ -563,7 +563,7 @@ export function Dashboard() {
               }}
             >
               <GraduationCap className="size-4 text-muted" />
-              Escuela
+              Aprendizaje
             </button>
             <button
               type="button"

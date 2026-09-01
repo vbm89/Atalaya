@@ -1,6 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { getWatchHistory } from "@/lib/watch/watch.fn";
 import { learningCasesFromHistory } from "@/lib/learn/case";
+import {
+  LEARN_HISTORY_WINDOW,
+  buildEvolution,
+  type AssetEvolution,
+  type EvolutionPhase,
+  type EvolutionReport,
+} from "@/lib/learn/evolution";
 import { detectFindings, type Finding } from "@/lib/learn/patterns";
 import { actionableProposals, proposalsFromCases, type Proposal } from "@/lib/learn/proposals";
 import { runValidation, type ValidationRecord } from "@/lib/learn/validate";
@@ -12,7 +19,9 @@ import {
   summarize,
   type BucketStats,
 } from "@/lib/learn/stats";
+import { Sparkline } from "./sparkline";
 import { GlossaryList } from "./explain-sheet";
+import { cn } from "@/lib/utils";
 
 export function LearnPanel() {
   const q = useQuery({
@@ -26,16 +35,28 @@ export function LearnPanel() {
   const patterns = q.data ? detectFindings(cases) : null;
   const proposals = q.data ? actionableProposals(proposalsFromCases(cases, Date.now())) : null;
   const validation = q.data ? runValidation(cases, 0) : null;
+  const evolution =
+    q.data && patterns && validation ? buildEvolution(cases, patterns, validation) : null;
 
   return (
     <div className="mt-4 space-y-5" data-learn-panel>
       <p className="text-sm leading-relaxed text-muted">
-        Escuela de Atalaya. Explica las decisiones de V1. No genera señales. No cambia el motor.
+        Aprendizaje de Atalaya. Explica las decisiones de V1. No genera señales. No cambia el motor.
       </p>
       <p className="text-xs leading-relaxed text-subtle">
-        En cada ficha, «¿Por qué?» abre la explicación del análisis actual. Aquí están los conceptos, la
-        memoria y los hallazgos históricos.
+        El aprendizaje es análisis histórico. No modifica las decisiones de V1.
       </p>
+
+      <section className="space-y-3" data-learn-evolution>
+        <h2 className="text-xs font-medium tracking-wider text-muted uppercase">
+          Evolución del aprendizaje
+        </h2>
+        {q.isLoading ? <p className="text-sm text-subtle">Cargando episodios…</p> : null}
+        {q.isError ? (
+          <p className="text-sm text-sell">No se ha podido leer el historial. No se inventan estadísticas.</p>
+        ) : null}
+        {evolution ? <EvolutionView report={evolution} /> : null}
+      </section>
 
       <section className="space-y-3" data-learn-memory>
         <h2 className="text-xs font-medium tracking-wider text-muted uppercase">Memoria</h2>
@@ -66,6 +87,149 @@ export function LearnPanel() {
         <GlossaryList />
       </section>
     </div>
+  );
+}
+
+function phaseTone(id: EvolutionPhase["id"]): string {
+  if (id === "sin_muestra") return "bg-subtle";
+  if (id === "recopilando") return "bg-wait";
+  if (id === "observacion") return "bg-map";
+  if (id === "patron_potencial") return "bg-buy";
+  return "bg-accent";
+}
+
+function GateBar({ current, target, reached }: { current: number; target: number; reached: boolean }) {
+  const pct = target <= 0 ? 0 : Math.min(100, Math.round((current / target) * 100));
+  return (
+    <div className="mt-2">
+      <div
+        className="h-1.5 overflow-hidden rounded-full bg-border"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={target}
+        aria-valuenow={current}
+        aria-label="Progreso hacia el siguiente umbral de evidencia"
+      >
+        <div
+          className={cn("h-full rounded-full", reached ? "bg-accent" : "bg-map")}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function EvolutionView({ report }: { report: EvolutionReport }) {
+  const spark =
+    report.series.length === 0
+      ? []
+      : report.series.length === 1
+        ? [0, report.series[0]!.trainable]
+        : report.series.map((d) => d.trainable);
+  return (
+    <div className="space-y-3">
+      <article className="rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]">
+        <p className="text-xs font-medium tracking-wider text-muted uppercase">Estado general</p>
+        <div className="mt-2 flex items-center gap-2">
+          <span className={cn("size-2.5 shrink-0 rounded-full", phaseTone(report.phase.id))} />
+          <p className="text-sm font-medium">{report.phase.label}</p>
+        </div>
+        <p className="mt-1 text-xs leading-relaxed text-muted">{report.phase.hint}</p>
+        <p className="mt-3 text-xs text-muted">{report.gate.label}</p>
+        <p className="tabular text-sm">
+          {report.gate.current} / {report.gate.target}
+          <span className="text-muted"> casos decididos (TP1+TP2+SL)</span>
+        </p>
+        <GateBar current={report.gate.current} target={report.gate.target} reached={report.gate.reached} />
+        <p className="mt-2 text-xs leading-relaxed text-wait">{report.barNotice}</p>
+        <p className="mt-2 text-xs text-subtle">
+          Ventana: últimos {LEARN_HISTORY_WINDOW} episodios
+          {report.truncated ? " · puede haber anteriores no incluidos" : ""}.
+        </p>
+      </article>
+
+      <div className="grid grid-cols-2 gap-2">
+        <StatTile label="Episodios registrados" value={report.observed} />
+        <StatTile label="Episodios trainable" value={report.trainable} />
+        <StatTile label="Patrones detectados" value={report.detected} />
+        <StatTile label="Patrones validados" value={report.validated} />
+      </div>
+
+      <div className="space-y-2">
+        {report.byAsset.map((a) => (
+          <AssetEvolutionCard key={a.assetId} asset={a} />
+        ))}
+      </div>
+
+      <article className="rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]">
+        <p className="text-xs font-medium tracking-wider text-muted uppercase">Evolución temporal</p>
+        {report.series.length === 0 ? (
+          <p className="mt-2 text-sm text-subtle">Todavía no hay fechas de apertura para dibujar una serie.</p>
+        ) : (
+          <>
+            <p className="mt-2 text-xs text-muted">Casos trainable acumulados (Madrid)</p>
+            <Sparkline values={spark} positive={null} />
+            <ul className="mt-2 space-y-1">
+              {report.series.map((d) => (
+                <li key={d.day} className="flex justify-between gap-3 text-xs text-muted">
+                  <span>{d.label}</span>
+                  <span className="tabular">
+                    {d.observed} reg · {d.trainable} train · {d.detected} det · {d.validated} val
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </article>
+
+      <p className="text-xs leading-relaxed text-wait">{report.notice}</p>
+    </div>
+  );
+}
+
+function StatTile({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-[var(--radius-md)] bg-elevated px-3 py-3 shadow-[var(--shadow-border)]">
+      <p className="text-xs text-muted">{label}</p>
+      <p className="mt-1 tabular text-xl font-medium">{value}</p>
+    </div>
+  );
+}
+
+function AssetEvolutionCard({ asset }: { asset: AssetEvolution }) {
+  return (
+    <article
+      className="rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]"
+      data-learn-asset={asset.assetId}
+    >
+      <div className="flex items-center gap-2">
+        <span className={cn("size-2 shrink-0 rounded-full", phaseTone(asset.phase.id))} />
+        <p className="text-sm font-medium">{asset.assetId}</p>
+      </div>
+      <p className="mt-1 text-xs text-wait">{asset.phase.label}</p>
+      <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
+        <div className="flex justify-between gap-2">
+          <dt className="text-muted">Registrados</dt>
+          <dd className="tabular">{asset.observed}</dd>
+        </div>
+        <div className="flex justify-between gap-2">
+          <dt className="text-muted">Trainable</dt>
+          <dd className="tabular">{asset.trainable}</dd>
+        </div>
+        <div className="flex justify-between gap-2">
+          <dt className="text-muted">Detectados</dt>
+          <dd className="tabular">{asset.detected}</dd>
+        </div>
+        <div className="flex justify-between gap-2">
+          <dt className="text-muted">Validados</dt>
+          <dd className="tabular">{asset.validated}</dd>
+        </div>
+      </dl>
+      <p className="mt-2 text-xs text-subtle">
+        {asset.gate.current} / {asset.gate.target} decididos
+      </p>
+    </article>
   );
 }
 
