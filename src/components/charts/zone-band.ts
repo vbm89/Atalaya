@@ -9,6 +9,7 @@ import type {
   Time,
 } from "lightweight-charts";
 import type { CanvasRenderingTarget2D } from "fancy-canvas";
+import { zoneBandAutoscaleRange } from "@/lib/chart/setup-overlay";
 
 class BandRenderer implements IPrimitivePaneRenderer {
   constructor(
@@ -74,11 +75,13 @@ export class ZoneBand implements ISeriesPrimitive<Time> {
   private extras: number[];
   private low: number;
   private high: number;
+  private lockAutoscale: boolean;
 
-  constructor(low: number, high: number, fill: string, extras: number[] = []) {
+  constructor(low: number, high: number, fill: string, extras: number[] = [], lockAutoscale = true) {
     this.low = low;
     this.high = high;
     this.extras = extras;
+    this.lockAutoscale = lockAutoscale;
     this.view = new BandView(null, low, high, fill);
   }
 
@@ -99,13 +102,8 @@ export class ZoneBand implements ISeriesPrimitive<Time> {
   }
 
   autoscaleInfo(): AutoscaleInfo | null {
-    const vals = [this.low, this.high, ...this.extras].filter((n) => Number.isFinite(n));
-    if (vals.length < 2) return null;
-    return {
-      priceRange: {
-        minValue: Math.min(...vals),
-        maxValue: Math.max(...vals),
-      },
-    };
+    const range = zoneBandAutoscaleRange(this.low, this.high, this.extras, this.lockAutoscale);
+    if (!range) return null;
+    return { priceRange: range };
   }
 }

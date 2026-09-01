@@ -13,6 +13,7 @@ import {
   setupStateCaption,
   setupVisiblePriceRange,
   setupAutoscaleLocked,
+  zoneBandAutoscaleRange,
 } from "./setup-overlay.ts";
 import type { AssetAnalysis, SetupProposal } from "../trading/types.ts";
 
@@ -162,6 +163,18 @@ describe("chart setup overlay", () => {
     assert.equal(setupAutoscaleLocked("XAUUSD"), true);
     assert.equal(setupAutoscaleLocked("BTCUSD"), true);
     assert.equal(setupAutoscaleLocked("WTI"), true);
+  });
+
+  it("US100 zone band does not expand autoscale to SL/TP; XAU/BTC/WTI bands still do", () => {
+    const extras = [28900, 29200, 28800];
+    const locked = zoneBandAutoscaleRange(29020, 29050, extras, true);
+    const free = zoneBandAutoscaleRange(29020, 29050, extras, false);
+    assert.deepEqual(locked, { minValue: 28800, maxValue: 29200 });
+    assert.equal(free, null);
+    assert.equal(setupAutoscaleLocked("XAUUSD"), true);
+    assert.equal(setupAutoscaleLocked("BTCUSD"), true);
+    assert.equal(setupAutoscaleLocked("WTI"), true);
+    assert.equal(setupAutoscaleLocked("US100"), false);
   });
 
   it("XAU SPOT levels are shifted by +basis onto PROXY candles", () => {

@@ -206,14 +206,7 @@ const CandleChartInner = forwardRef<
     if (!candle) return;
     if (!setupAutoscaleLocked(series.assetId)) {
       candle.applyOptions({ autoscaleInfoProvider: undefined });
-      const scale = candle.priceScale();
-      if (lv) {
-        const range = setupVisiblePriceRange(lv, last);
-        scale.setAutoScale(false);
-        scale.setVisibleRange({ from: range.min, to: range.max });
-      } else {
-        scale.setAutoScale(true);
-      }
+      candle.priceScale().setAutoScale(true);
       return;
     }
     if (lv) {
@@ -352,7 +345,7 @@ const CandleChartInner = forwardRef<
           mouseWheel: true,
           pressedMouseMove: true,
           horzTouchDrag: true,
-          vertTouchDrag: false,
+          vertTouchDrag: series.assetId === "US100",
         },
         handleScale: {
           axisPressedMouseMove: { time: true, price: true },
@@ -601,6 +594,7 @@ const CandleChartInner = forwardRef<
           lv.zoneHigh,
           withAlpha(dirColor, showZone ? 0.16 : 0),
           extras,
+          setupAutoscaleLocked(series.assetId),
         );
         candle.attachPrimitive(band);
         zoneRef.current = band;

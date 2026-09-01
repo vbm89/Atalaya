@@ -272,10 +272,27 @@ export function setupVisiblePriceRange(
 }
 
 /**
- * XAU/BTC/WTI keep the setup-locked price window (autoscaleInfoProvider).
- * US100 does not: that lock blocks pinch-zoom/pan on the price scale.
- * Levels still use the same prices; only the scale policy differs.
+ * XAU/BTC/WTI keep the setup-locked price window (autoscaleInfoProvider + ZoneBand).
+ * US100 must not: Lightweight Charts pinch only calls zoomTime. If the price window
+ * is frozen to SL–TP, candles stay visually flat and pinch looks broken.
+ * Levels are still drawn at the same prices; only autoscale participation differs.
  */
 export function setupAutoscaleLocked(assetId: AssetId): boolean {
   return assetId !== "US100";
+}
+
+/** When lockAutoscale is false (US100), the zone fill does not expand the price window to SL/TP. */
+export function zoneBandAutoscaleRange(
+  low: number,
+  high: number,
+  extras: number[],
+  lockAutoscale: boolean,
+): { minValue: number; maxValue: number } | null {
+  if (!lockAutoscale) return null;
+  const vals = [low, high, ...extras].filter((n) => Number.isFinite(n));
+  if (vals.length < 2) return null;
+  return {
+    minValue: Math.min(...vals),
+    maxValue: Math.max(...vals),
+  };
 }
