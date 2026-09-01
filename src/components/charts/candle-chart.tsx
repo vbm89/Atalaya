@@ -19,7 +19,6 @@ import {
 import { ema, rsiWilder } from "@/lib/trading/indicators";
 import type { ChartOverlays, ChartSeries } from "@/lib/chart/types";
 import type { TickHandler } from "@/lib/chart/live";
-import { liveQuotesSnapshot, subscribeLiveQuotes } from "@/lib/chart/live-quotes";
 import { chartSetupLevels, setupAutoscaleLocked, setupLevelsKey, setupVisiblePriceRange, type ChartSetupLevels } from "@/lib/chart/setup-overlay";
 import {
   CHART_BAR_SPACING,
@@ -157,10 +156,9 @@ const CandleChartInner = forwardRef<
     getBars: () => Candle[];
     hudEl?: HTMLElement | null;
     visibleLevels?: { zone: boolean; sl: boolean; tp1: boolean; tp2: boolean };
-    lastPrice?: number | null;
   }
 >(function CandleChartInner(
-  { series, overlays, analysis, frozenLevels, focusSetup, subscribeTick, getBars, hudEl, visibleLevels, lastPrice },
+  { series, overlays, analysis, frozenLevels, focusSetup, subscribeTick, getBars, hudEl, visibleLevels },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -173,7 +171,6 @@ const CandleChartInner = forwardRef<
   const ema200Ref = useRef<LineApi | null>(null);
   const rsiRef = useRef<LineApi | null>(null);
   const linesRef = useRef<IPriceLine[]>([]);
-  const lastLineRef = useRef<IPriceLine | null>(null);
   const zoneRef = useRef<ZoneBand | null>(null);
   const viewKeyRef = useRef("");
   const dataKeyRef = useRef("");
@@ -366,10 +363,11 @@ const CandleChartInner = forwardRef<
         borderDownColor: c.sell,
         wickUpColor: c.buy,
         wickDownColor: c.sell,
+        lastValueVisible: true,
+        priceLineVisible: true,
       });
       chartRef.current = chart;
       candleRef.current = candles;
-      lastLineRef.current = null;
       viewKeyRef.current = "";
       dataKeyRef.current = "";
       levelsKeyRef.current = "";
@@ -678,31 +676,6 @@ const CandleChartInner = forwardRef<
       }
     });
   }, [subscribeTick, getBars, series.digits]);
-
-  useEffect(() => {
-    const apply = (price: number | null | undefined) => {
-      const candle = candleRef.current;
-      if (!candle) return;
-      if (price == null || !(price > 0) || !Number.isFinite(price)) return;
-      if (!lastLineRef.current) {
-        const c = colors();
-        lastLineRef.current = candle.createPriceLine({
-          price,
-          title: "Last",
-          color: c.accent,
-          lineWidth: 1,
-          lineStyle: LineStyle.Dotted,
-          axisLabelVisible: true,
-        });
-        return;
-      }
-      lastLineRef.current.applyOptions({ price });
-    };
-    apply(liveQuotesSnapshot()[series.assetId] ?? lastPrice);
-    return subscribeLiveQuotes(() => {
-      apply(liveQuotesSnapshot()[series.assetId]);
-    });
-  }, [series.assetId, chartBoot, lastPrice]);
 
   return (
     <div className="atalaya-chart">
