@@ -1,0 +1,415 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0b0c0e;
+  --color-surface: #14161a;
+  --color-elevated: #1c1f26;
+  --color-fg: #f1f2f4;
+  --color-muted: #8b909a;
+  --color-subtle: #6b7078;
+  --color-border: #2a2d34;
+  --color-accent: #2ea86a;
+  --color-accent-fg: #06140c;
+  --color-buy: #3d9a6a;
+  --color-sell: #c45c5c;
+  --color-wait: #c4a35a;
+  --color-map: #8fa3b8;
+  --color-buy-dim: #1b2e24;
+  --color-sell-dim: #2d1c1c;
+  --color-wait-dim: #2c2618;
+  --color-map-dim: #1a2228;
+  --color-risk-bajo: #3d9a6a;
+  --color-risk-medio: #c4a35a;
+  --color-risk-alto: #c4894a;
+  --color-risk-muy: #c45c5c;
+  --color-risk-ext: #8f3a3a;
+
+  --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-2xl: 28px;
+
+  --shadow-border: 0 0 0 1px rgba(255, 255, 255, 0.07);
+  --shadow-border-hover: 0 0 0 1px rgba(255, 255, 255, 0.13);
+}
+
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: var(--color-bg);
+    color: var(--color-fg);
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--color-bg);
+    color: var(--color-fg);
+    height: 100%;
+    max-height: 100dvh;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Shell: named areas so the dock stays BOTTOM even when the header is unmounted. */
+.atalaya-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "header"
+    "stage"
+    "dock";
+  position: relative;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+  background: var(--color-bg);
+  width: 100%;
+  max-width: 32rem;
+  margin-inline: auto;
+}
+
+.atalaya-shell[data-chrome="chart"] {
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "stage"
+    "dock";
+}
+
+.atalaya-header {
+  grid-area: header;
+  z-index: 30;
+  isolation: isolate;
+  background-color: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  padding-top: max(0.75rem, var(--safe-top));
+  padding-right: max(1rem, var(--safe-right));
+  padding-bottom: 0.75rem;
+  padding-left: max(1rem, var(--safe-left));
+}
+
+.atalaya-stage {
+  grid-area: stage;
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.atalaya-dock {
+  grid-area: dock;
+  z-index: 40;
+  display: flex;
+  align-items: stretch;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+  padding-bottom: var(--safe-bottom);
+}
+
+.atalaya-home,
+.atalaya-sheet-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+.atalaya-home {
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-top: 1rem;
+  padding-right: max(1rem, var(--safe-right));
+  padding-bottom: 1.25rem;
+  padding-left: max(1rem, var(--safe-left));
+}
+
+.atalaya-sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.atalaya-sheet-chrome {
+  flex-shrink: 0;
+  z-index: 1;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  padding-top: 0.75rem;
+  padding-right: max(1.25rem, var(--safe-right));
+  padding-bottom: 0.75rem;
+  padding-left: max(1.25rem, var(--safe-left));
+}
+
+.atalaya-sheet-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-top: 1rem;
+  padding-right: max(1.25rem, var(--safe-right));
+  padding-bottom: max(1.5rem, var(--safe-bottom));
+  padding-left: max(1.25rem, var(--safe-left));
+}
+
+.atalaya-explain {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.atalaya-explain-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: color-mix(in srgb, var(--color-bg) 55%, transparent);
+}
+
+.atalaya-explain-panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  max-height: 88%;
+  min-height: 40%;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-border);
+  padding-bottom: var(--safe-bottom);
+}
+
+.atalaya-charts {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--color-bg);
+}
+
+.atalaya-charts-toolbar {
+  flex-shrink: 0;
+  padding-top: max(0.25rem, var(--safe-top));
+  padding-right: max(0.5rem, var(--safe-right));
+  padding-bottom: 0.25rem;
+  padding-left: max(0.5rem, var(--safe-left));
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.atalaya-charts-tools {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0;
+  padding-top: 0.15rem;
+  padding-right: max(0.35rem, var(--safe-right));
+  padding-bottom: 0.15rem;
+  padding-left: max(0.35rem, var(--safe-left));
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.atalaya-charts-list {
+  height: 100%;
+  overflow-y: auto;
+  padding-top: max(0.75rem, var(--safe-top));
+  padding-right: max(1rem, var(--safe-right));
+  padding-bottom: 1rem;
+  padding-left: max(1rem, var(--safe-left));
+}
+
+.atalaya-charts-list-head {
+  margin-bottom: 1.25rem;
+}
+
+.atalaya-chart,
+.atalaya-chart-host {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  overscroll-behavior: none;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.atalaya-chart-pane {
+  position: relative;
+  flex: 1 1 0%;
+  min-height: 8rem;
+  min-width: 0;
+}
+
+.atalaya-markets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.atalaya-more {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+}
+
+.atalaya-more-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: color-mix(in srgb, var(--color-bg) 55%, transparent);
+}
+
+.atalaya-more-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(3rem + var(--safe-bottom));
+  left: 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--color-elevated);
+  box-shadow: var(--shadow-border);
+  padding-top: 0.75rem;
+  padding-bottom: 0.5rem;
+}
+
+@media (orientation: landscape) {
+  .atalaya-shell {
+    max-width: none;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 540px) {
+  .atalaya-header {
+    padding-top: max(0.35rem, var(--safe-top));
+    padding-bottom: 0.35rem;
+    padding-right: max(1rem, var(--safe-right));
+    padding-left: max(1rem, var(--safe-left));
+  }
+
+  .atalaya-title {
+    font-size: 1.15rem;
+    line-height: 1.1;
+  }
+
+  .atalaya-header-sub {
+    margin-top: 0.1rem;
+    font-size: 0.7rem;
+  }
+
+  .atalaya-charts-toolbar {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.35rem;
+    padding-top: max(0.1rem, var(--safe-top));
+    padding-bottom: 0.1rem;
+  }
+
+  .atalaya-charts-head {
+    flex-shrink: 0;
+  }
+
+  .atalaya-charts-title {
+    display: none;
+  }
+
+  .atalaya-charts-pickers {
+    flex: 1;
+    min-width: 0;
+    margin-top: 0 !important;
+  }
+
+  .atalaya-charts-status {
+    display: none;
+  }
+
+  .atalaya-charts-tools {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  .atalaya-charts-tools button {
+    height: 2.25rem;
+  }
+
+  .atalaya-dock {
+    padding-bottom: 0;
+  }
+
+  .atalaya-dock button {
+    height: 2.25rem;
+    font-size: 0;
+    gap: 0;
+  }
+
+  .atalaya-home {
+    padding-top: 0.75rem;
+    padding-right: max(1rem, var(--safe-right));
+    padding-left: max(1rem, var(--safe-left));
+  }
+
+  .atalaya-markets {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+
+  .atalaya-markets-account,
+  .atalaya-markets-label,
+  .atalaya-best {
+    grid-column: 1 / -1;
+  }
+}
+

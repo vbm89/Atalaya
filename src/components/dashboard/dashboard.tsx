@@ -1,0 +1,602 @@
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { RefreshCw, House, BarChart3, CalendarDays, BookOpen, GraduationCap, Ellipsis, Settings } from "lucide-react";
+import { getMarketAnalysis } from "@/lib/market/analysis.fn";
+import { getWatchHealth, getWatchEpisode, getWatchSnapshots, type WatchEpisodeView } from "@/lib/watch/watch.fn";
+import type { AnalysisSnapshot, AssetAnalysis, AssetId } from "@/lib/trading/types";
+import { formatClock } from "@/lib/utils";
+import type { SnapshotDraft } from "@/lib/watch/episode";
+import { Skeleton } from "@/components/ui/skeleton";
+import { MarketTile } from "./asset-card";
+import { BestOpportunityCard, FeedStatus } from "./home-feed";
+import { AssetSheet } from "./asset-sheet";
+import { CalendarList } from "./calendar-list";
+import { AccountPanel, useAccountSettings, useCosts } from "./account-panel";
+import { ChartsScreen, type ChartIntent } from "@/components/charts/charts-screen";
+import { hasChartableSetup, SETUP_CHART_TF, chartIntentFromAnalysis, frozenLevelsFromEpisode } from "@/lib/chart/setup-overlay";
+import { getAsset } from "@/lib/trading/assets";
+import { foldWatchBook, type WatchBook } from "@/lib/watch/memory";
+import { readWatchBook, writeWatchBook } from "@/lib/watch/persist";
+import { useWatchLoop } from "@/lib/watch/use-watch-loop";
+import { parseWatchLink } from "@/lib/watch/link";
+import { foldAssetWatch, type AssetWatch } from "@/lib/watch/memory";
+import { AlertsPanel } from "./alerts-panel";
+import { HistoryPanel } from "./history-panel";
+import { ExplainSheet } from "./explain-sheet";
+import { LearnPanel } from "./learn-panel";
+import { explainFromAnalysis, explainFromHistory, type ExplainView } from "@/lib/learn/explain";
+import type { HistoryRow } from "@/lib/watch/store";
+import { InboxPanel } from "./inbox-panel";
+
+const CACHE_KEY = "atalaya:last-analysis:v5";
+const QUERY_KEY = ["market-analysis"] as const;
+const HEALTH_KEY = ["watch-health"] as const;
+const SNAPS_KEY = ["watch-snapshots"] as const;
+
+function readCache(): AnalysisSnapshot | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(CACHE_KEY);
+    return raw ? (JSON.parse(raw) as AnalysisSnapshot) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(data: AnalysisSnapshot) {
+  try {
+    window.localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+function useLocalNow() {
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    const tick = () => setNow(new Date());
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  return now;
+}
+
+function HeaderClock() {
+  const now = useLocalNow();
+  return (
+    <time
+      dateTime={now ? now.toISOString() : undefined}
+      className="font-mono text-xs tabular text-subtle"
+    >
+      {now ? formatClock(now) : "—"}
+    </time>
+  );
+}
+
+function applyServerTruth(
+  assets: AssetAnalysis[],
+  snaps: SnapshotDraft[] | undefined,
+  stale: boolean,
+): AssetAnalysis[] {
+  if (stale || !snaps?.length) return assets;
+  const byId = new Map(snaps.map((s) => [s.assetId, s]));
+  return assets.map((a) => {
+    const s = byId.get(a.id);
+    if (!s) return a;
+    return {
+      ...a,
+      setupState: s.state,
+      setup: s.state === "wait" ? null : (s.setup ?? a.setup),
+      waitReason: s.waitReason ?? a.waitReason,
+    };
+  });
+}
+
+function overlayAsset(asset: AssetAnalysis, focus: WatchEpisodeView | null): AssetAnalysis {
+  if (!focus || focus.assetId !== asset.id || !focus.setup) return asset;
+  return {
+    ...asset,
+    setup: focus.setup,
+    setupState: focus.live ? focus.state : "wait",
+    waitReason: focus.live ? asset.waitReason : focus.waitReason,
+  };
+}
+
+function overlayWatch(
+  asset: AssetAnalysis,
+  local: AssetWatch | null | undefined,
+  focus: WatchEpisodeView | null,
+): AssetWatch | null {
+  if (!focus || focus.assetId !== asset.id) return local ?? null;
+  if (focus.live && focus.setup) {
+    return foldAssetWatch(
+      null,
+      { id: asset.id, setupState: focus.state, setup: focus.setup, waitReason: null },
+      Date.now(),
+    );
+  }
+  return {
+    id: asset.id,
+    phase: "expired",
+    currentState: "wait",
+    previousState: focus.setup?.state ?? "entry",
+    transition: null,
+    liveSetup: null,
+    expiredSetup: focus.setup,
+    expiredFromState: focus.setup?.state ?? "entry",
+    expiredAt: focus.closedAtMs,
+    expiredReason: focus.waitReason,
+    evaluatedAt: Date.now(),
+  };
+}
+
+export function Dashboard() {
+  const qc = useQueryClient();
+  const [tab, setTab] = useState<"markets" | "calendar" | "charts" | "history" | "learn" | "settings">("markets");
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [openId, setOpenId] = useState<AssetId | null>(null);
+  const [chartIntent, setChartIntent] = useState<ChartIntent | null>(null);
+  const [chartBrowse, setChartBrowse] = useState(0);
+  const [account, setAccount] = useAccountSettings();
+  const [costs, setCosts] = useCosts();
+  const [book, setBook] = useState<WatchBook>({});
+  const [episodeFocus, setEpisodeFocus] = useState<WatchEpisodeView | null>(null);
+  const [explainView, setExplainView] = useState<ExplainView | null>(null);
+
+  useEffect(() => {
+    const cached = readCache();
+    if (cached && !qc.getQueryData(QUERY_KEY)) {
+      qc.setQueryData(QUERY_KEY, cached);
+    }
+  }, [qc]);
+
+  const query = useQuery({
+    queryKey: QUERY_KEY,
+    queryFn: () => getMarketAnalysis({ data: { force: false } }),
+    staleTime: Infinity,
+    refetchOnReconnect: false,
+    retry: 1,
+  });
+
+  const health = useQuery({
+    queryKey: HEALTH_KEY,
+    queryFn: () => getWatchHealth(),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    retry: 0,
+  });
+
+  const snaps = useQuery({
+    queryKey: SNAPS_KEY,
+    queryFn: () => getWatchSnapshots(),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    retry: 0,
+  });
+
+  useEffect(() => {
+    if (query.data) writeCache(query.data);
+  }, [query.data]);
+
+  const refresh = useMutation({
+    mutationFn: () => getMarketAnalysis({ data: { force: true } }),
+    onSuccess: (data) => {
+      qc.setQueryData(QUERY_KEY, data);
+      writeCache(data);
+      void qc.invalidateQueries({ queryKey: HEALTH_KEY });
+      void qc.invalidateQueries({ queryKey: SNAPS_KEY });
+      void qc.invalidateQueries({ queryKey: ["watch-inbox"] });
+    },
+  });
+
+  const snapshot: AnalysisSnapshot | undefined = query.data
+    ? {
+        ...query.data,
+        assets: applyServerTruth(query.data.assets, snaps.data, health.data?.stale ?? true),
+      }
+    : undefined;
+  const lastEvalMs = (() => {
+    if (!snapshot?.generatedAt) return null;
+    const t = Date.parse(snapshot.generatedAt);
+    return Number.isFinite(t) ? t : null;
+  })();
+  const busy = query.isLoading || refresh.isPending;
+  const runEval = useCallback(() => {
+    refresh.mutate();
+  }, [refresh]);
+  const { visible } = useWatchLoop({
+    lastEvalMs,
+    busy,
+    onEval: runEval,
+  });
+
+  useEffect(() => {
+    if (!snapshot) return;
+    const t = Date.parse(snapshot.generatedAt);
+    const now = Number.isFinite(t) ? t : Date.now();
+    setBook((prev) => {
+      const base = Object.keys(prev).length ? prev : readWatchBook(now);
+      const next = foldWatchBook(base, snapshot.assets, now);
+      writeWatchBook(next);
+      return next;
+    });
+  }, [snapshot]);
+
+  const applyWatchLink = useCallback(async (search: string) => {
+    const link = parseWatchLink(search);
+    if (!link) return;
+    try {
+      const view = await getWatchEpisode({ data: { episodeId: link.episodeId } });
+      if (!view || view.assetId !== link.assetId) return;
+      setEpisodeFocus(view);
+      setOpenId(view.assetId);
+      setTab("markets");
+    } catch {
+      /* keep local view */
+    }
+  }, []);
+
+  useEffect(() => {
+    void applyWatchLink(window.location.search);
+  }, [applyWatchLink]);
+
+  useEffect(() => {
+    const onMsg = (event: MessageEvent) => {
+      const data = event.data as { type?: string; url?: string } | null;
+      if (data?.type !== "ATALAYA_OPEN" || !data.url) return;
+      try {
+        const u = new URL(data.url, window.location.origin);
+        void applyWatchLink(u.search);
+        window.history.replaceState(null, "", u.pathname + u.search);
+      } catch {
+        /* ignore */
+      }
+    };
+    navigator.serviceWorker?.addEventListener("message", onMsg);
+    return () => navigator.serviceWorker?.removeEventListener("message", onMsg);
+  }, [applyWatchLink]);
+
+  const loading = (query.isFetching && !snapshot) || refresh.isPending;
+  const rawOpen = snapshot?.assets.find((a) => a.id === openId) ?? null;
+  const openAsset = rawOpen ? overlayAsset(rawOpen, episodeFocus) : null;
+  const sheetOpen = openId != null;
+  const error =
+    refresh.error instanceof Error
+      ? refresh.error.message
+      : query.error instanceof Error
+        ? query.error.message
+        : null;
+
+  const openSetupChart = (id: AssetId) => {
+    const row = snapshot?.assets.find((a) => a.id === id);
+    const shown = row ? overlayAsset(row, episodeFocus) : null;
+    if (!shown || !hasChartableSetup(shown)) return;
+    const intent = chartIntentFromAnalysis(shown);
+    if (!intent) return;
+    setOpenId(null);
+    setChartIntent(intent);
+    setTab("charts");
+  };
+
+  return (
+    <div className="atalaya-shell" data-chrome={tab === "charts" ? "chart" : "home"}>
+      {tab !== "charts" ? (
+      <header className="atalaya-header">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs tracking-wider text-muted uppercase">Terminal</p>
+            <h1 className="atalaya-title text-2xl font-semibold tracking-tight">Atalaya</h1>
+          </div>
+          <div className="flex items-center gap-0.5">
+            <HeaderClock />
+            <button
+              type="button"
+              aria-label="Actualizar análisis"
+              title="Actualizar análisis"
+              disabled={loading}
+              onClick={() => refresh.mutate()}
+              className="flex size-11 items-center justify-center rounded-[var(--radius-md)] text-muted disabled:opacity-50"
+            >
+              <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} />
+            </button>
+          </div>
+        </div>
+        <p className="atalaya-header-sub mt-1 text-xs text-subtle">
+          Tiempo real · XAU · BTC · US100 · WTI
+        </p>
+      </header>
+      ) : null}
+
+      <div className="atalaya-stage">
+        {tab === "charts" ? (
+          <ChartsScreen
+            key={chartIntent ? `i-${chartIntent.nonce}` : `l-${chartBrowse}`}
+            snapshot={
+              snapshot && episodeFocus
+                ? {
+                    ...snapshot,
+                    assets: snapshot.assets.map((a) => overlayAsset(a, episodeFocus)),
+                  }
+                : snapshot
+            }
+            intent={chartIntent}
+            onBack={() => {
+              setTab("markets");
+              setChartIntent(null);
+            }}
+          />
+        ) : (
+          <div
+            data-home-scroll
+            className="atalaya-home"
+            inert={sheetOpen || undefined}
+            aria-hidden={sheetOpen}
+          >
+            {snapshot ? (
+              <FeedStatus
+                assets={snapshot.assets}
+                lastEvalMs={lastEvalMs}
+                visible={visible}
+                watching={!busy && visible}
+                server={health.data ?? null}
+              />
+            ) : (
+              <Skeleton className="h-14 rounded-[var(--radius-lg)]" />
+            )}
+
+            {error ? (
+              <p className="mt-3 rounded-[var(--radius-md)] bg-sell-dim px-3 py-2 text-sm text-sell">
+                No se pudo completar la actualización. Se mantienen los últimos datos reales
+                disponibles.
+              </p>
+            ) : null}
+
+            {tab === "markets" ? (
+              <div className="atalaya-markets mt-4">
+                {snapshot ? (
+                  <BestOpportunityCard
+                    snapshot={snapshot}
+                    asset={(() => {
+                      const row = snapshot.assets.find((a) => a.id === snapshot.bestOpportunityId);
+                      return row ? overlayAsset(row, episodeFocus) : null;
+                    })()}
+                    onDetail={() => {
+                      if (snapshot.bestOpportunityId) setOpenId(snapshot.bestOpportunityId);
+                    }}
+                  />
+                ) : (
+                  <Skeleton className="h-40 rounded-[var(--radius-lg)]" />
+                )}
+                <p className="atalaya-markets-label pt-1 text-xs font-medium tracking-wider text-muted uppercase">
+                  Mercados
+                </p>
+                {snapshot
+                  ? snapshot.assets.map((a) => {
+                      const shown = overlayAsset(a, episodeFocus);
+                      return <MarketTile key={a.id} asset={shown} onOpen={() => setOpenId(a.id)} />;
+                    })
+                  : Array.from({ length: 4 }).map((_, i) => (
+                      <Skeleton key={i} className="h-16 rounded-[var(--radius-lg)]" />
+                    ))}
+                {!snapshot && loading ? (
+                  <p className="atalaya-markets-label px-1 text-center text-sm text-muted">
+                    Obteniendo precios y noticias reales…
+                  </p>
+                ) : null}
+              </div>
+            ) : tab === "learn" ? (
+              <LearnPanel />
+            ) : tab === "settings" ? (
+              <div className="mt-4 space-y-3">
+                <InboxPanel
+                  onOpen={(episodeId, assetId) => {
+                    void applyWatchLink(`?asset=${assetId}&episode=${episodeId}`);
+                  }}
+                />
+                <AlertsPanel />
+                <AccountPanel
+                  value={account}
+                  onChange={setAccount}
+                  costs={costs}
+                  onCostsChange={setCosts}
+                />
+              </div>
+            ) : tab === "history" ? (
+              <HistoryPanel
+                onOpenEpisode={(episodeId, assetId) => {
+                  void applyWatchLink(`?asset=${assetId}&episode=${episodeId}`);
+                }}
+                onViewChart={(episodeId, assetId) => {
+                  void getWatchEpisode({ data: { episodeId } }).then((view) => {
+                    if (!view || view.assetId !== assetId) return;
+                    setEpisodeFocus(view);
+                    setOpenId(null);
+                    const freeze = frozenLevelsFromEpisode(view, getAsset(assetId).digits);
+                    setChartIntent({
+                      assetId,
+                      tf: freeze?.tf ?? SETUP_CHART_TF,
+                      nonce: Date.now(),
+                      freeze,
+                    });
+                    setTab("charts");
+                  });
+                }}
+                onWhy={(row: HistoryRow) => setExplainView(explainFromHistory(row))}
+              />
+            ) : (
+              <div className="mt-4">
+                {snapshot ? (
+                  <CalendarList snapshot={snapshot} />
+                ) : (
+                  <Skeleton className="h-40 rounded-[var(--radius-lg)]" />
+                )}
+              </div>
+            )}
+
+            {snapshot ? (
+              <p className="mt-6 pb-4 text-center text-xs leading-relaxed text-subtle">
+                {snapshot.disclaimer}
+                <br />
+                Fuentes: {snapshot.source}
+                {snapshot.errors.length
+                  ? ` · Avisos: ${snapshot.errors.join(" · ")}`
+                  : ""}
+              </p>
+            ) : null}
+          </div>
+        )}
+
+        <AssetSheet
+          asset={openAsset}
+          watch={
+            openAsset
+              ? overlayWatch(openAsset, openId ? book[openId] ?? null : null, episodeFocus)
+              : null
+          }
+          open={sheetOpen}
+          account={account}
+          costs={openAsset ? costs[openAsset.id] : undefined}
+          onOpenChange={(v) => {
+            if (!v) setOpenId(null);
+          }}
+          onViewChart={
+            openAsset && hasChartableSetup(openAsset)
+              ? () => openSetupChart(openAsset.id)
+              : undefined
+          }
+          onWhy={openAsset ? () => setExplainView(explainFromAnalysis(openAsset)) : undefined}
+        />
+        <ExplainSheet
+          view={explainView}
+          open={explainView != null}
+          onClose={() => setExplainView(null)}
+          onViewChart={
+            explainView && explainView.assetId !== "—" && explainView.levels
+              ? () => {
+                  const id = explainView.assetId;
+                  if (id === "—") return;
+                  setExplainView(null);
+                  openSetupChart(id);
+                }
+              : undefined
+          }
+        />
+      </div>
+      <nav className="atalaya-dock" aria-label="Navegación">
+        <DockBtn
+          active={tab === "markets"}
+          label="Atalaya"
+          onClick={() => {
+            setTab("markets");
+            setChartIntent(null);
+            setMoreOpen(false);
+          }}
+        >
+          <House className="size-4" />
+        </DockBtn>
+        <DockBtn
+          active={tab === "charts"}
+          label="Gráficos"
+          onClick={() => {
+            setOpenId(null);
+            setChartIntent(null);
+            setChartBrowse((n) => n + 1);
+            setTab("charts");
+            setMoreOpen(false);
+          }}
+        >
+          <BarChart3 className="size-4" />
+        </DockBtn>
+        <DockBtn
+          active={tab === "calendar"}
+          label="Calendario"
+          onClick={() => {
+            setTab("calendar");
+            setChartIntent(null);
+            setMoreOpen(false);
+          }}
+        >
+          <CalendarDays className="size-4" />
+        </DockBtn>
+        <DockBtn
+          active={tab === "history"}
+          label="Historial"
+          onClick={() => {
+            setTab("history");
+            setChartIntent(null);
+            setMoreOpen(false);
+          }}
+        >
+          <BookOpen className="size-4" />
+        </DockBtn>
+        <DockBtn
+          active={tab === "learn" || tab === "settings" || moreOpen}
+          label="Más"
+          onClick={() => setMoreOpen((v) => !v)}
+        >
+          <Ellipsis className="size-4" />
+        </DockBtn>
+      </nav>
+      {moreOpen ? (
+        <div className="atalaya-more">
+          <button type="button" className="atalaya-more-backdrop" aria-label="Cerrar" onClick={() => setMoreOpen(false)} />
+          <div className="atalaya-more-panel">
+            <p className="px-4 pb-2 text-xs font-medium tracking-wider text-muted uppercase">Más</p>
+            <button
+              type="button"
+              className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-sm"
+              onClick={() => {
+                setTab("learn");
+                setChartIntent(null);
+                setMoreOpen(false);
+              }}
+            >
+              <GraduationCap className="size-4 text-muted" />
+              Escuela
+            </button>
+            <button
+              type="button"
+              className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-sm"
+              onClick={() => {
+                setTab("settings");
+                setChartIntent(null);
+                setMoreOpen(false);
+              }}
+            >
+              <Settings className="size-4 text-muted" />
+              Ajustes
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DockBtn({
+  active,
+  onClick,
+  children,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        active
+          ? "flex h-12 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium text-buy"
+          : "flex h-12 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] text-muted"
+      }
+    >
+      {children}
+      {label}
+    </button>
+  );
+}
