@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { getChartSeries } from "@/lib/market/chart.fn";
 import { useChartLive, type TickHandler } from "@/lib/chart/live";
-import { subscribeLiveQuotes, liveQuotesSnapshot } from "@/lib/chart/live-quotes";
+import { subscribeLiveQuotes, liveQuotesSnapshot, liveXauSpot, liveXauSpotAt } from "@/lib/chart/live-quotes";
 import {
   CHART_TFS,
   DEFAULT_OVERLAYS,
@@ -28,6 +28,7 @@ import { CHART_ASSET_BLURB } from "@/lib/chart/labels";
 import { ASSETS } from "@/lib/trading/assets";
 import type { AnalysisSnapshot, AssetId } from "@/lib/trading/types";
 import { formatPrice } from "@/lib/utils";
+import { xauSpotIsFresh } from "@/lib/chart/quote-view";
 import { CandleChart, type CandleChartHandle } from "./candle-chart";
 import { LiveQuoteReadout } from "@/components/dashboard/live-quote-readout";
 import { PullRefresh } from "@/components/dashboard/pull-refresh";
@@ -437,6 +438,7 @@ function ChartWorkspace({
               assetId={assetId}
               digits={series.digits}
               seed={seedClose}
+              seedSpot={analysis?.priceSpot ?? null}
               subscribe={live.subscribe}
             />
           ) : (
@@ -478,7 +480,11 @@ function ChartWorkspace({
           ) : (
             <span className={`shrink-0 ${LIVE_CLASS[liveStatus]}`}>{LIVE_LABEL[liveStatus]}</span>
           )}
-          {series?.instrumentKind === "proxy" ? <span className="shrink-0 text-wait">PROXY</span> : null}
+          {series?.instrumentKind === "proxy" ? (
+            <span className="shrink-0 text-wait">
+              {assetId === "XAUUSD" ? "velas PROXY XAUUSDT" : "PROXY"}
+            </span>
+          ) : null}
         </p>
       </div>
 
@@ -609,44 +615,86 @@ function LivePrice({
   assetId,
   digits,
   seed,
+  seedSpot,
   subscribe,
 }: {
   assetId: AssetId;
   digits: number;
   seed: number | null;
+  seedSpot: number | null;
   subscribe: (fn: TickHandler) => () => void;
 }) {
-  const ref = useRef<HTMLParagraphElement>(null);
+  const proxyRef = useRef<HTMLSpanElement>(null);
+  const spotRef = useRef<HTMLSpanElement>(null);
+  const delayRef = useRef<HTMLSpanElement>(null);
+  const isXau = assetId === "XAUUSD";
+
   useEffect(() => {
-    const write = (n: number) => {
-      if (ref.current) ref.current.textContent = formatPrice(n, digits);
+    const writeProxy = (n: number) => {
+      if (proxyRef.current) proxyRef.current.textContent = formatPrice(n, digits);
+    };
+    const writeSpot = (n: number | null, delayed: boolean) => {
+      if (spotRef.current) spotRef.current.textContent = n == null ? "—" : formatPrice(n, digits);
+      if (delayRef.current) delayRef.current.hidden = !delayed;
+    };
+    const spotNow = () => liveXauSpot() ?? seedSpot;
+    const delayedNow = () => {
+      const at = liveXauSpotAt();
+      return at > 0 && !xauSpotIsFresh(at, Date.now());
     };
     const q0 = liveQuotesSnapshot()[assetId];
-    if (q0 != null) write(q0);
-    else if (seed != null) write(seed);
+    if (q0 != null) writeProxy(q0);
+    else if (seed != null) writeProxy(seed);
+    if (isXau) writeSpot(spotNow(), delayedNow());
     const offLive = subscribeLiveQuotes(() => {
       const q = liveQuotesSnapshot()[assetId];
-      if (q != null) write(q);
+      if (q != null) writeProxy(q);
+      if (isXau) writeSpot(spotNow(), delayedNow());
     });
     const offBar = subscribe((c) => {
       if (liveQuotesSnapshot()[assetId] != null) return;
-      write(c.close);
+      writeProxy(c.close);
     });
     return () => {
       offLive();
       offBar();
     };
-  }, [subscribe, digits, seed, assetId]);
+  }, [subscribe, digits, seed, seedSpot, assetId, isXau]);
+
   const q0 = liveQuotesSnapshot()[assetId];
   const shown = q0 ?? seed;
+  const spot0 = isXau ? (liveXauSpot() ?? seedSpot) : null;
+  const delayed0 = isXau && liveXauSpotAt() > 0 && !xauSpotIsFresh(liveXauSpotAt(), Date.now());
+
+  if (isXau) {
+    return (
+      <div className="min-w-0 flex-1 truncate text-right font-mono tabular leading-tight">
+        <p className="text-sm font-medium">
+          <span ref={spotRef} data-chart-spot>
+            {spot0 != null ? formatPrice(spot0, digits) : "—"}
+          </span>
+          <span className="ml-1 text-[10px] font-medium tracking-wide text-subtle">SPOT</span>
+        </p>
+        <p className="text-[10px] text-wait">
+          <span ref={proxyRef} data-chart-price data-chart-live={q0 != null ? "1" : "0"}>
+            {shown != null ? formatPrice(shown, digits) : ""}
+          </span>
+          <span className="ml-1 font-medium tracking-wide">PROXY</span>
+        </p>
+        <span ref={delayRef} hidden={!delayed0} className="block text-[10px] font-medium tracking-wide text-wait">
+          RETRASADO
+        </span>
+      </div>
+    );
+  }
+
   return (
     <p
-      ref={ref}
       data-chart-price
       data-chart-live={q0 != null ? "1" : "0"}
       className="min-w-0 flex-1 truncate text-right font-mono text-sm tabular"
     >
-      {shown != null ? formatPrice(shown, digits) : ""}
+      <span ref={proxyRef}>{shown != null ? formatPrice(shown, digits) : ""}</span>
     </p>
   );
 }

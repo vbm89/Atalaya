@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { applyLiveQuote, assetIdFromTicker, liveQuotesSnapshot, liveXauSpot, subscribeLiveQuotes } from "./live-quotes.ts";
+import {
+  applyLiveQuote,
+  applyXauSpot,
+  assetIdFromTicker,
+  liveQuotesSnapshot,
+  liveXauSpot,
+  liveXauSpotAt,
+  parseGoldApiSpot,
+  subscribeLiveQuotes,
+  XAU_SPOT_POLL_MS,
+} from "./live-quotes.ts";
 import { parseBinanceAggTrade, parseBitgetTicker, unwrapBinancePayload } from "./stream.ts";
 
 describe("live quote parsers", () => {
@@ -109,6 +119,36 @@ describe("live quote store", () => {
     });
     assert.ok(n >= 1);
     off();
-    assert.equal(liveXauSpot(), null);
+  });
+});
+
+describe("XAU spot vs proxy stores", () => {
+  it("polls gold-api every 12s", () => {
+    assert.equal(XAU_SPOT_POLL_MS, 12_000);
+  });
+
+  it("keeps Bitget last and gold-api spot in separate slots", () => {
+    assert.equal(applyLiveQuote("XAUUSD", 4361.13, "ws"), true);
+    assert.equal(liveQuotesSnapshot().XAUUSD, 4361.13);
+    assert.equal(applyXauSpot(4354.2), true);
+    assert.equal(liveXauSpot(), 4354.2);
+    assert.notEqual(liveXauSpot(), liveQuotesSnapshot().XAUUSD);
+    assert.equal(applyXauSpot(4354.2), false);
+    assert.equal(liveXauSpot(), 4354.2);
+    assert.ok(liveXauSpotAt() > 0);
+  });
+
+  it("does not let Bitget last/mark replace the last valid spot", () => {
+    assert.equal(applyXauSpot(4355.1), true);
+    assert.equal(applyLiveQuote("XAUUSD", 4362.0, "ws"), true);
+    assert.equal(liveXauSpot(), 4355.1);
+    assert.equal(liveQuotesSnapshot().XAUUSD, 4362.0);
+  });
+
+  it("parses gold-api JSON and rejects junk", () => {
+    assert.equal(parseGoldApiSpot({ price: 4355.200195 }), 4355.200195);
+    assert.equal(parseGoldApiSpot({ price: 0 }), null);
+    assert.equal(parseGoldApiSpot({ price: "no" }), null);
+    assert.equal(parseGoldApiSpot(null), null);
   });
 });

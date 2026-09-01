@@ -28,6 +28,11 @@ const BINANCE_WS = [
   "wss://stream.binance.com:9443/ws/btcusdt@aggTrade",
 ] as const;
 
+/** Public gold-api spot. CORS *, no WS. Visual-only — V1 still uses attachXauSpot. */
+export const GOLD_API_XAU_URL = "https://api.gold-api.com/price/XAU";
+/** Check interval. gold-api CDN max-age ≈ 30s; we do not cache-bust. */
+export const XAU_SPOT_POLL_MS = 12_000;
+
 let quotes: LiveQuoteMap = {};
 let sources: LiveQuoteSources = {};
 let lastWsAt: Partial<Record<AssetId, number>> = {};
@@ -46,6 +51,10 @@ let paused = false;
 let restInflight = false;
 let lastRestAt = 0;
 let xauSpot: number | null = null;
+let xauSpotAt = 0;
+let xauInflight = false;
+let lastXauFetchAt = 0;
+let xauFail = 0;
 let stopTimer = 0;
 
 function notify() {
@@ -73,6 +82,21 @@ export function applyLiveQuote(id: AssetId, price: number, source: LiveQuoteSour
   return true;
 }
 
+export function parseGoldApiSpot(raw: unknown): number | null {
+  if (!raw || typeof raw !== "object") return null;
+  const n = Number((raw as { price?: unknown }).price);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+export function applyXauSpot(price: number): boolean {
+  if (!(price > 0) || !Number.isFinite(price)) return false;
+  const changed = xauSpot !== price;
+  xauSpot = price;
+  xauSpotAt = Date.now();
+  notify();
+  return changed;
+}
+
 export function liveQuotesSnapshot(): LiveQuoteMap {
   return quotes;
 }
@@ -83,6 +107,10 @@ export function liveQuoteSources(): LiveQuoteSources {
 
 export function liveXauSpot(): number | null {
   return xauSpot;
+}
+
+export function liveXauSpotAt(): number {
+  return xauSpotAt;
 }
 
 export function assetIdFromTicker(instId: string): AssetId | null {
@@ -138,6 +166,64 @@ function stopWatch() {
   }
 }
 
+function seedXauSpotIfEmpty(price: number | null | undefined) {
+  if (xauSpot != null) return;
+  if (price != null && price > 0) applyXauSpot(price);
+}
+
+async function fetchGoldApiSpot(): Promise<number | null> {
+  if (typeof fetch !== "function") return null;
+  const ctrl = typeof AbortController === "function" ? new AbortController() : null;
+  const timer =
+    typeof window !== "undefined" && ctrl
+      ? window.setTimeout(() => ctrl.abort(), 4000)
+      : 0;
+  try {
+    const res = await fetch(GOLD_API_XAU_URL, { signal: ctrl?.signal });
+    if (!res.ok) return null;
+    return parseGoldApiSpot(await res.json());
+  } catch {
+    return null;
+  } finally {
+    if (timer && typeof window !== "undefined") window.clearTimeout(timer);
+  }
+}
+
+async function pullXauSpotViaServer(): Promise<void> {
+  if (xauSpot != null) return;
+  try {
+    const { getVisualTickers } = await import("@/lib/market/live-ticker.fn");
+    const pack = await getVisualTickers();
+    seedXauSpotIfEmpty(pack.xauSpot);
+  } catch {
+    /* keep last spot */
+  }
+}
+
+async function pullXauSpot() {
+  if (dead || paused || xauInflight) return;
+  if (typeof document !== "undefined" && document.hidden) return;
+  const now = Date.now();
+  if (now - lastXauFetchAt < XAU_SPOT_POLL_MS) return;
+  xauInflight = true;
+  lastXauFetchAt = now;
+  try {
+    const price = await fetchGoldApiSpot();
+    if (price != null) {
+      xauFail = 0;
+      applyXauSpot(price);
+      return;
+    }
+    xauFail += 1;
+    if (xauFail >= 2) await pullXauSpotViaServer();
+  } catch {
+    xauFail += 1;
+    if (xauFail >= 2) await pullXauSpotViaServer();
+  } finally {
+    xauInflight = false;
+  }
+}
+
 async function pullRestTickers() {
   if (dead || paused || restInflight) return;
   if (typeof document !== "undefined" && document.hidden) return;
@@ -149,10 +235,7 @@ async function pullRestTickers() {
     const { getVisualTickers } = await import("@/lib/market/live-ticker.fn");
     const pack = await getVisualTickers();
     const rows = pack.tickers ?? {};
-    if (pack.xauSpot != null && pack.xauSpot > 0 && pack.xauSpot !== xauSpot) {
-      xauSpot = pack.xauSpot;
-      notify();
-    }
+    seedXauSpotIfEmpty(pack.xauSpot);
     const at = Date.now();
     for (const id of ASSET_IDS) {
       if (id === "BTCUSD" && wsTickIsFresh(lastWsAt[id], at)) continue;
@@ -174,7 +257,9 @@ async function pullRestTickers() {
 function startWatch() {
   stopWatch();
   if (typeof window === "undefined") return;
+  void pullXauSpot();
   watchId = window.setInterval(() => {
+    void pullXauSpot();
     void pullRestTickers();
   }, 2_000);
 }
@@ -262,6 +347,7 @@ function onVis() {
   if (!bitget) connectBitget();
   if (!binance) connectBinance();
   if (!watchId) startWatch();
+  else void pullXauSpot();
 }
 
 function actuallyStop() {
@@ -297,6 +383,7 @@ function startQuotes() {
   }
   if (bitget || binance) {
     dead = false;
+    if (!watchId) startWatch();
     return;
   }
   if (refs !== 1 && !dead) return;

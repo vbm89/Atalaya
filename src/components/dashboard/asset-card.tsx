@@ -85,15 +85,15 @@ export function AssetCard({
 
         <div className="mt-3 flex items-end justify-between gap-3">
           <div>
-            <p className="font-mono text-3xl font-medium tabular leading-none tracking-tight">
-              {displayPrice == null ? "—" : formatPrice(displayPrice, asset.digits)}
-            </p>
-            {isXau ? (
-              <p className="mt-1 text-xs font-medium tracking-wider text-subtle uppercase">
-                SPOT XAUUSD
-              </p>
-            ) : null}
-            {asset.id === "US100" || asset.id === "WTI" ? (
+            <LiveQuoteReadout
+              id={asset.id}
+              digits={asset.digits}
+              snapshotPrice={asset.price}
+              snapshotSpot={asset.priceSpot}
+              size="lg"
+              align="left"
+            />
+            {isXau ? null : asset.id === "US100" || asset.id === "WTI" ? (
               <p className="mt-1 text-xs font-medium tracking-wider text-subtle uppercase">
                 PROXY · sin basis · no es precio de bróker
               </p>
