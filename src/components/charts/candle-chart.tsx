@@ -19,7 +19,7 @@ import {
 import { ema, rsiWilder } from "@/lib/trading/indicators";
 import type { ChartOverlays, ChartSeries } from "@/lib/chart/types";
 import type { TickHandler } from "@/lib/chart/live";
-import { chartSetupLevels, setupAutoscaleLocked, setupLevelsKey, setupVisiblePriceRange, chartPriceLineSpecs, setupFillBands, type ChartSetupLevels } from "@/lib/chart/setup-overlay";
+import { chartSetupLevels, setupAutoscaleLocked, setupLevelsKey, chartPriceLineSpecs, setupFillBands, type ChartSetupLevels } from "@/lib/chart/setup-overlay";
 import {
   CHART_BAR_SPACING,
   CHART_MIN_BAR_SPACING,
@@ -176,9 +176,12 @@ const CandleChartInner = forwardRef<
   const dataKeyRef = useRef("");
   const levelsKeyRef = useRef("");
   const indicatorKeyRef = useRef("");
+  const marginKeyRef = useRef("");
   const viewTimerRef = useRef(0);
   const [chartBoot, setChartBoot] = useState(0);
   const levels = frozenLevels ?? (analysis ? chartSetupLevels(analysis) : null);
+  const visKey = `${visibleLevels?.zone !== false ? 1 : 0}${visibleLevels?.sl !== false ? 1 : 0}${visibleLevels?.tp1 !== false ? 1 : 0}${visibleLevels?.tp2 !== false ? 1 : 0}`;
+  const overlayKey = `${setupLevelsKey(levels)}:${visKey}`;
 
   const writeHud = (c: Candle | undefined) => {
     const text = c ? ohlcLine(c, series.digits) : "";
@@ -198,24 +201,9 @@ const CandleChartInner = forwardRef<
 
   const applySetupScale = () => {
     const candle = candleRef.current;
-    const lv = frozenLevels ?? (analysis ? chartSetupLevels(analysis) : null);
-    const last = getBars().at(-1)?.close ?? series.candles.at(-1)?.close ?? null;
     if (!candle) return;
-    if (!setupAutoscaleLocked(series.assetId)) {
-      candle.applyOptions({ autoscaleInfoProvider: undefined });
-      candle.priceScale().setAutoScale(true);
-      return;
-    }
-    if (lv) {
-      const range = setupVisiblePriceRange(lv, last);
-      candle.applyOptions({
-        autoscaleInfoProvider: () => ({
-          priceRange: { minValue: range.min, maxValue: range.max },
-        }),
-      });
-    } else {
-      candle.applyOptions({ autoscaleInfoProvider: undefined });
-    }
+    candle.applyOptions({ autoscaleInfoProvider: undefined });
+    candle.priceScale().setAutoScale(true);
   };
 
   const applyDefaultView = () => {
@@ -471,9 +459,13 @@ const CandleChartInner = forwardRef<
     }
 
     const showVol = overlays.volume && series.volumeAvailable;
-    chart.priceScale("right").applyOptions({
-      scaleMargins: { top: 0.06, bottom: showVol ? 0.18 : 0.08 },
-    });
+    const marginKey = showVol ? "vol" : "novol";
+    if (marginKeyRef.current !== marginKey) {
+      marginKeyRef.current = marginKey;
+      chart.priceScale("right").applyOptions({
+        scaleMargins: { top: 0.06, bottom: showVol ? 0.18 : 0.08 },
+      });
+    }
     const indicatorKey = `${dataKey}:${overlays.ema20 ? 1 : 0}${overlays.ema50 ? 1 : 0}${overlays.ema200 ? 1 : 0}${overlays.rsi ? 1 : 0}${showVol ? 1 : 0}`;
     if (indicatorKeyRef.current !== indicatorKey) {
       indicatorKeyRef.current = indicatorKey;
@@ -571,9 +563,8 @@ const CandleChartInner = forwardRef<
       }
     }
 
-    const lv = frozenLevels ?? (analysis ? chartSetupLevels(analysis) : null);
-    const visKey = `${visibleLevels?.zone !== false ? 1 : 0}${visibleLevels?.sl !== false ? 1 : 0}${visibleLevels?.tp1 !== false ? 1 : 0}${visibleLevels?.tp2 !== false ? 1 : 0}`;
-    const lvKey = `${setupLevelsKey(lv)}:${visKey}`;
+    const lv = levels;
+    const lvKey = overlayKey;
     if (levelsKeyRef.current !== lvKey) {
       levelsKeyRef.current = lvKey;
       for (const line of linesRef.current) candle.removePriceLine(line);
@@ -624,7 +615,7 @@ const CandleChartInner = forwardRef<
       viewKeyRef.current = viewKey;
       scheduleDefaultView();
     }
-  }, [chartBoot, series.assetId, series.tf, series.digits, series.volumeAvailable, overlays, analysis, frozenLevels, focusSetup, getBars, visibleLevels]);
+  }, [chartBoot, series.assetId, series.tf, series.digits, series.volumeAvailable, overlays, overlayKey, focusSetup, getBars]);
 
   useEffect(() => {
     const c = colors();

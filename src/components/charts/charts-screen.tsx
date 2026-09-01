@@ -470,7 +470,7 @@ function ChartWorkspace({
           {freezeLevels ? (
             <span className={freezeLevels.direction === "buy" ? "shrink-0 text-buy" : "shrink-0 text-sell"}>
               {freezeLevels.direction === "buy" ? "COMPRA" : "VENTA"}{" "}
-              {setupStateCaption(freezeLevels.state)} · CONGELADO
+              {setupStateCaption(freezeLevels.state)}
             </span>
           ) : hasSetup && analysis?.setup ? (
             <span className={analysis.setup.direction === "buy" ? "shrink-0 text-buy" : "shrink-0 text-sell"}>
