@@ -14,7 +14,8 @@ import {
 } from "lucide-react";
 import { getChartSeries } from "@/lib/market/chart.fn";
 import { useChartLive, type TickHandler } from "@/lib/chart/live";
-import { useLiveQuotes } from "@/lib/chart/live-quotes";
+import { useLiveQuotes, useLiveQuoteSources } from "@/lib/chart/live-quotes";
+import { visualCardPrice } from "@/lib/chart/quote-view";
 import {
   CHART_TFS,
   DEFAULT_OVERLAYS,
@@ -205,6 +206,7 @@ function ChartMarketList({
   const rest = ASSETS.filter((a) => !favs.includes(a.id));
   const favAssets = ASSETS.filter((a) => favs.includes(a.id));
   const liveQuotes = useLiveQuotes();
+  const liveSources = useLiveQuoteSources();
 
   return (
     <div className="atalaya-charts-list" data-chart-list="1">
@@ -216,17 +218,28 @@ function ChartMarketList({
         <section>
           <p className="px-1 text-xs font-medium tracking-wider text-muted uppercase">Favoritos</p>
           <ul className="mt-2 space-y-1">
-            {favAssets.map((a) => (
+            {favAssets.map((a) => {
+              const snap = snapshot?.assets.find((x) => x.id === a.id);
+              const shown = visualCardPrice({
+                id: a.id,
+                live: liveQuotes[a.id],
+                snapshotPrice: snap?.price,
+                snapshotSpot: snap?.priceSpot,
+              });
+              return (
               <SymbolRow
                 key={a.id}
                 id={a.id}
                 starred
-                price={liveQuotes[a.id] ?? snapshot?.assets.find((x) => x.id === a.id)?.price ?? null}
+                price={shown.main}
+                proxy={shown.proxy}
+                delayed={liveSources[a.id] != null && liveSources[a.id] !== "ws"}
                 digits={a.digits}
                 onPick={() => onPick(a.id)}
                 onFav={() => onFav(a.id)}
               />
-            ))}
+              );
+            })}
           </ul>
         </section>
       ) : null}
@@ -235,17 +248,28 @@ function ChartMarketList({
           Todos los mercados
         </p>
         <ul className="mt-2 space-y-1">
-          {(favAssets.length ? rest : ASSETS).map((a) => (
+          {(favAssets.length ? rest : ASSETS).map((a) => {
+              const snap = snapshot?.assets.find((x) => x.id === a.id);
+              const shown = visualCardPrice({
+                id: a.id,
+                live: liveQuotes[a.id],
+                snapshotPrice: snap?.price,
+                snapshotSpot: snap?.priceSpot,
+              });
+              return (
             <SymbolRow
               key={a.id}
               id={a.id}
               starred={favs.includes(a.id)}
-              price={liveQuotes[a.id] ?? snapshot?.assets.find((x) => x.id === a.id)?.price ?? null}
+              price={shown.main}
+              proxy={shown.proxy}
+              delayed={liveSources[a.id] != null && liveSources[a.id] !== "ws"}
               digits={a.digits}
               onPick={() => onPick(a.id)}
               onFav={() => onFav(a.id)}
             />
-          ))}
+              );
+            })}
         </ul>
       </section>
     </div>
@@ -256,6 +280,8 @@ function SymbolRow({
   id,
   starred,
   price,
+  proxy,
+  delayed,
   digits,
   onPick,
   onFav,
@@ -263,6 +289,8 @@ function SymbolRow({
   id: AssetId;
   starred: boolean;
   price: number | null;
+  proxy?: number | null;
+  delayed?: boolean;
   digits: number;
   onPick: () => void;
   onFav: () => void;
@@ -274,8 +302,16 @@ function SymbolRow({
         <p className="text-xs text-muted">{CHART_ASSET_BLURB[id]}</p>
       </button>
       {price != null ? (
-        <p className="px-2 font-mono text-sm tabular" data-live-price={id}>
+        <p className="px-2 text-right font-mono text-sm tabular" data-live-price={id} data-live-delayed={delayed ? "1" : "0"}>
           {formatPrice(price, digits)}
+          {id === "XAUUSD" && proxy != null ? (
+            <span className="mt-0.5 block text-[10px] text-wait">
+              PROXY {formatPrice(proxy, digits)}
+              {delayed ? " · RETRASADO" : ""}
+            </span>
+          ) : delayed ? (
+            <span className="mt-0.5 block text-[10px] text-wait">RETRASADO</span>
+          ) : null}
         </p>
       ) : null}
       <button

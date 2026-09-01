@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
 import type { AssetId } from "../trading/types";
 import { parseBinanceAggTrade, parseBitgetTicker, unwrapBinancePayload } from "./stream";
+import { LIVE_REST_MS, type LiveQuoteSource, wsTickIsFresh } from "./quote-view";
 
 export type LiveQuoteMap = Partial<Record<AssetId, number>>;
+export type LiveQuoteSources = Partial<Record<AssetId, LiveQuoteSource>>;
+
+const ASSET_IDS: AssetId[] = ["XAUUSD", "BTCUSD", "US100", "WTI"];
 
 const BITGET_INST: Record<AssetId, string> = {
   XAUUSD: "XAUUSDT",
@@ -25,6 +29,8 @@ const BINANCE_WS = [
 ] as const;
 
 let quotes: LiveQuoteMap = {};
+let sources: LiveQuoteSources = {};
+let lastWsAt: Partial<Record<AssetId, number>> = {};
 const listeners = new Set<() => void>();
 let refs = 0;
 let bitget: WebSocket | null = null;
@@ -32,10 +38,13 @@ let binance: WebSocket | null = null;
 let pingId = 0;
 let retryId = 0;
 let btcRetryId = 0;
+let watchId = 0;
 let raf = 0;
 let btcHost = 0;
 let dead = true;
 let paused = false;
+let restInflight = false;
+let lastRestAt = 0;
 
 function notify() {
   if (typeof requestAnimationFrame !== "function") {
@@ -49,16 +58,25 @@ function notify() {
   });
 }
 
-export function applyLiveQuote(id: AssetId, price: number): boolean {
+export function applyLiveQuote(id: AssetId, price: number, source: LiveQuoteSource = "ws"): boolean {
   if (!(price > 0) || !Number.isFinite(price)) return false;
-  if (quotes[id] === price) return false;
+  const now = Date.now();
+  if (source === "rest" && wsTickIsFresh(lastWsAt[id], now)) return false;
+  if (source === "ws") lastWsAt[id] = now;
+  const srcChanged = sources[id] !== source;
+  if (quotes[id] === price && !srcChanged) return false;
   quotes = { ...quotes, [id]: price };
+  sources = { ...sources, [id]: source };
   notify();
   return true;
 }
 
 export function liveQuotesSnapshot(): LiveQuoteMap {
   return quotes;
+}
+
+export function liveQuoteSources(): LiveQuoteSources {
+  return sources;
 }
 
 export function assetIdFromTicker(instId: string): AssetId | null {
@@ -71,7 +89,7 @@ function ingestBitget(raw: string) {
     const parsed = parseBitgetTicker(JSON.parse(raw));
     if (!parsed) return;
     const id = assetIdFromTicker(parsed.instId);
-    if (id) applyLiveQuote(id, parsed.price);
+    if (id) applyLiveQuote(id, parsed.price, "ws");
   } catch {
     /* ignore malformed */
   }
@@ -80,7 +98,7 @@ function ingestBitget(raw: string) {
 function ingestBinance(raw: string) {
   try {
     const t = parseBinanceAggTrade(unwrapBinancePayload(JSON.parse(raw)));
-    if (t) applyLiveQuote("BTCUSD", t.price);
+    if (t) applyLiveQuote("BTCUSD", t.price, "ws");
   } catch {
     /* ignore */
   }
@@ -104,6 +122,56 @@ function stopPing() {
     window.clearInterval(pingId);
     pingId = 0;
   }
+}
+
+function stopWatch() {
+  if (watchId) {
+    window.clearInterval(watchId);
+    watchId = 0;
+  }
+}
+
+async function pullRestTickers() {
+  if (dead || paused || restInflight) return;
+  const now = Date.now();
+  if (now - lastRestAt < LIVE_REST_MS) return;
+  const stale = ASSET_IDS.some((id) => !wsTickIsFresh(lastWsAt[id], now));
+  if (!stale) return;
+  restInflight = true;
+  lastRestAt = now;
+  try {
+    const { getVisualTickers } = await import("@/lib/market/live-ticker.fn");
+    const rows = await getVisualTickers();
+    const at = Date.now();
+    for (const id of ASSET_IDS) {
+      if (wsTickIsFresh(lastWsAt[id], at)) continue;
+      const price = rows[id];
+      if (price != null) applyLiveQuote(id, price, "rest");
+      else if (sources[id] !== "snapshot") {
+        sources = { ...sources, [id]: "snapshot" };
+        notify();
+      }
+    }
+  } catch {
+    const at = Date.now();
+    for (const id of ASSET_IDS) {
+      if (wsTickIsFresh(lastWsAt[id], at)) continue;
+      if (sources[id] === "ws" || sources[id] == null) {
+        sources = { ...sources, [id]: "snapshot" };
+      }
+    }
+    notify();
+  } finally {
+    restInflight = false;
+  }
+}
+
+function startWatch() {
+  stopWatch();
+  if (typeof window === "undefined") return;
+  watchId = window.setInterval(() => {
+    void pullRestTickers();
+  }, 2_000);
 }
 
 function connectBitget() {
@@ -187,6 +255,7 @@ function onVis() {
   if (document.hidden) {
     paused = true;
     stopPing();
+    stopWatch();
     window.clearTimeout(retryId);
     window.clearTimeout(btcRetryId);
     detach(bitget);
@@ -198,6 +267,7 @@ function onVis() {
   paused = false;
   connectBitget();
   connectBinance();
+  startWatch();
 }
 
 function startQuotes() {
@@ -210,6 +280,7 @@ function startQuotes() {
   if (!paused) {
     connectBitget();
     connectBinance();
+    startWatch();
   }
 }
 
@@ -221,6 +292,7 @@ function stopQuotes() {
   if (typeof document === "undefined") return;
   document.removeEventListener("visibilitychange", onVis);
   stopPing();
+  stopWatch();
   window.clearTimeout(retryId);
   window.clearTimeout(btcRetryId);
   if (raf) {
@@ -237,6 +309,21 @@ export function useLiveQuotes(): LiveQuoteMap {
   const [map, setMap] = useState<LiveQuoteMap>(() => quotes);
   useEffect(() => {
     const fn = () => setMap(quotes);
+    listeners.add(fn);
+    startQuotes();
+    fn();
+    return () => {
+      listeners.delete(fn);
+      stopQuotes();
+    };
+  }, []);
+  return map;
+}
+
+export function useLiveQuoteSources(): LiveQuoteSources {
+  const [map, setMap] = useState<LiveQuoteSources>(() => sources);
+  useEffect(() => {
+    const fn = () => setMap(sources);
     listeners.add(fn);
     startQuotes();
     fn();

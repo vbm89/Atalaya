@@ -94,4 +94,10 @@ describe("live quote store", () => {
     assert.equal(applyLiveQuote("BTCUSD", 101.25), true);
     assert.equal(liveQuotesSnapshot().BTCUSD, 101.25);
   });
+
+  it("does not let REST overwrite a fresh WebSocket tick", () => {
+    assert.equal(applyLiveQuote("WTI", 87.5, "ws"), true);
+    assert.equal(applyLiveQuote("WTI", 87.1, "rest"), false);
+    assert.equal(liveQuotesSnapshot().WTI, 87.5);
+  });
 });

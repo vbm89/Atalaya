@@ -14,7 +14,7 @@ import { CalendarList } from "./calendar-list";
 import { AccountPanel, useAccountSettings, useCosts } from "./account-panel";
 import { ChartsScreen, type ChartIntent } from "@/components/charts/charts-screen";
 import { hasChartableSetup, SETUP_CHART_TF, chartIntentFromAnalysis, frozenLevelsFromEpisode } from "@/lib/chart/setup-overlay";
-import { useLiveQuotes } from "@/lib/chart/live-quotes";
+import { useLiveQuotes, useLiveQuoteSources } from "@/lib/chart/live-quotes";
 import { getAsset } from "@/lib/trading/assets";
 import { foldWatchBook, type WatchBook } from "@/lib/watch/memory";
 import { readWatchBook, writeWatchBook } from "@/lib/watch/persist";
@@ -176,6 +176,7 @@ export function Dashboard() {
     retry: 0,
   });
   const liveQuotes = useLiveQuotes();
+  const liveSources = useLiveQuoteSources();
 
   useEffect(() => {
     if (query.data) writeCache(query.data);
@@ -381,6 +382,7 @@ export function Dashboard() {
                           key={a.id}
                           asset={shown}
                           livePrice={liveQuotes[a.id] ?? null}
+                          delayed={liveSources[a.id] != null && liveSources[a.id] !== "ws"}
                           onOpen={() => setOpenId(a.id)}
                         />
                       );
