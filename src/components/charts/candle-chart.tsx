@@ -6,12 +6,14 @@ import {
   HistogramSeries,
   LineSeries,
   LineStyle,
+  TickMarkType,
   createChart,
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
   type LogicalRange,
   type MouseEventParams,
+  type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
 import { ema, rsiWilder } from "@/lib/trading/indicators";
@@ -86,6 +88,46 @@ function withAlpha(color: string, alpha: number): string {
     return `rgba(${r},${g},${b},${alpha})`;
   }
   return color;
+}
+
+/** Axis/crosshair only. Candle.time stays UTC unix seconds. */
+const CHART_TZ = "Europe/Madrid";
+
+function unixSec(time: Time): number | null {
+  return typeof time === "number" && Number.isFinite(time) ? time : null;
+}
+
+function madridFormat(unix: number, opts: Intl.DateTimeFormatOptions): string {
+  return new Intl.DateTimeFormat("es-ES", {
+    timeZone: CHART_TZ,
+    hour12: false,
+    ...opts,
+  }).format(new Date(unix * 1000));
+}
+
+function chartTimeFormatter(time: Time): string {
+  const sec = unixSec(time);
+  if (sec == null) return "";
+  return madridFormat(sec, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function chartTickMarkFormatter(time: Time, tickMarkType: TickMarkType): string | null {
+  const sec = unixSec(time);
+  if (sec == null) return null;
+  switch (tickMarkType) {
+    case TickMarkType.Year:
+      return madridFormat(sec, { year: "numeric" });
+    case TickMarkType.Month:
+      return madridFormat(sec, { month: "short" });
+    case TickMarkType.DayOfMonth:
+      return madridFormat(sec, { day: "2-digit" });
+    case TickMarkType.Time:
+      return madridFormat(sec, { hour: "2-digit", minute: "2-digit" });
+    case TickMarkType.TimeWithSeconds:
+      return madridFormat(sec, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    default:
+      return madridFormat(sec, { hour: "2-digit", minute: "2-digit" });
+  }
 }
 
 function toCandle(c: Candle) {
@@ -289,6 +331,7 @@ const CandleChartInner = forwardRef<
           shiftVisibleRangeOnNewBar: true,
           lockVisibleTimeRangeOnResize: true,
           allowBoldLabels: false,
+          tickMarkFormatter: chartTickMarkFormatter,
         },
         handleScroll: {
           mouseWheel: true,
@@ -303,6 +346,10 @@ const CandleChartInner = forwardRef<
           axisDoubleClickReset: true,
         },
         kineticScroll: { touch: true, mouse: false },
+        localization: {
+          locale: "es-ES",
+          timeFormatter: chartTimeFormatter,
+        },
       });
       candles = chart.addSeries(CandlestickSeries, {
         upColor: c.buy,
