@@ -156,9 +156,10 @@ const CandleChartInner = forwardRef<
     getBars: () => Candle[];
     hudEl?: HTMLElement | null;
     visibleLevels?: { zone: boolean; sl: boolean; tp1: boolean; tp2: boolean };
+    lastPrice?: number | null;
   }
 >(function CandleChartInner(
-  { series, overlays, analysis, frozenLevels, focusSetup, subscribeTick, getBars, hudEl, visibleLevels },
+  { series, overlays, analysis, frozenLevels, focusSetup, subscribeTick, getBars, hudEl, visibleLevels, lastPrice },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -171,6 +172,7 @@ const CandleChartInner = forwardRef<
   const ema200Ref = useRef<LineApi | null>(null);
   const rsiRef = useRef<LineApi | null>(null);
   const linesRef = useRef<IPriceLine[]>([]);
+  const lastLineRef = useRef<IPriceLine | null>(null);
   const zoneRef = useRef<ZoneBand | null>(null);
   const viewKeyRef = useRef("");
   const dataKeyRef = useRef("");
@@ -361,6 +363,7 @@ const CandleChartInner = forwardRef<
       });
       chartRef.current = chart;
       candleRef.current = candles;
+      lastLineRef.current = null;
       viewKeyRef.current = "";
       dataKeyRef.current = "";
       levelsKeyRef.current = "";
@@ -668,6 +671,31 @@ const CandleChartInner = forwardRef<
       }
     });
   }, [subscribeTick, getBars, series.digits]);
+
+  useEffect(() => {
+    const candle = candleRef.current;
+    if (!candle) return;
+    if (lastPrice == null || !(lastPrice > 0) || !Number.isFinite(lastPrice)) {
+      if (lastLineRef.current) {
+        candle.removePriceLine(lastLineRef.current);
+        lastLineRef.current = null;
+      }
+      return;
+    }
+    if (!lastLineRef.current) {
+      const c = colors();
+      lastLineRef.current = candle.createPriceLine({
+        price: lastPrice,
+        title: "Last",
+        color: c.accent,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        axisLabelVisible: true,
+      });
+      return;
+    }
+    lastLineRef.current.applyOptions({ price: lastPrice });
+  }, [lastPrice, chartBoot]);
 
   return (
     <div className="atalaya-chart">

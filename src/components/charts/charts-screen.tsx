@@ -338,6 +338,11 @@ function ChartWorkspace({
   const analysis = snapshot?.assets.find((a) => a.id === assetId) ?? null;
   const series = query.data;
   const live = useChartLive(series);
+  const liveQuotes = useLiveQuotes();
+  const lastLive = liveQuotes[assetId] ?? null;
+  useEffect(() => {
+    if (lastLive != null) live.nudgeLast(lastLive);
+  }, [lastLive, live.nudgeLast]);
   const starred = favs.includes(assetId);
   const seedClose =
     live.key === `${assetId}:${tf}`
@@ -410,7 +415,13 @@ function ChartWorkspace({
             ))}
           </Picker>
           {series ? (
-            <LivePrice digits={series.digits} seed={seedClose} subscribe={live.subscribe} />
+            <LivePrice
+              assetId={assetId}
+              digits={series.digits}
+              seed={lastLive ?? seedClose}
+              subscribe={live.subscribe}
+              quote={lastLive}
+            />
           ) : (
             <span className="flex-1" />
           )}
@@ -480,6 +491,7 @@ function ChartWorkspace({
             getBars={live.getBars}
             hudEl={hudEl.current}
             visibleLevels={levelsOn}
+            lastPrice={lastLive}
           />
         )}
       </div>
@@ -578,30 +590,37 @@ function ChartWorkspace({
 }
 
 function LivePrice({
+  assetId,
   digits,
   seed,
   subscribe,
+  quote,
 }: {
+  assetId: AssetId;
   digits: number;
   seed: number | null;
   subscribe: (fn: TickHandler) => () => void;
+  quote: number | null;
 }) {
   const ref = useRef<HTMLParagraphElement>(null);
+  const shown = quote ?? seed;
   useEffect(() => {
-    if (ref.current && seed != null) ref.current.textContent = formatPrice(seed, digits);
-  }, [seed, digits]);
+    if (ref.current && shown != null) ref.current.textContent = formatPrice(shown, digits);
+  }, [shown, digits]);
   useEffect(() => {
+    if (quote != null) return;
     return subscribe((c) => {
       if (ref.current) ref.current.textContent = formatPrice(c.close, digits);
     });
-  }, [subscribe, digits]);
+  }, [subscribe, digits, quote, assetId]);
   return (
     <p
       ref={ref}
       data-chart-price
+      data-chart-live={quote != null ? "1" : "0"}
       className="min-w-0 flex-1 truncate text-right font-mono text-sm tabular"
     >
-      {seed != null ? formatPrice(seed, digits) : ""}
+      {shown != null ? formatPrice(shown, digits) : ""}
     </p>
   );
 }

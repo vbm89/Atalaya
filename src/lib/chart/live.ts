@@ -84,6 +84,25 @@ export function useChartLive(series: ChartSeries | undefined) {
 
   const getBars = useCallback(() => barsRef.current, []);
   const getTickHz = useCallback(() => hzRef.current, []);
+  const nudgeLast = useCallback(
+    (price: number) => {
+      const last = barsRef.current.at(-1);
+      if (!last) return false;
+      const tf = ownedKey.split(":")[1] as ChartTf | undefined;
+      if (!tf) return false;
+      const now = Math.floor(Date.now() / 1000);
+      if (!applyTradeInPlace(last, price, now, tfSeconds(tf))) return false;
+      for (const fn of listenersRef.current) {
+        try {
+          fn(last, false);
+        } catch {
+          /* listener must not break the feed */
+        }
+      }
+      return true;
+    },
+    [ownedKey],
+  );
 
   useEffect(() => {
     if (!series?.candles.length) return;
@@ -481,5 +500,6 @@ export function useChartLive(series: ChartSeries | undefined) {
     subscribe,
     getBars,
     getTickHz,
+    nudgeLast,
   };
 }

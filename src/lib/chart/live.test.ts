@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { applyTradeToLast, foldLiveLast, mergeBar, mergeKlineIntoOpen } from "./bars.ts";
+import { applyTradeInPlace, applyTradeToLast, foldLiveLast, mergeBar, mergeKlineIntoOpen } from "./bars.ts";
 import type { Candle } from "../trading/types.ts";
 import { parseBinanceAggTrade, parseBinanceKline, unwrapBinancePayload } from "./stream.ts";
 
@@ -111,5 +111,24 @@ describe("binance combined stream parse", () => {
     assert.equal(k.candle.time, 1_700_000_100);
     assert.equal(k.closed, false);
     assert.equal(k.eventTs, 1_700_000_160);
+  });
+});
+
+describe("live last price on the open bar", () => {
+  it("updates close/high without inventing a new candle", () => {
+    const last = {
+      time: Math.floor(Date.now() / 1000) - 10,
+      open: 29200,
+      high: 29210,
+      low: 29190,
+      close: 29205,
+      volume: 1,
+    };
+    const now = Math.floor(Date.now() / 1000);
+    assert.equal(applyTradeInPlace(last, 29240, now, 900), true);
+    assert.equal(last.close, 29240);
+    assert.equal(last.high, 29240);
+    assert.equal(last.open, 29200);
+    assert.equal(last.low, 29190);
   });
 });
