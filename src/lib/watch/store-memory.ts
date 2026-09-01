@@ -26,6 +26,7 @@ interface EventRec {
   notifyStatus: "pending" | "claimed" | "failed" | "sent";
   notifyAttempts: number;
   notifyClaimedAt: number | null;
+  notifyLastError: string | null;
 }
 
 interface OutcomeRec {
@@ -152,6 +153,7 @@ export function createMemoryStore(): WatchStore {
         notifyStatus: "pending",
         notifyAttempts: 0,
         notifyClaimedAt: null,
+        notifyLastError: null,
       });
       return true;
     },
@@ -184,11 +186,11 @@ export function createMemoryStore(): WatchStore {
       events.set(k, { ...ev, notified: true, notifyStatus: "sent" });
     },
 
-    async markNotifyFailed(episodeId, slot, fromState, toState, _error) {
+    async markNotifyFailed(episodeId, slot, fromState, toState, error) {
       const k = eventKey(episodeId, slot, fromState, toState);
       const ev = events.get(k);
       if (!ev || ev.notified) return;
-      events.set(k, { ...ev, notifyStatus: "failed" });
+      events.set(k, { ...ev, notifyStatus: "failed", notifyLastError: error });
     },
 
     async listRetryableEvents(nowMs) {
@@ -271,6 +273,9 @@ export function createMemoryStore(): WatchStore {
           slot: ev.slot,
           notified: ev.notified,
           live: ep.closedAtMs == null,
+          notifyStatus: ev.notifyStatus,
+          notifyAttempts: ev.notifyAttempts,
+          notifyLastError: ev.notifyLastError,
         });
       }
       rows.sort((a, b) => b.atMs - a.atMs);
@@ -327,6 +332,41 @@ export function createMemoryStore(): WatchStore {
 
     async deletePushSub(endpoint) {
       subs.delete(endpoint);
+    },
+
+    async countPushSubs() {
+      const all = [...subs.values()];
+      return {
+        active: all.filter((s) => !s.disabled).length,
+        disabled: all.filter((s) => s.disabled).length,
+      };
+    },
+
+    async hasPushSub(endpoint) {
+      const s = subs.get(endpoint);
+      return Boolean(s && !s.disabled);
+    },
+
+    async listNotifyDebug(limit) {
+      const rows = [...events.values()]
+        .map((ev) => {
+          const ep = episodes.get(ev.episodeId);
+          if (!ep) return null;
+          return {
+            episodeId: ev.episodeId,
+            assetId: ep.assetId,
+            fromState: ev.fromState,
+            toState: ev.toState,
+            atMs: ev.atMs,
+            notified: ev.notified,
+            notifyStatus: ev.notifyStatus,
+            notifyAttempts: ev.notifyAttempts,
+            notifyLastError: ev.notifyLastError,
+          };
+        })
+        .filter((r): r is NonNullable<typeof r> => r != null)
+        .sort((a, b) => b.atMs - a.atMs);
+      return rows.slice(0, limit);
     },
   };
 }

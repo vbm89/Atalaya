@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Bell } from "lucide-react";
 import { getWatchInbox } from "@/lib/watch/watch.fn";
 import { formatMadridClock } from "@/lib/watch/clock";
-import { inboxItemKey, inboxStateLabel, type InboxItem } from "@/lib/watch/inbox";
+import { inboxItemKey, inboxPushLabel, inboxStateLabel, type InboxItem } from "@/lib/watch/inbox";
 import { loadReadKeys, markInboxRead } from "@/lib/watch/inbox-read";
 import type { AssetId } from "@/lib/trading/types";
 import { cn } from "@/lib/utils";
@@ -66,7 +66,8 @@ export function InboxPanel({
                     <span className="mt-0.5 block text-xs text-subtle">
                       {row.direction === "buy" ? "COMPRA" : "VENTA"} ·{" "}
                       {row.live ? "vigente" : "caducado"}
-                      {row.notified ? " · Push enviado" : " · solo bandeja"}
+                      {" · "}
+                      {inboxPushLabel(row)}
                       {isRead ? "" : " · no leído"}
                     </span>
                   </span>

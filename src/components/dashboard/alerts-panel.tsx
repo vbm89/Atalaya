@@ -4,33 +4,91 @@ import {
   deletePushSubscription,
   getPushGate,
   getPushPrefs,
+  getPushStatus,
   getVapidPublicKey,
   savePushPrefs,
   savePushSubscription,
+  sendTestPush,
   setAlertPin,
 } from "@/lib/watch/watch.fn";
 import { DEFAULT_PUSH_PREFS, type PushPrefs } from "@/lib/watch/push-prefs";
 import {
   detectPushUi,
+  localPushSubscription,
+  pushStateLabel,
   registerAtalayaWorker,
-  urlBase64ToUint8Array,
+  subscribeAtalayaPush,
+  unsubscribeAtalayaPush,
   type PushUiState,
 } from "@/lib/watch/push-client";
 
 const ENDPOINT_KEY = "atalaya:push-endpoint:v1";
 
+type ServerStatus = {
+  vapidConfigured: boolean;
+  activeSubscriptions: number;
+  disabledSubscriptions: number;
+  thisDeviceRegistered: boolean | null;
+  lastEvents: Array<{
+    assetId: string;
+    toState: string;
+    notified: boolean;
+    notifyStatus: string;
+    notifyLastError: string | null;
+    pushable: boolean;
+  }>;
+};
+
 export function AlertsPanel() {
   const [state, setState] = useState<PushUiState>("checking");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testNote, setTestNote] = useState<string | null>(null);
   const [pin, setPin] = useState("");
   const [gate, setGate] = useState<{ pinSet: boolean; open: boolean } | null>(null);
   const [prefs, setPrefs] = useState<PushPrefs>(DEFAULT_PUSH_PREFS);
+  const [server, setServer] = useState<ServerStatus | null>(null);
+
+  async function refreshStatus() {
+    const base = detectPushUi();
+    if (base === "ios-browser" || base === "unsupported" || base === "denied") {
+      setState(base);
+      return base;
+    }
+    try {
+      await registerAtalayaWorker();
+    } catch {
+      /* keep going — subscribe will retry */
+    }
+    let local: PushSubscription | null = null;
+    try {
+      local = await localPushSubscription();
+    } catch {
+      local = null;
+    }
+    const endpoint = local?.endpoint ?? (typeof window !== "undefined" ? window.localStorage.getItem(ENDPOINT_KEY) : null);
+    let status: ServerStatus | null = null;
+    try {
+      status = await getPushStatus({ data: { endpoint: endpoint ?? undefined } });
+      setServer(status);
+    } catch {
+      setServer(null);
+    }
+    const perm = typeof Notification !== "undefined" ? Notification.permission : "default";
+    let next: PushUiState = "off";
+    if (perm === "denied") next = "denied";
+    else if (local && status?.thisDeviceRegistered === true) next = "on";
+    else if (local && status?.thisDeviceRegistered === false) next = "local-only";
+    else if (local && status == null) next = "local-only";
+    else if (perm === "granted" && !local) next = "granted-no-sub";
+    else next = "off";
+    setState(next);
+    return next;
+  }
 
   useEffect(() => {
     let cancel = false;
     (async () => {
-      const base = detectPushUi();
       try {
         const g = await getPushGate();
         if (!cancel) setGate(g);
@@ -39,17 +97,7 @@ export function AlertsPanel() {
       } catch {
         if (!cancel) setGate({ pinSet: false, open: true });
       }
-      if (base !== "off") {
-        if (!cancel) setState(base);
-        return;
-      }
-      try {
-        const reg = await navigator.serviceWorker.getRegistration("/");
-        const sub = await reg?.pushManager.getSubscription();
-        if (!cancel) setState(sub ? "on" : "off");
-      } catch {
-        if (!cancel) setState("off");
-      }
+      if (!cancel) await refreshStatus();
     })();
     return () => {
       cancel = true;
@@ -59,46 +107,64 @@ export function AlertsPanel() {
   const enable = async () => {
     setBusy(true);
     setError(null);
+    setTestNote(null);
     try {
       const vis = detectPushUi();
       if (vis === "ios-browser" || vis === "unsupported") {
         setState(vis);
         return;
       }
+      if (typeof Notification !== "undefined" && Notification.permission !== "granted") {
+        const perm = await Notification.requestPermission();
+        if (perm !== "granted") {
+          setState(perm === "denied" ? "denied" : "off");
+          return;
+        }
+      }
       if (gate?.open && pin.length >= 4) {
         await setAlertPin({ data: { pin } });
         setGate({ pinSet: true, open: false });
       }
-      const perm = await Notification.requestPermission();
-      if (perm !== "granted") {
-        setState(perm === "denied" ? "denied" : "off");
-        return;
-      }
       const { publicKey } = await getVapidPublicKey();
       if (!publicKey) throw new Error("VAPID no configurado en el servidor.");
-      const reg = await registerAtalayaWorker();
-      await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
-      });
-      const json = sub.toJSON();
-      const endpoint = json.endpoint;
-      const p256dh = json.keys?.p256dh;
-      const auth = json.keys?.auth;
-      if (!endpoint || !p256dh || !auth) throw new Error("El navegador no entregó la suscripción.");
-      await savePushSubscription({
-        data: { endpoint, p256dh, auth, userAgent: navigator.userAgent, pin: pin || undefined },
+      const sub = await subscribeAtalayaPush(publicKey);
+      const saved = await savePushSubscription({
+        data: { ...sub, userAgent: navigator.userAgent, pin: pin || undefined },
       });
       try {
-        window.localStorage.setItem(ENDPOINT_KEY, endpoint);
+        window.localStorage.setItem(ENDPOINT_KEY, sub.endpoint);
       } catch {
         /* ignore */
       }
+      if (!saved.thisDeviceRegistered) {
+        throw new Error("El servidor no guardó la suscripción. Revisa el PIN.");
+      }
       setState("on");
+      setServer((s) =>
+        s
+          ? { ...s, thisDeviceRegistered: true, activeSubscriptions: saved.activeSubscriptions }
+          : {
+              vapidConfigured: true,
+              activeSubscriptions: saved.activeSubscriptions,
+              disabledSubscriptions: 0,
+              thisDeviceRegistered: true,
+              lastEvents: [],
+            },
+      );
+      try {
+        const test = await sendTestPush({ data: { pin: pin || undefined } });
+        if (test.sent > 0) {
+          setTestNote("Prueba enviada. Si el sistema lo permite, verás un aviso ahora.");
+        } else {
+          setTestNote(test.error ?? "El proveedor no aceptó la prueba.");
+        }
+      } catch (e) {
+        setTestNote(e instanceof Error ? e.message : "No se pudo enviar la prueba.");
+      }
+      await refreshStatus();
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudieron activar los avisos.");
-      setState("off");
+      await refreshStatus();
     } finally {
       setBusy(false);
     }
@@ -108,10 +174,7 @@ export function AlertsPanel() {
     setBusy(true);
     setError(null);
     try {
-      const reg = await navigator.serviceWorker.getRegistration("/");
-      const sub = await reg?.pushManager.getSubscription();
-      const endpoint = sub?.endpoint ?? window.localStorage.getItem(ENDPOINT_KEY);
-      if (sub) await sub.unsubscribe();
+      const endpoint = (await unsubscribeAtalayaPush()) ?? window.localStorage.getItem(ENDPOINT_KEY);
       if (endpoint) await deletePushSubscription({ data: { endpoint } });
       try {
         window.localStorage.removeItem(ENDPOINT_KEY);
@@ -119,6 +182,7 @@ export function AlertsPanel() {
         /* ignore */
       }
       setState("off");
+      await refreshStatus();
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudieron desactivar.");
     } finally {
@@ -126,7 +190,24 @@ export function AlertsPanel() {
     }
   };
 
+  const test = async () => {
+    setBusy(true);
+    setError(null);
+    setTestNote(null);
+    try {
+      const r = await sendTestPush({ data: { pin: pin || undefined } });
+      if (r.sent > 0) setTestNote(`Prueba aceptada por el proveedor (${r.sent}/${r.subs}).`);
+      else setError(r.error ?? "Ningún envío aceptado.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo enviar la prueba.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const needsPin = gate != null && (gate.pinSet || gate.open);
+  const canEnable = state === "off" || state === "granted-no-sub" || state === "local-only" || state === "error";
+  const pushableUnsent = server?.lastEvents.filter((e) => e.pushable && !e.notified).length ?? 0;
 
   return (
     <section className="rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]">
@@ -134,26 +215,39 @@ export function AlertsPanel() {
         <div>
           <p className="text-xs font-medium tracking-wider text-muted uppercase">Avisos</p>
           <p className="mt-0.5 text-sm" data-alerts-state={state}>
-            {state === "on" && "Avisos activados"}
-            {state === "off" && "Avisos no activados"}
-            {state === "denied" && "Avisos bloqueados en el sistema"}
-            {state === "ios-browser" && "No compatible aquí — instala en inicio"}
-            {state === "unsupported" && "No compatible"}
-            {state === "checking" && "Comprobando avisos…"}
+            {pushStateLabel(state)}
           </p>
         </div>
         {state === "on" ? (
           <BellRing className="mt-0.5 size-4 text-buy" />
-        ) : state === "off" ? (
+        ) : state === "off" || state === "granted-no-sub" || state === "local-only" ? (
           <BellOff className="mt-0.5 size-4 text-muted" />
         ) : (
           <Bell className="mt-0.5 size-4 text-muted" />
         )}
       </div>
+      {server ? (
+        <p className="mt-2 text-xs leading-relaxed text-subtle" data-push-server>
+          Servidor: {server.vapidConfigured ? "VAPID listo" : "VAPID ausente"} ·{" "}
+          {server.activeSubscriptions} dispositivo{server.activeSubscriptions === 1 ? "" : "s"} en Neon
+          {server.thisDeviceRegistered === true
+            ? " · este dispositivo registrado"
+            : server.thisDeviceRegistered === false
+              ? " · este dispositivo NO está en Neon"
+              : ""}
+          {pushableUnsent ? ` · ${pushableUnsent} PENDING/ENTRADA sin Push enviado` : ""}
+        </p>
+      ) : null}
       {state === "ios-browser" ? (
         <p className="mt-2 text-xs leading-relaxed text-subtle">
           En iPhone los avisos solo funcionan si Atalaya está en la pantalla de inicio y la abres
           desde el icono. Compartir → Añadir a inicio.
+        </p>
+      ) : null}
+      {state === "local-only" ? (
+        <p className="mt-2 text-xs leading-relaxed text-wait">
+          El navegador tiene una suscripción local que el servidor no reconoce. Vuelve a activar
+          avisos con el PIN para registrarla en Neon.
         </p>
       ) : null}
       {gate?.open ? (
@@ -164,7 +258,7 @@ export function AlertsPanel() {
       ) : gate?.pinSet && state !== "on" ? (
         <p className="mt-2 text-xs leading-relaxed text-subtle">Introduce el PIN de avisos.</p>
       ) : null}
-      {needsPin && state !== "on" && state !== "ios-browser" && state !== "unsupported" ? (
+      {needsPin && state !== "ios-browser" && state !== "unsupported" ? (
         <input
           type="password"
           inputMode="numeric"
@@ -176,18 +270,29 @@ export function AlertsPanel() {
         />
       ) : null}
       {state === "on" ? (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void disable()}
+            className="min-h-11 rounded-[var(--radius-md)] bg-surface text-sm font-medium disabled:opacity-50"
+          >
+            Desactivar avisos
+          </button>
+          <button
+            type="button"
+            disabled={busy || (gate?.pinSet === true && pin.length < 4)}
+            onClick={() => void test()}
+            className="min-h-11 rounded-[var(--radius-md)] bg-surface text-sm font-medium disabled:opacity-50"
+            data-push-test
+          >
+            Enviar prueba
+          </button>
+        </div>
+      ) : canEnable ? (
         <button
           type="button"
-          disabled={busy}
-          onClick={() => void disable()}
-          className="mt-3 min-h-11 w-full rounded-[var(--radius-md)] bg-surface text-sm font-medium disabled:opacity-50"
-        >
-          Desactivar avisos
-        </button>
-      ) : state === "off" || state === "denied" ? (
-        <button
-          type="button"
-          disabled={busy || state === "denied"}
+          disabled={busy || (needsPin && pin.length < 4)}
           onClick={() => void enable()}
           className="mt-3 min-h-11 w-full rounded-[var(--radius-md)] bg-surface text-sm font-medium disabled:opacity-50"
         >
@@ -195,6 +300,7 @@ export function AlertsPanel() {
         </button>
       ) : null}
       {error ? <p className="mt-2 text-xs text-sell">{error}</p> : null}
+      {testNote ? <p className="mt-2 text-xs text-buy">{testNote}</p> : null}
       {state === "on" ? (
         <div className="mt-3 space-y-2 border-t border-border/80 pt-3">
           <p className="text-xs text-subtle">Solo controla Push. No cambia V1 ni la vigilancia.</p>
@@ -283,7 +389,6 @@ export function AlertsPanel() {
           ) : null}
         </div>
       ) : null}
-
     </section>
   );
 }

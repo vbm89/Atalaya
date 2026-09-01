@@ -101,9 +101,9 @@ export function AccountPanel({
             />
           </label>
           <p className="text-xs text-subtle">
-            Tres capas, separadas: contrato (captura del bróker) → costes (manual) → riesgo (API de risk.ts).
-            Nada de esto cambia V1. Lote mínimo y paso de lote no aparecen en las capturas: PENDIENTE.
-            No se deducen del tamaño del contrato. Spread flotante no se inventa.
+            Tres capas, separadas: contrato T4Trade (fuente única) → costes (manual) → riesgo (API de
+            risk.ts). Nada de esto cambia V1. US100Cash y WTICash son el símbolo del bróker; la clave
+            interna sigue siendo US100 y WTI. Spread flotante: no se inventa un número de ticks.
           </p>
           {ASSETS.map((a) => (
             <ContractRow
@@ -279,6 +279,7 @@ function ContractRow({
             <NumField
               label="Tick value USD"
               value={tickValue}
+              known={capture.tickValue != null}
               asset={id}
               field="tickValue"
               onChange={(v) => onLotField("tickValue", v, setTickValue)}
@@ -286,6 +287,7 @@ function ContractRow({
             <NumField
               label="Lote mínimo"
               value={minLot}
+              known={capture.minLot != null}
               asset={id}
               field="minLot"
               decimal
@@ -294,6 +296,7 @@ function ContractRow({
             <NumField
               label="Paso de lote"
               value={lotStep}
+              known={capture.lotStep != null}
               asset={id}
               field="lotStep"
               decimal
@@ -301,9 +304,10 @@ function ContractRow({
             />
           </div>
           <CaptureFacts id={id} />
-          {id === "BTCUSD" ? (
-            <p className="text-xs text-wait">
-              Tick size y tick value no aparecen en la captura. PENDIENTE. No se deducen.
+          {id === "US100" ? (
+            <p className="text-xs text-subtle">
+              Volumen US100: mínimo 0,10, paso 0,01. Válidos 0,10, 0,11, 0,12… No se redondea 0,11 a
+              0,10.
             </p>
           ) : null}
 
@@ -374,13 +378,29 @@ function CaptureFacts({ id }: { id: AssetId }) {
   return (
     <dl className="space-y-0.5 text-xs text-muted" data-capture-facts={id}>
       <div className="flex justify-between gap-3">
-        <dt>Instrumento</dt>
+        <dt>Clave Atalaya</dt>
+        <dd className="font-mono tabular">{id}</dd>
+      </div>
+      <div className="flex justify-between gap-3">
+        <dt>Símbolo T4Trade</dt>
         <dd className="font-mono tabular">{c.instrument}</dd>
       </div>
       <div className="flex justify-between gap-3">
         <dt>Tamaño del contrato</dt>
         <dd className="font-mono tabular">
           {c.contractSize != null ? formatCaptureNumber(c.contractSize, 0) : "PENDIENTE"}
+        </dd>
+      </div>
+      <div className="flex justify-between gap-3">
+        <dt>Lote mínimo</dt>
+        <dd className="font-mono tabular">
+          {c.minLot != null ? formatCaptureNumber(c.minLot, 2) : "PENDIENTE"}
+        </dd>
+      </div>
+      <div className="flex justify-between gap-3">
+        <dt>Paso de lote</dt>
+        <dd className="font-mono tabular">
+          {c.lotStep != null ? formatCaptureNumber(c.lotStep, 2) : "PENDIENTE"}
         </dd>
       </div>
       <div className="flex justify-between gap-3">
@@ -400,6 +420,22 @@ function CaptureFacts({ id }: { id: AssetId }) {
       <div className="flex justify-between gap-3">
         <dt>Niveles de stop</dt>
         <dd className="font-mono tabular">{c.stopLevels != null ? String(c.stopLevels) : "PENDIENTE"}</dd>
+      </div>
+      <div className="flex justify-between gap-3">
+        <dt>Cálculo de beneficio</dt>
+        <dd className="font-mono tabular">CFD · ticks × tick value × lote</dd>
+      </div>
+      <div className="flex justify-between gap-3">
+        <dt>Cálculo de margen</dt>
+        <dd className="font-mono tabular">Contratos</dd>
+      </div>
+      <div className="flex justify-between gap-3">
+        <dt>Órdenes pendientes</dt>
+        <dd className="font-mono tabular">GTC</dd>
+      </div>
+      <div className="flex justify-between gap-3">
+        <dt>Spread</dt>
+        <dd className="font-mono tabular">{c.spreadFloating ? "Flotante" : "Fijo"}</dd>
       </div>
       <div className="flex justify-between gap-3">
         <dt>Swap largo</dt>
@@ -422,8 +458,9 @@ function CaptureFacts({ id }: { id: AssetId }) {
         </dd>
       </div>
       <p className="pt-1 text-subtle">
-        Tamaño de contrato ≠ lote mínimo ≠ paso de lote. Los dos últimos no están en la captura:
-        PENDIENTE.
+        P/L USD = (movimiento / tick size) × tick value × lote. No se usa el tamaño de contrato si
+        discrepa del tick value (BTCUSD: 1,00 USD por tick de 0,01). EUR solo con tipo de cambio
+        USD/EUR; no se inventa.
       </p>
     </dl>
   );

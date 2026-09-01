@@ -33,6 +33,7 @@ self.addEventListener("push", (event) => {
       },
       tag,
       renotify: true,
+      silent: false,
     }),
   );
 });

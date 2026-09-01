@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AssetAnalysis, SetupProposal } from "../trading/types.ts";
 import { foldEpisode } from "./episode.ts";
-import { inboxItemKey, inboxStateLabel } from "./inbox.ts";
+import { inboxItemKey, inboxPushLabel, inboxStateLabel } from "./inbox.ts";
 import { episodeShareText, setupShareText, shareContainsSecrets } from "./share-setup.ts";
 import { createMemoryStore } from "./store-memory.ts";
 import { dispatchEventPushes } from "./notify.ts";
@@ -35,6 +35,26 @@ describe("bandeja de avisos", () => {
     assert.equal(inboxStateLabel("pending"), "TRIGGER PENDIENTE");
     assert.equal(inboxStateLabel("map"), "MAPA");
     assert.equal(inboxStateLabel("wait"), "ESPERAR");
+  });
+
+  it("push label keeps MAPA as bandeja-only and PENDING as unsent until notified", () => {
+    const base = {
+      episodeId: "x",
+      assetId: "XAUUSD" as const,
+      direction: "sell" as const,
+      fromState: "wait" as const,
+      atMs: 1,
+      slot: 1,
+      live: false,
+    };
+    assert.equal(inboxPushLabel({ ...base, toState: "map", notified: false }), "solo bandeja");
+    assert.equal(inboxPushLabel({ ...base, toState: "wait", notified: false }), "solo bandeja");
+    assert.equal(inboxPushLabel({ ...base, toState: "pending", notified: false }), "Push no enviado");
+    assert.equal(inboxPushLabel({ ...base, toState: "entry", notified: true }), "Push enviado");
+    assert.equal(
+      inboxPushLabel({ ...base, toState: "pending", notified: false, notifyStatus: "failed", notifyLastError: "gone" }),
+      "Push falló · gone",
+    );
   });
 
   it("stores events even if push is never sent", async () => {
@@ -242,5 +262,28 @@ describe("compartir setup", () => {
     assert.match(text, /77\.747/);
     assert.match(text, /76\.888/);
     assert.doesNotMatch(text, /WATCH_SECRET|VAPID|DATABASE_URL/);
+  });
+
+  it("zero subscriptions skip pushable PENDING and leave notified false", async () => {
+    const store = createMemoryStore();
+    const counts0 = await store.countPushSubs();
+    assert.equal(counts0.active, 0);
+    const f = foldEpisode(
+      null,
+      { id: "XAUUSD", setupState: "pending", setup: { ...setup, state: "pending" }, waitReason: null, digits: 2 },
+      50,
+      1_000,
+    );
+    await store.upsertEpisode(f.episode!);
+    for (const ev of f.events) await store.insertEvent(ev);
+    const n = await dispatchEventPushes(store, f.events, async () => "ok");
+    assert.equal(n.sent, 0);
+    assert.ok(n.skipped >= 1);
+    const inbox = await store.listInbox(20);
+    assert.equal(inbox[0]?.notified, false);
+    assert.equal(inbox[0]?.notifyStatus, "pending");
+    await store.upsertPushSub({ endpoint: "https://push.example/z", p256dh: "a", auth: "b" }, null);
+    assert.equal((await store.countPushSubs()).active, 1);
+    assert.equal(await store.hasPushSub("https://push.example/z"), true);
   });
 });

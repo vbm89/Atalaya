@@ -86,7 +86,9 @@ export const savePushSubscription = createServerFn({ method: "POST" })
       { endpoint: data.endpoint, p256dh: data.p256dh, auth: data.auth },
       data.userAgent ?? null,
     );
-    return { ok: true };
+    const counts = await store.countPushSubs();
+    const registered = await store.hasPushSub(data.endpoint);
+    return { ok: true, thisDeviceRegistered: registered, activeSubscriptions: counts.active };
   });
 
 export const deletePushSubscription = createServerFn({ method: "POST" })
@@ -100,6 +102,83 @@ export const deletePushSubscription = createServerFn({ method: "POST" })
     const sql = await getSql();
     await createPgStore(sql).deletePushSub(data.endpoint);
     return { ok: true };
+  });
+
+export const getPushStatus = createServerFn({ method: "POST" })
+  .validator((input: { endpoint?: string } | undefined) => input ?? {})
+  .handler(async ({ data }) => {
+    const { getSql } = await import("@/lib/db");
+    const { createPgStore } = await import("./store");
+    const { vapidConfigured } = await import("./vapid");
+    const { shouldPushState } = await import("./policy");
+    const sql = await getSql();
+    const store = createPgStore(sql);
+    const counts = await store.countPushSubs();
+    const events = await store.listNotifyDebug(20);
+    const endpoint = typeof data.endpoint === "string" ? data.endpoint : "";
+    const thisDeviceRegistered = endpoint ? await store.hasPushSub(endpoint) : null;
+    return {
+      vapidConfigured: vapidConfigured(),
+      activeSubscriptions: counts.active,
+      disabledSubscriptions: counts.disabled,
+      thisDeviceRegistered,
+      lastEvents: events.map((e) => ({
+        assetId: e.assetId,
+        fromState: e.fromState,
+        toState: e.toState,
+        atMs: e.atMs,
+        notified: e.notified,
+        notifyStatus: e.notifyStatus,
+        notifyAttempts: e.notifyAttempts,
+        notifyLastError: e.notifyLastError,
+        pushable: shouldPushState(e.toState),
+      })),
+    };
+  });
+
+export const sendTestPush = createServerFn({ method: "POST" })
+  .validator((input: { pin?: string } | undefined) => input ?? {})
+  .handler(async ({ data }) => {
+    const { envAlertPin, pinMatches } = await import("./pin");
+    const { getSql } = await import("@/lib/db");
+    const { createPgStore } = await import("./store");
+    const { sendWebPush } = await import("./notify");
+    const { buildTestPushPayload } = await import("./payload");
+    const sql = await getSql();
+    const store = createPgStore(sql);
+    const stored = await store.getAlertPinHash();
+    const required = envAlertPin() != null || stored != null;
+    if (required && !pinMatches(data.pin ?? "", stored)) {
+      throw new Error("PIN incorrecto.");
+    }
+    const subs = await store.listActivePushSubs();
+    if (subs.length === 0) {
+      return {
+        sent: 0,
+        failed: 0,
+        subs: 0,
+        error: "Ningún dispositivo registrado en Neon. Activa avisos en este dispositivo.",
+      };
+    }
+    const payload = buildTestPushPayload();
+    let sent = 0;
+    let failed = 0;
+    let lastError: string | null = null;
+    for (const sub of subs) {
+      const status = await sendWebPush(sub, payload);
+      if (status === "ok") sent += 1;
+      else {
+        failed += 1;
+        lastError = status;
+        if (status === "gone") await store.disablePushSub(sub.endpoint, "gone");
+      }
+    }
+    return {
+      sent,
+      failed,
+      subs: subs.length,
+      error: sent > 0 ? null : lastError ?? "El proveedor no aceptó el envío.",
+    };
   });
 
 export interface WatchEpisodeView {

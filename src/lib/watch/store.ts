@@ -39,6 +39,18 @@ export interface PushSubRow {
   auth: string;
 }
 
+export interface NotifyDebugRow {
+  episodeId: string;
+  assetId: AssetId;
+  fromState: SetupState;
+  toState: SetupState;
+  atMs: number;
+  notified: boolean;
+  notifyStatus: string;
+  notifyAttempts: number;
+  notifyLastError: string | null;
+}
+
 export interface WatchStore {
   claimEval(slot: number, nowMs: number): Promise<Claim>;
   completeEval(
@@ -93,6 +105,9 @@ export interface WatchStore {
   listActivePushSubs(): Promise<PushSubRow[]>;
   disablePushSub(endpoint: string, error: string | null): Promise<void>;
   deletePushSub(endpoint: string): Promise<void>;
+  countPushSubs(): Promise<{ active: number; disabled: number }>;
+  hasPushSub(endpoint: string): Promise<boolean>;
+  listNotifyDebug(limit: number): Promise<NotifyDebugRow[]>;
 }
 
 export const MAX_LAG_RETRIES = 2;
@@ -537,6 +552,7 @@ export function createPgStore(sql: SqlQuery): WatchStore {
     async listInbox(limit) {
       const rows = await sql.query<Record<string, unknown>>(
         `select ev.episode_id, ev.from_state, ev.to_state, ev.at, ev.slot, ev.notified,
+                ev.notify_status, ev.notify_attempts, ev.notify_last_error,
                 e.asset_id, e.direction, e.closed_at
          from signal_events ev
          join signal_episodes e on e.episode_id = ev.episode_id
@@ -554,6 +570,9 @@ export function createPgStore(sql: SqlQuery): WatchStore {
         slot: num(r.slot),
         notified: r.notified === true,
         live: r.closed_at == null,
+        notifyStatus: r.notify_status == null ? null : String(r.notify_status),
+        notifyAttempts: r.notify_attempts == null ? null : num(r.notify_attempts),
+        notifyLastError: r.notify_last_error == null ? null : String(r.notify_last_error),
       }));
     },
 
@@ -614,6 +633,52 @@ export function createPgStore(sql: SqlQuery): WatchStore {
 
     async deletePushSub(endpoint) {
       await sql.query(`delete from push_subscriptions where endpoint = $1`, [endpoint]);
+    },
+
+    async countPushSubs() {
+      const rows = await sql.query<{ active: string | number; disabled: string | number }>(
+        `select
+           count(*) filter (where disabled_at is null)::int as active,
+           count(*) filter (where disabled_at is not null)::int as disabled
+         from push_subscriptions`,
+      );
+      return {
+        active: Number(rows[0]?.active ?? 0),
+        disabled: Number(rows[0]?.disabled ?? 0),
+      };
+    },
+
+    async hasPushSub(endpoint) {
+      const rows = await sql.query<{ n: string | number }>(
+        `select count(*)::int as n from push_subscriptions
+         where endpoint = $1 and disabled_at is null`,
+        [endpoint],
+      );
+      return Number(rows[0]?.n ?? 0) > 0;
+    },
+
+    async listNotifyDebug(limit) {
+      const rows = await sql.query<Record<string, unknown>>(
+        `select ev.episode_id, ev.from_state, ev.to_state, ev.at, ev.notified,
+                ev.notify_status, ev.notify_attempts, ev.notify_last_error,
+                e.asset_id
+         from signal_events ev
+         join signal_episodes e on e.episode_id = ev.episode_id
+         order by ev.at desc
+         limit $1`,
+        [limit],
+      );
+      return rows.map((r) => ({
+        episodeId: String(r.episode_id),
+        assetId: r.asset_id as AssetId,
+        fromState: r.from_state as SetupState,
+        toState: r.to_state as SetupState,
+        atMs: ms(r.at),
+        notified: r.notified === true,
+        notifyStatus: r.notify_status == null ? "pending" : String(r.notify_status),
+        notifyAttempts: num(r.notify_attempts),
+        notifyLastError: r.notify_last_error == null ? null : String(r.notify_last_error),
+      }));
     },
   };
 }

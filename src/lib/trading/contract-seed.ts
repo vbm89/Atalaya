@@ -1,8 +1,9 @@
 import type { AssetId } from "./types";
 import type { AccountSettings, ContractDraft } from "./risk";
 import type { CostsBook } from "./costs";
+import { BROKER_CONTRACTS, type BrokerContract } from "./broker-contract";
 
-/** Proven broker-card fields only. Null = not visible in the captures. Never deduced. */
+/** Proven broker-card fields. Null = not visible / not confirmed. Never deduced. */
 export interface CaptureSpec {
   instrument: string;
   contractSize: number | null;
@@ -18,83 +19,36 @@ export interface CaptureSpec {
   swapLong: number | null;
   swapShort: number | null;
   swapType: "usd" | "percent" | null;
-  minLot: null;
-  lotStep: null;
+  minLot: number | null;
+  lotStep: number | null;
+}
+
+function fromBroker(c: BrokerContract): CaptureSpec {
+  return {
+    instrument: c.brokerSymbol,
+    contractSize: c.contractSize,
+    tickSize: c.tickSize,
+    tickValue: c.tickValueUsd,
+    tickValueCurrency: c.currency,
+    marginCoverage: c.marginCoverage,
+    marginPercent: c.marginPercent,
+    precision: c.digits,
+    stopLevels: c.stopsLevel,
+    spreadTicks: null,
+    spreadFloating: c.spreadType === "floating",
+    swapLong: c.swapLong,
+    swapShort: c.swapShort,
+    swapType: c.swapType,
+    minLot: c.minLot,
+    lotStep: c.lotStep,
+  };
 }
 
 export const CAPTURED: Record<AssetId, CaptureSpec> = {
-  XAUUSD: {
-    instrument: "XAUUSD",
-    contractSize: 100,
-    tickSize: 0.01,
-    tickValue: 1,
-    tickValueCurrency: "USD",
-    marginCoverage: 50,
-    marginPercent: 0.1,
-    precision: 2,
-    stopLevels: 0,
-    spreadTicks: 48,
-    spreadFloating: false,
-    swapLong: -50.8,
-    swapShort: 18.2,
-    swapType: "usd",
-    minLot: null,
-    lotStep: null,
-  },
-  US100: {
-    instrument: "US100Cash",
-    contractSize: 1,
-    tickSize: 0.01,
-    tickValue: 0.01,
-    tickValueCurrency: "USD",
-    marginCoverage: 0.5,
-    marginPercent: 1,
-    precision: 2,
-    stopLevels: 0,
-    spreadTicks: null,
-    spreadFloating: true,
-    swapLong: -5.74,
-    swapShort: -1.04,
-    swapType: "usd",
-    minLot: null,
-    lotStep: null,
-  },
-  WTI: {
-    instrument: "WTICash",
-    contractSize: 1000,
-    tickSize: 0.01,
-    tickValue: 10,
-    tickValueCurrency: "USD",
-    marginCoverage: 500,
-    marginPercent: 0.5,
-    precision: 2,
-    stopLevels: 0,
-    spreadTicks: null,
-    spreadFloating: true,
-    swapLong: 5.18,
-    swapShort: -29,
-    swapType: "usd",
-    minLot: null,
-    lotStep: null,
-  },
-  BTCUSD: {
-    instrument: "BTCUSD",
-    contractSize: 1,
-    tickSize: null,
-    tickValue: null,
-    tickValueCurrency: null,
-    marginCoverage: 0.5,
-    marginPercent: 0.2,
-    precision: 2,
-    stopLevels: 0,
-    spreadTicks: null,
-    spreadFloating: false,
-    swapLong: -10,
-    swapShort: -10,
-    swapType: "percent",
-    minLot: null,
-    lotStep: null,
-  },
+  XAUUSD: fromBroker(BROKER_CONTRACTS.XAUUSD),
+  BTCUSD: fromBroker(BROKER_CONTRACTS.BTCUSD),
+  US100: fromBroker(BROKER_CONTRACTS.US100),
+  WTI: fromBroker(BROKER_CONTRACTS.WTI),
 };
 
 const FIELD_ES: Record<"tickSize" | "tickValue" | "minLot" | "lotStep", string> = {
@@ -152,36 +106,34 @@ export function captureTickSize(id: AssetId): number | null {
   return CAPTURED[id].tickSize;
 }
 
-/** Fill only empty fields that the captures actually show. Never invents minLot/lotStep. */
+function seedDraft(id: AssetId, row: ContractDraft): ContractDraft {
+  const cap = CAPTURED[id];
+  const next = { ...row };
+  if (cap.tickSize != null && (next.tickSize == null || next.tickSize === 0)) next.tickSize = cap.tickSize;
+  if (cap.tickValue != null && next.tickValue == null) next.tickValue = cap.tickValue;
+  if (cap.minLot != null && next.minLot == null) next.minLot = cap.minLot;
+  if (cap.lotStep != null && next.lotStep == null) next.lotStep = cap.lotStep;
+  if (
+    id === "BTCUSD" &&
+    next.tickValue === 0.01 &&
+    cap.tickValue != null &&
+    cap.tickValue !== 0.01
+  ) {
+    next.tickValue = cap.tickValue;
+  }
+  return next;
+}
+
+/** Fill empty fields from the T4Trade card. Never invent. Fixes the old BTC tickValue 0.01. */
 export function seedContracts(account: AccountSettings): AccountSettings {
   const contracts = { ...account.contracts };
   (Object.keys(CAPTURED) as AssetId[]).forEach((id) => {
-    const cap = CAPTURED[id];
-    const row = { ...contracts[id] };
-    if (row.tickValue == null && cap.tickValue != null) row.tickValue = cap.tickValue;
-    if (cap.tickSize != null && (row.tickSize == null || row.tickSize === 0)) row.tickSize = cap.tickSize;
-    if (
-      id === "BTCUSD" &&
-      row.tickValue === 0.01 &&
-      row.minLot === 0.01 &&
-      row.lotStep === 0.01
-    ) {
-      row.tickValue = null;
-      row.minLot = null;
-      row.lotStep = null;
-    }
-    contracts[id] = row;
+    contracts[id] = seedDraft(id, contracts[id]);
   });
   return { ...account, contracts };
 }
 
-/** XAU spread 48 ticks from the card. Floating spreads stay empty. */
+/** Floating spreads stay empty. Do not seed a snapshot of ticks as if it were the contract. */
 export function seedCosts(book: CostsBook): CostsBook {
-  const next = { ...book };
-  const xau = { ...next.XAUUSD };
-  if (xau.spreadTicks == null && CAPTURED.XAUUSD.spreadTicks != null) {
-    xau.spreadTicks = CAPTURED.XAUUSD.spreadTicks;
-  }
-  next.XAUUSD = xau;
-  return next;
+  return { ...book };
 }

@@ -6,39 +6,40 @@ import {
   CAPTURED,
   isDecimalTyping,
   missingContractFields,
-  missingContractLabel,
   parseDecimalPositive,
   seedContracts,
   seedCosts,
 } from "./contract-seed.ts";
 
 describe("capturas de contrato", () => {
-  it("seeds only values visible in the broker cards", () => {
+  it("seeds confirmed T4Trade values including minLot/lotStep", () => {
     const seeded = seedContracts(EMPTY_ACCOUNT);
     assert.equal(seeded.contracts.XAUUSD.tickValue, 1);
     assert.equal(seeded.contracts.XAUUSD.tickSize, 0.01);
+    assert.equal(seeded.contracts.XAUUSD.minLot, 0.01);
+    assert.equal(seeded.contracts.XAUUSD.lotStep, 0.01);
     assert.equal(seeded.contracts.US100.tickValue, 0.01);
+    assert.equal(seeded.contracts.US100.minLot, 0.1);
+    assert.equal(seeded.contracts.US100.lotStep, 0.01);
     assert.equal(seeded.contracts.WTI.tickValue, 10);
-    assert.equal(seeded.contracts.XAUUSD.minLot, null);
-    assert.equal(seeded.contracts.XAUUSD.lotStep, null);
-    assert.equal(seeded.contracts.US100.minLot, null);
-    assert.equal(seeded.contracts.WTI.lotStep, null);
-    assert.equal(isDraftComplete(seeded.contracts.XAUUSD), false);
-    assert.equal(isDraftComplete(seeded.contracts.US100), false);
-    assert.equal(isDraftComplete(seeded.contracts.WTI), false);
+    assert.equal(seeded.contracts.WTI.minLot, 0.01);
+    assert.equal(isDraftComplete(seeded.contracts.XAUUSD), true);
+    assert.equal(isDraftComplete(seeded.contracts.US100), true);
+    assert.equal(isDraftComplete(seeded.contracts.WTI), true);
+    assert.equal(isDraftComplete(seeded.contracts.BTCUSD), true);
   });
 
-  it("does not invent BTC tick size or tick value", () => {
+  it("BTC tick size/value come from the MT4 card, not from 0.01/0.01 invented tick value", () => {
     const seeded = seedContracts(EMPTY_ACCOUNT);
-    assert.equal(CAPTURED.BTCUSD.tickSize, null);
-    assert.equal(CAPTURED.BTCUSD.tickValue, null);
-    assert.equal(seeded.contracts.BTCUSD.tickValue, null);
-    assert.equal(seeded.contracts.BTCUSD.minLot, null);
-    assert.equal(seeded.contracts.BTCUSD.lotStep, null);
-    assert.equal(isDraftComplete(seeded.contracts.BTCUSD), false);
+    assert.equal(CAPTURED.BTCUSD.tickSize, 0.01);
+    assert.equal(CAPTURED.BTCUSD.tickValue, 1);
+    assert.equal(seeded.contracts.BTCUSD.tickValue, 1);
+    assert.equal(seeded.contracts.BTCUSD.minLot, 0.01);
+    assert.equal(seeded.contracts.BTCUSD.lotStep, 0.01);
+    assert.notEqual(seeded.contracts.BTCUSD.tickValue, 0.01);
   });
 
-  it("clears the old BTC example triple 0.01/0.01/0.01", () => {
+  it("clears the old invented BTC tickValue 0.01", () => {
     const cleared = seedContracts({
       ...EMPTY_ACCOUNT,
       contracts: {
@@ -46,9 +47,9 @@ describe("capturas de contrato", () => {
         BTCUSD: { tickSize: 0.01, tickValue: 0.01, minLot: 0.01, lotStep: 0.01 },
       },
     });
-    assert.equal(cleared.contracts.BTCUSD.tickValue, null);
-    assert.equal(cleared.contracts.BTCUSD.minLot, null);
-    assert.equal(cleared.contracts.BTCUSD.lotStep, null);
+    assert.equal(cleared.contracts.BTCUSD.tickValue, 1);
+    assert.equal(cleared.contracts.BTCUSD.minLot, 0.01);
+    assert.equal(cleared.contracts.BTCUSD.lotStep, 0.01);
   });
 
   it("does not overwrite a value the user already typed", () => {
@@ -64,28 +65,34 @@ describe("capturas de contrato", () => {
     assert.equal(kept.contracts.XAUUSD.lotStep, 0.01);
   });
 
-  it("does not deduce minLot or lotStep from contract size", () => {
+  it("does not deduce minLot from contract size — values are owner-confirmed", () => {
     assert.equal(CAPTURED.XAUUSD.contractSize, 100);
-    assert.equal(CAPTURED.XAUUSD.minLot, null);
+    assert.equal(CAPTURED.XAUUSD.minLot, 0.01);
     assert.equal(CAPTURED.WTI.contractSize, 1000);
-    assert.equal(CAPTURED.WTI.lotStep, null);
+    assert.equal(CAPTURED.WTI.lotStep, 0.01);
     const d = seedContracts(EMPTY_ACCOUNT).contracts.XAUUSD;
-    assert.deepEqual(missingContractFields(d), ["minLot", "lotStep"]);
-    assert.match(missingContractLabel(d) ?? "", /lote mínimo/);
-    assert.match(missingContractLabel(d) ?? "", /paso de lote/);
+    assert.deepEqual(missingContractFields(d, "XAUUSD"), []);
   });
 
-  it("XAU spread 48 is from the card; floating spreads stay empty", () => {
+  it("floating spreads stay empty — 48 ticks was a snapshot, not the contract", () => {
     const costs = seedCosts(emptyCosts());
-    assert.equal(costs.XAUUSD.spreadTicks, 48);
+    assert.equal(costs.XAUUSD.spreadTicks, null);
     assert.equal(costs.US100.spreadTicks, null);
     assert.equal(costs.WTI.spreadTicks, null);
     assert.equal(costs.BTCUSD.spreadTicks, null);
+    assert.equal(CAPTURED.XAUUSD.spreadFloating, true);
     const kept = seedCosts({
       ...emptyCosts(),
       XAUUSD: { spreadTicks: 12, commissionEur: null },
     });
     assert.equal(kept.XAUUSD.spreadTicks, 12);
+  });
+
+  it("US100Cash / WTICash are instrument labels, not asset keys", () => {
+    assert.equal(CAPTURED.US100.instrument, "US100Cash");
+    assert.equal(CAPTURED.WTI.instrument, "WTICash");
+    assert.equal(CAPTURED.XAUUSD.instrument, "XAUUSD");
+    assert.equal(CAPTURED.BTCUSD.instrument, "BTCUSD");
   });
 });
 
@@ -109,7 +116,6 @@ describe("paso de lote decimal", () => {
     ) as { lotStep: number; minLot: number };
     assert.equal(stored.lotStep, 0.01);
     assert.equal(stored.minLot, 0.1);
-    assert.equal(stored.lotStep, 0.01);
   });
 
   it("does not treat typing 0. as a finished value", () => {

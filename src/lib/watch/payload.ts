@@ -38,3 +38,14 @@ export function buildPushPayload(episode: EpisodeDraft, to: SetupState): PushPay
     state: to,
   };
 }
+
+export function buildTestPushPayload(): PushPayload {
+  return {
+    title: "ATALAYA · prueba",
+    body: "Registro correcto. PENDING y ENTRADA avisarán así. MAPA no.",
+    url: "/",
+    episodeId: "test",
+    assetId: "XAUUSD",
+    state: "pending",
+  };
+}
