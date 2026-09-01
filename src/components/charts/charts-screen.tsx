@@ -240,7 +240,7 @@ function ChartMarketList({
               key={a.id}
               id={a.id}
               starred={favs.includes(a.id)}
-              price={snapshot?.assets.find((x) => x.id === a.id)?.price ?? null}
+              price={liveQuotes[a.id] ?? snapshot?.assets.find((x) => x.id === a.id)?.price ?? null}
               digits={a.digits}
               onPick={() => onPick(a.id)}
               onFav={() => onFav(a.id)}
