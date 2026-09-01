@@ -469,12 +469,12 @@ function ChartWorkspace({
           <span ref={hudEl} data-chart-ohlc className="min-w-0 truncate" />
           {freezeLevels ? (
             <span className={freezeLevels.direction === "buy" ? "shrink-0 text-buy" : "shrink-0 text-sell"}>
-              {freezeLevels.direction === "buy" ? "LARGO" : "CORTO"}{" "}
+              {freezeLevels.direction === "buy" ? "COMPRA" : "VENTA"}{" "}
               {setupStateCaption(freezeLevels.state)} · CONGELADO
             </span>
           ) : hasSetup && analysis?.setup ? (
             <span className={analysis.setup.direction === "buy" ? "shrink-0 text-buy" : "shrink-0 text-sell"}>
-              {analysis.setup.direction === "buy" ? "LARGO" : "CORTO"}{" "}
+              {analysis.setup.direction === "buy" ? "COMPRA" : "VENTA"}{" "}
               {setupStateCaption(analysis.setupState === "wait" ? analysis.setup.state : analysis.setupState)}
             </span>
           ) : freeze && freeze.assetId === assetId && freeze.tf !== tf ? (
@@ -723,7 +723,7 @@ function ObjectsFromEngine({
               : "MAPA — no es orden"}
           {" · congelada"}
         </li>
-        <li>{lv.direction === "buy" ? "COMPRA / LARGO" : "VENTA / CORTO"}</li>
+        <li>{lv.direction === "buy" ? "COMPRA" : "VENTA"}</li>
         <li>
           Zona {lv.labelZone}
         </li>
@@ -761,7 +761,7 @@ function ObjectsFromEngine({
             : "MAPA — no es orden"}
         {analysis.setupState === "wait" ? " · congelada" : ""}
       </li>
-      <li>{s.direction === "buy" ? "COMPRA / LARGO" : "VENTA / CORTO"}</li>
+      <li>{s.direction === "buy" ? "COMPRA" : "VENTA"}</li>
       <li>
         Zona {formatMaybe(s.zone.low, d)} – {formatMaybe(s.zone.high, d)}
       </li>

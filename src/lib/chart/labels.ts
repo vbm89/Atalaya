@@ -6,3 +6,8 @@ export const CHART_ASSET_BLURB: Record<AssetId, string> = {
   US100: "Índice NASDAQ 100",
   WTI: "Petróleo crudo",
 };
+
+/** Visible copy only. Internal direction stays buy/sell. */
+export function directionUi(dir: "buy" | "sell"): "COMPRA" | "VENTA" {
+  return dir === "buy" ? "COMPRA" : "VENTA";
+}

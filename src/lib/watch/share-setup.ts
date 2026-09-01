@@ -32,8 +32,8 @@ function lampMark(lamp: DataLamp): string {
 
 export function formatShareCard(input: ShareCardInput): string {
   const lines = ["ATALAYA", input.assetId, inboxStateLabel(input.state)];
-  if (input.direction === "buy") lines.push("COMPRA / LARGO");
-  if (input.direction === "sell") lines.push("VENTA / CORTO");
+  if (input.direction === "buy") lines.push("COMPRA");
+  if (input.direction === "sell") lines.push("VENTA");
   const d = input.digits;
   if (input.zoneLow != null && input.zoneHigh != null) {
     lines.push(`Zona: ${formatPrice(input.zoneLow, d)} – ${formatPrice(input.zoneHigh, d)}`);

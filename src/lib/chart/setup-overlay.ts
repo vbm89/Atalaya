@@ -296,3 +296,65 @@ export function zoneBandAutoscaleRange(
     maxValue: Math.max(...vals),
   };
 }
+
+export type ChartPriceLineTone = "sl" | "tp" | "zone";
+
+export interface ChartPriceLineSpec {
+  id: "zoneHigh" | "zoneLow" | "sl" | "tp1" | "tp2";
+  price: number;
+  /** Empty: the axis shows the number only. Identification is color + line. */
+  title: "";
+  tone: ChartPriceLineTone;
+}
+
+export type ChartLevelVisibility = {
+  zone?: boolean;
+  sl?: boolean;
+  tp1?: boolean;
+  tp2?: boolean;
+};
+
+/**
+ * Native price-line specs. Prices come from V1/freeze levels, never from last.
+ * Invalidation and Last are not drawn.
+ */
+export function chartPriceLineSpecs(
+  lv: ChartSetupLevels,
+  visible?: ChartLevelVisibility,
+): ChartPriceLineSpec[] {
+  const out: ChartPriceLineSpec[] = [];
+  if (visible?.zone !== false) {
+    out.push({ id: "zoneHigh", price: lv.zoneHigh, title: "", tone: "zone" });
+    out.push({ id: "zoneLow", price: lv.zoneLow, title: "", tone: "zone" });
+  }
+  if (visible?.sl !== false) out.push({ id: "sl", price: lv.stopLoss, title: "", tone: "sl" });
+  if (visible?.tp1 !== false) out.push({ id: "tp1", price: lv.takeProfit1, title: "", tone: "tp" });
+  if (visible?.tp2 !== false && lv.takeProfit2 != null) {
+    out.push({ id: "tp2", price: lv.takeProfit2, title: "", tone: "tp" });
+  }
+  return out;
+}
+
+export interface ChartFillBand {
+  low: number;
+  high: number;
+  kind: "zone" | "risk" | "reward";
+}
+
+/** Very light fills. Direction and prices come from V1; nothing is recalculated. */
+export function setupFillBands(lv: ChartSetupLevels, visible?: ChartLevelVisibility): ChartFillBand[] {
+  const out: ChartFillBand[] = [];
+  if (visible?.zone !== false) {
+    out.push({ low: lv.zoneLow, high: lv.zoneHigh, kind: "zone" });
+  }
+  const sl = lv.stopLoss;
+  const tp = lv.takeProfit2 ?? lv.takeProfit1;
+  if (lv.direction === "sell") {
+    out.push({ low: Math.min(lv.zoneHigh, sl), high: Math.max(lv.zoneHigh, sl), kind: "risk" });
+    out.push({ low: Math.min(lv.zoneLow, tp), high: Math.max(lv.zoneLow, tp), kind: "reward" });
+  } else {
+    out.push({ low: Math.min(lv.zoneLow, sl), high: Math.max(lv.zoneLow, sl), kind: "risk" });
+    out.push({ low: Math.min(lv.zoneHigh, tp), high: Math.max(lv.zoneHigh, tp), kind: "reward" });
+  }
+  return out;
+}

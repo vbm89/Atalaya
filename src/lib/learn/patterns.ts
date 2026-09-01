@@ -61,8 +61,8 @@ function madridHour(ms: number): number {
 }
 
 const CUTS: Cut[] = [
-  { dim: "direction", cut: "buy", label: "LONG", pred: (c) => c.direction === "buy" },
-  { dim: "direction", cut: "sell", label: "SHORT", pred: (c) => c.direction === "sell" },
+  { dim: "direction", cut: "buy", label: "COMPRA", pred: (c) => c.direction === "buy" },
+  { dim: "direction", cut: "sell", label: "VENTA", pred: (c) => c.direction === "sell" },
   { dim: "kind", cut: "continuation", label: "continuación", pred: (c) => c.kind === "continuation" },
   { dim: "kind", cut: "break-retest", label: "ruptura + retest", pred: (c) => c.kind === "break-retest" },
   { dim: "quality", cut: "alta", label: "calidad alta", pred: (c) => c.quality === "alta" },

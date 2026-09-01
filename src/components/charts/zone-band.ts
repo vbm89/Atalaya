@@ -11,6 +11,12 @@ import type {
 import type { CanvasRenderingTarget2D } from "fancy-canvas";
 import { zoneBandAutoscaleRange } from "@/lib/chart/setup-overlay";
 
+export interface ZoneFill {
+  low: number;
+  high: number;
+  fill: string;
+}
+
 class BandRenderer implements IPrimitivePaneRenderer {
   constructor(
     private y1: number | null,
@@ -69,36 +75,37 @@ class BandView implements IPrimitivePaneView {
   }
 }
 
-/** Horizontal zone fill. Levels come from the engine; this only paints. */
+/** Horizontal fills at V1 prices. Does not move with last. */
 export class ZoneBand implements ISeriesPrimitive<Time> {
-  private view: BandView;
+  private views: BandView[];
   private extras: number[];
+  private lockAutoscale: boolean;
   private low: number;
   private high: number;
-  private lockAutoscale: boolean;
 
-  constructor(low: number, high: number, fill: string, extras: number[] = [], lockAutoscale = true) {
-    this.low = low;
-    this.high = high;
+  constructor(fills: ZoneFill[], extras: number[] = [], lockAutoscale = true) {
     this.extras = extras;
     this.lockAutoscale = lockAutoscale;
-    this.view = new BandView(null, low, high, fill);
+    const ys = fills.flatMap((f) => [f.low, f.high]);
+    this.low = ys.length ? Math.min(...ys) : 0;
+    this.high = ys.length ? Math.max(...ys) : 0;
+    this.views = fills.map((f) => new BandView(null, f.low, f.high, f.fill));
   }
 
   attached(param: SeriesAttachedParameter<Time>) {
-    this.view.bind(param.series);
+    for (const view of this.views) view.bind(param.series);
   }
 
   detached() {
-    this.view.bind(null);
+    for (const view of this.views) view.bind(null);
   }
 
   updateAllViews() {
-    this.view.update();
+    for (const view of this.views) view.update();
   }
 
   paneViews() {
-    return [this.view];
+    return this.views;
   }
 
   autoscaleInfo(): AutoscaleInfo | null {

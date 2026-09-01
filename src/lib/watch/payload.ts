@@ -2,6 +2,7 @@ import type { AssetId, SetupState } from "../trading/types";
 import { setupStateEs } from "./memory";
 import { watchLinkPath } from "./link";
 import type { EpisodeDraft } from "./episode";
+import { directionUi } from "../chart/labels";
 
 export interface PushPayload {
   title: string;
@@ -10,10 +11,6 @@ export interface PushPayload {
   episodeId: string;
   assetId: AssetId;
   state: SetupState;
-}
-
-function dirLabel(direction: "buy" | "sell"): string {
-  return direction === "sell" ? "SHORT" : "LONG";
 }
 
 function compact(n: number): string {
@@ -27,7 +24,7 @@ function compact(n: number): string {
 
 export function buildPushPayload(episode: EpisodeDraft, to: SetupState): PushPayload {
   const stateEs = setupStateEs(to);
-  const dir = dirLabel(episode.direction);
+  const dir = directionUi(episode.direction);
   const zone = `${compact(episode.zoneLow)}–${compact(episode.zoneHigh)}`;
   const sl = compact(episode.sl);
   const tp1 = compact(episode.tp1);

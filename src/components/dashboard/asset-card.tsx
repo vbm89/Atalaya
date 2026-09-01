@@ -290,7 +290,7 @@ function SetupLine({
       <div className="mt-3" data-setup-kind="expired">
         <p className="text-sm font-medium text-wait">{watchPhaseCaption(watch)}</p>
         <p className="mt-0.5 text-sm leading-snug text-muted">
-          {s.direction === "buy" ? "LONG" : "SHORT"} · era {was} · zona {zone}
+          {s.direction === "buy" ? "COMPRA" : "VENTA"} · era {was} · zona {zone}
         </p>
         <p className="mt-0.5 text-xs text-subtle">
           Ya no vigente según el motor. {watch.expiredReason ?? asset.waitReason ?? "ESPERAR"}
@@ -311,7 +311,7 @@ function SetupLine({
   }
 
   const zone = `${formatPrice(setup.zone.low, asset.digits)}–${formatPrice(setup.zone.high, asset.digits)}`;
-  const detail = `${setup.direction === "buy" ? "LONG" : "SHORT"} · calidad ${setup.quality.toUpperCase()} · zona ${zone}`;
+  const detail = `${setup.direction === "buy" ? "COMPRA" : "VENTA"} · calidad ${setup.quality.toUpperCase()} · zona ${zone}`;
 
   if (asset.setupState === "entry") {
     return (

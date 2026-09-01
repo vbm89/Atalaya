@@ -14,6 +14,8 @@ import {
   setupVisiblePriceRange,
   setupAutoscaleLocked,
   zoneBandAutoscaleRange,
+  chartPriceLineSpecs,
+  setupFillBands,
 } from "./setup-overlay.ts";
 import type { AssetAnalysis, SetupProposal } from "../trading/types.ts";
 
@@ -175,6 +177,84 @@ describe("chart setup overlay", () => {
     assert.equal(setupAutoscaleLocked("BTCUSD"), true);
     assert.equal(setupAutoscaleLocked("WTI"), true);
     assert.equal(setupAutoscaleLocked("US100"), false);
+  });
+
+  it("price lines stay on V1 prices when last moves; no Last or Inv.", () => {
+    const a = asset({
+      setupState: "pending",
+      setup: setup({
+        direction: "sell",
+        zone: { low: 29024, high: 29050 },
+        stopLoss: 29088.81,
+        takeProfit1: 28950,
+        takeProfit2: 28880,
+        invalidation: 29120,
+      }),
+    });
+    const lv = chartSetupLevels(a)!;
+    const lastA = chartPriceLineSpecs(lv);
+    const lastB = chartPriceLineSpecs(lv);
+    assert.deepEqual(
+      lastA.map((s) => [s.id, s.price, s.title]),
+      lastB.map((s) => [s.id, s.price, s.title]),
+    );
+    const sl = lastA.find((s) => s.id === "sl")!;
+    const tp1 = lastA.find((s) => s.id === "tp1")!;
+    const tp2 = lastA.find((s) => s.id === "tp2")!;
+    assert.equal(sl.price, 29088.81);
+    assert.equal(sl.tone, "sl");
+    assert.equal(tp1.price, 28950);
+    assert.equal(tp2.price, 28880);
+    assert.equal(sl.title, "");
+    assert.equal(
+      lastA.some((s) => s.title.toLowerCase().includes("last") || s.title.includes("Inv")),
+      false,
+    );
+    assert.equal(
+      lastA.some((s) => s.price === lv.invalidation),
+      false,
+    );
+  });
+
+  it("sell fill is risk above the zone and reward below; buy is the reverse", () => {
+    const sell = chartSetupLevels(
+      asset({
+        setupState: "map",
+        setup: setup({
+          direction: "sell",
+          zone: { low: 100, high: 110 },
+          stopLoss: 120,
+          takeProfit1: 90,
+          takeProfit2: 80,
+        }),
+      }),
+    )!;
+    const buy = chartSetupLevels(
+      asset({
+        setupState: "map",
+        setup: setup({
+          direction: "buy",
+          zone: { low: 100, high: 110 },
+          stopLoss: 90,
+          takeProfit1: 120,
+          takeProfit2: 130,
+        }),
+      }),
+    )!;
+    const sellFills = setupFillBands(sell);
+    const buyFills = setupFillBands(buy);
+    const sellRisk = sellFills.find((b) => b.kind === "risk")!;
+    const sellReward = sellFills.find((b) => b.kind === "reward")!;
+    const buyRisk = buyFills.find((b) => b.kind === "risk")!;
+    const buyReward = buyFills.find((b) => b.kind === "reward")!;
+    assert.equal(sellRisk.high, 120);
+    assert.equal(sellRisk.low, 110);
+    assert.equal(sellReward.high, 100);
+    assert.equal(sellReward.low, 80);
+    assert.equal(buyRisk.low, 90);
+    assert.equal(buyRisk.high, 100);
+    assert.equal(buyReward.low, 110);
+    assert.equal(buyReward.high, 130);
   });
 
   it("XAU SPOT levels are shifted by +basis onto PROXY candles", () => {

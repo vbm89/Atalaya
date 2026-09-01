@@ -19,7 +19,7 @@ import {
 import { ema, rsiWilder } from "@/lib/trading/indicators";
 import type { ChartOverlays, ChartSeries } from "@/lib/chart/types";
 import type { TickHandler } from "@/lib/chart/live";
-import { chartSetupLevels, setupAutoscaleLocked, setupLevelsKey, setupVisiblePriceRange, type ChartSetupLevels } from "@/lib/chart/setup-overlay";
+import { chartSetupLevels, setupAutoscaleLocked, setupLevelsKey, setupVisiblePriceRange, chartPriceLineSpecs, setupFillBands, type ChartSetupLevels } from "@/lib/chart/setup-overlay";
 import {
   CHART_BAR_SPACING,
   CHART_MIN_BAR_SPACING,
@@ -365,6 +365,7 @@ const CandleChartInner = forwardRef<
         wickDownColor: c.sell,
         lastValueVisible: true,
         priceLineVisible: true,
+        priceLineColor: c.buy,
       });
       chartRef.current = chart;
       candleRef.current = candles;
@@ -583,42 +584,37 @@ const CandleChartInner = forwardRef<
       }
 
       if (lv) {
-        const dirColor = lv.direction === "buy" ? c.buy : c.sell;
         const extras = [lv.stopLoss, lv.takeProfit1, lv.entry];
         if (lv.takeProfit2 != null) extras.push(lv.takeProfit2);
-        const showZone = visibleLevels?.zone !== false;
-        const band = new ZoneBand(
-          lv.zoneLow,
-          lv.zoneHigh,
-          withAlpha(dirColor, showZone ? 0.16 : 0),
-          extras,
-          setupAutoscaleLocked(series.assetId),
-        );
+        const fills = setupFillBands(lv, visibleLevels).map((b) => ({
+          low: b.low,
+          high: b.high,
+          fill: withAlpha(
+            b.kind === "risk" ? c.sell : b.kind === "reward" ? c.buy : c.map,
+            b.kind === "zone" ? 0.07 : 0.05,
+          ),
+        }));
+        const band = new ZoneBand(fills, extras, setupAutoscaleLocked(series.assetId));
         candle.attachPrimitive(band);
         zoneRef.current = band;
 
-        const add = (price: number, title: string, color: string, dashed = false) => {
+        const add = (price: number, color: string) => {
           if (!Number.isFinite(price)) return;
           linesRef.current.push(
             candle.createPriceLine({
               price,
-              title,
+              title: "",
               color,
               lineWidth: 1,
-              lineStyle: dashed ? LineStyle.Dashed : LineStyle.Solid,
+              lineStyle: LineStyle.Solid,
               axisLabelVisible: true,
             }),
           );
         };
-        if (visibleLevels?.zone !== false) {
-          add(lv.zoneHigh, lv.direction === "buy" && lv.state === "entry" ? "Entrada" : "Zona", dirColor, !(lv.direction === "buy" && lv.state === "entry"));
-          add(lv.zoneLow, lv.direction === "sell" && lv.state === "entry" ? "Entrada" : "Zona", dirColor, !(lv.direction === "sell" && lv.state === "entry"));
-        }
-        if (visibleLevels?.sl !== false) add(lv.stopLoss, "SL", c.sell);
-        if (visibleLevels?.tp1 !== false) add(lv.takeProfit1, "TP1", c.buy);
-        if (visibleLevels?.tp2 !== false && lv.takeProfit2 != null) add(lv.takeProfit2, "TP2", c.buy);
-        if (lv.state === "pending" || lv.state === "map") {
-          add(lv.invalidation, "Inv.", c.subtle, true);
+        const toneColor = (tone: "sl" | "tp" | "zone") =>
+          tone === "sl" ? c.sell : tone === "tp" ? c.buy : c.map;
+        for (const spec of chartPriceLineSpecs(lv, visibleLevels)) {
+          add(spec.price, toneColor(spec.tone));
         }
       }
     }
