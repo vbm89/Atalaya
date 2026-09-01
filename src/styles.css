@@ -150,7 +150,8 @@
   border-top: 1px solid var(--color-border);
   background: var(--color-bg);
   padding-top: 0;
-  padding-bottom: var(--safe-bottom);
+  /* Keep iOS home-indicator clearance, but sit the bar closer to the screen edge. */
+  padding-bottom: max(0.2rem, calc(var(--safe-bottom) - 10px));
 }
 
 .atalaya-dock button {
@@ -338,7 +339,7 @@
 .atalaya-more-panel {
   position: absolute;
   right: 0;
-  bottom: calc(2.65rem + var(--safe-bottom));
+  bottom: calc(2.65rem + max(0.2rem, calc(var(--safe-bottom) - 10px)));
   left: 0;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   background: var(--color-elevated);
