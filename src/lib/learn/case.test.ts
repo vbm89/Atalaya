@@ -8,7 +8,9 @@ import {
   learningCaseFromHistory,
   learningCasesFromHistory,
   levelsIncoherent,
+  timestampsInvalid,
 } from "./case.ts";
+import { summarize } from "./stats.ts";
 
 function setup(partial: Partial<SetupProposal> = {}): SetupProposal {
   return {
@@ -128,6 +130,13 @@ const OLD_FREEZE: EpisodeFreeze = {
   capturedAtMs: 1_000,
 };
 
+const SLOT = 1_788_271_200;
+const OPENED_AT = SLOT * 1000 + 8_000;
+const CLOSED_AT = SLOT * 1000 + 3_600_000;
+const TOUCH_SAME = SLOT * 1000;
+const TOUCH_LATER = (SLOT + 900) * 1000;
+const TOUCH_PREV = (SLOT - 900) * 1000;
+
 function episode(partial: Partial<EpisodeDraft> = {}): EpisodeDraft {
   return {
     episodeId: "BTCUSD-e1",
@@ -139,12 +148,12 @@ function episode(partial: Partial<EpisodeDraft> = {}): EpisodeDraft {
     sl: 78150,
     tp1: 77100,
     tp2: 76800,
-    openedAtMs: 1_000,
+    openedAtMs: OPENED_AT,
     openedState: "entry",
     currentState: "entry",
-    closedAtMs: 2_000,
+    closedAtMs: CLOSED_AT,
     levelsKey: "k",
-    openedSlot: 900,
+    openedSlot: SLOT,
     freeze: OLD_FREEZE,
     ...partial,
   };
@@ -155,7 +164,7 @@ function row(partial: Partial<HistoryRow> = {}, ep: Partial<EpisodeDraft> = {}):
     episode: episode(ep),
     outcome: "tp1",
     firstTouch: "tp1",
-    firstTouchAtMs: 1_500,
+    firstTouchAtMs: TOUCH_LATER,
     mfe: 400,
     mae: 20,
     ...partial,
@@ -222,9 +231,9 @@ describe("P5.2 learning case", () => {
   });
 
   it("impossible timestamp → not trainable", () => {
-    const f = freezeFromAnalysis(analysis(), 1_000);
+    const f = freezeFromAnalysis(analysis(), OPENED_AT);
     const c = learningCaseFromHistory(
-      row({ outcome: "tp1", firstTouchAtMs: 10 }, { freeze: f, openedAtMs: 1_000 }),
+      row({ outcome: "tp1", firstTouchAtMs: TOUCH_PREV }, { freeze: f }),
     );
     assert.equal(c.trainable, false);
     assert.equal(c.exclusionReason, "TIMESTAMP_INVALID");
@@ -263,5 +272,67 @@ describe("P5.2 learning case", () => {
     const list = learningCasesFromHistory([a, b]);
     assert.equal(list.length, 1);
     assert.equal(list[0]!.outcome, "tp1");
+  });
+});
+
+describe("P5 TIMESTAMP_INVALID uses openedSlot, not wall-clock openedAtMs", () => {
+  function frozenRow(partial: Partial<HistoryRow> = {}, ep: Partial<EpisodeDraft> = {}): HistoryRow {
+    const f = freezeFromAnalysis(analysis(), OPENED_AT);
+    return row(partial, { freeze: f, ...ep });
+  }
+
+  it("same opening candle, firstTouch several seconds before openedAtMs → trainable", () => {
+    assert.ok(TOUCH_SAME < OPENED_AT);
+    const r = frozenRow({ outcome: "sl", firstTouch: "sl", firstTouchAtMs: TOUCH_SAME });
+    assert.equal(timestampsInvalid(r), false);
+    const c = learningCaseFromHistory(r);
+    assert.equal(c.trainable, true);
+    assert.equal(c.exclusionReason, null);
+    assert.equal(c.outcome, "sl");
+  });
+
+  it("firstTouch exactly at openedAtMs → trainable", () => {
+    const r = frozenRow({ outcome: "tp1", firstTouch: "tp1", firstTouchAtMs: OPENED_AT });
+    assert.equal(timestampsInvalid(r), false);
+    const c = learningCaseFromHistory(r);
+    assert.equal(c.trainable, true);
+    assert.equal(c.outcome, "tp1");
+  });
+
+  it("firstTouch on a later candle → trainable", () => {
+    const r = frozenRow({ outcome: "tp1", firstTouch: "tp1", firstTouchAtMs: TOUCH_LATER });
+    assert.equal(timestampsInvalid(r), false);
+    const c = learningCaseFromHistory(r);
+    assert.equal(c.trainable, true);
+    assert.equal(c.outcome, "tp1");
+  });
+
+  it("firstTouch on a candle before openedSlot → TIMESTAMP_INVALID", () => {
+    const r = frozenRow({ outcome: "tp1", firstTouch: "tp1", firstTouchAtMs: TOUCH_PREV });
+    assert.equal(timestampsInvalid(r), true);
+    const c = learningCaseFromHistory(r);
+    assert.equal(c.trainable, false);
+    assert.equal(c.exclusionReason, "TIMESTAMP_INVALID");
+    assert.equal(c.outcome, "tp1");
+  });
+
+  it("EXPIRADA stays trainable and out of the decided denominator", () => {
+    const exp = learningCaseFromHistory(
+      frozenRow({ outcome: "expired", firstTouch: null, firstTouchAtMs: null, mfe: 0, mae: 0 }),
+    );
+    const tp1 = learningCaseFromHistory(frozenRow({ outcome: "tp1", firstTouch: "tp1" }));
+    const sl = learningCaseFromHistory(
+      frozenRow({ outcome: "sl", firstTouch: "sl" }, { episodeId: "BTCUSD-e2" }),
+    );
+    assert.equal(exp.trainable, true);
+    assert.equal(exp.outcome, "expired");
+    assert.equal(tp1.outcome, "tp1");
+    assert.equal(sl.outcome, "sl");
+    const stats = summarize([exp, tp1, sl]);
+    assert.equal(stats.global.tp1, 1);
+    assert.equal(stats.global.sl, 1);
+    assert.equal(stats.global.expired, 1);
+    assert.equal(stats.global.success.n, 2);
+    assert.equal(stats.global.success.hits, 1);
   });
 });

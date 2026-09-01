@@ -91,8 +91,13 @@ export function timestampsInvalid(row: HistoryRow): boolean {
   const ep = row.episode;
   if (!Number.isFinite(ep.openedAtMs) || ep.openedAtMs <= 0) return true;
   if (ep.closedAtMs != null && ep.closedAtMs < ep.openedAtMs) return true;
-  if (row.firstTouchAtMs != null && row.firstTouchAtMs < ep.openedAtMs) return true;
-  return false;
+  if (row.firstTouchAtMs == null) return false;
+  if (!Number.isFinite(row.firstTouchAtMs) || row.firstTouchAtMs <= 0) return true;
+  if (!Number.isFinite(ep.openedSlot) || ep.openedSlot <= 0) return true;
+  // firstTouchAtMs = candle.time * 1000. openedSlot = 15M close unix seconds.
+  // Compare candles, not wall-clock openedAtMs (tick is several seconds after the close).
+  const touchSlot = Math.floor(row.firstTouchAtMs / 1000);
+  return touchSlot < ep.openedSlot;
 }
 
 export function dataInvalid(freeze: EpisodeFreeze | null): boolean {
