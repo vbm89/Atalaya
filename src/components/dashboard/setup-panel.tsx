@@ -3,6 +3,7 @@ import { ChevronRight, Share2, HelpCircle } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
 import type { AssetAnalysis } from "@/lib/trading/types";
 import { calculateRisk, specFromDraft, type AccountSettings } from "@/lib/trading/risk";
+import { effectiveContractDraft } from "@/lib/trading/contract-seed";
 import { costEstimateLabel, type AssetCosts } from "@/lib/trading/costs";
 import { hasChartableSetup } from "@/lib/chart/setup-overlay";
 import { displayEntryPrice } from "@/lib/chart/labels";
@@ -115,15 +116,16 @@ export function SetupPanel({
   const kind = setup.kind === "continuation" ? "A · continuación / retest" : "B · ruptura + retest";
   const entryPx = displayEntryPrice(setup.direction, setup.zone.low, setup.zone.high);
   const slDist = Math.abs(entryPx - setup.stopLoss);
-  const spec = specFromDraft(account.contracts[asset.id]);
+  const contract = effectiveContractDraft(asset.id, account.contracts[asset.id]);
+  const spec = specFromDraft(contract);
   const risk = calculateRisk({ capital: account.capital, spec, slDistance: slDist });
   const isEntry = asset.setupState === "entry";
   const isPending = asset.setupState === "pending";
-  const tickSize = account.contracts[asset.id]?.tickSize;
+  const tickSize = contract.tickSize;
   const slTicks = tickSize && tickSize > 0 ? slDist / tickSize : null;
   const costEst =
     costs != null
-      ? costEstimateLabel(costs, account.contracts[asset.id]?.tickValue ?? null, slTicks)
+      ? costEstimateLabel(costs, contract.tickValue ?? null, slTicks)
       : { calculable: false, text: "NO CALCULABLE" };
   const dist = setupDistance({
     analysisPrice: asset.price,

@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { EMPTY_ACCOUNT, isDraftComplete } from "./risk.ts";
+import { EMPTY_ACCOUNT, calculateRisk, isDraftComplete, specFromDraft } from "./risk.ts";
 import { emptyCosts } from "./costs.ts";
 import {
   CAPTURED,
+  effectiveContractDraft,
   isDecimalTyping,
   missingContractFields,
   parseDecimalPositive,
   seedContracts,
   seedCosts,
 } from "./contract-seed.ts";
+import { BROKER_CONTRACTS } from "./broker-contract.ts";
 
 describe("capturas de contrato", () => {
   it("seeds confirmed T4Trade values including minLot/lotStep", () => {
@@ -93,6 +95,85 @@ describe("capturas de contrato", () => {
     assert.equal(CAPTURED.WTI.instrument, "WTICash");
     assert.equal(CAPTURED.XAUUSD.instrument, "XAUUSD");
     assert.equal(CAPTURED.BTCUSD.instrument, "BTCUSD");
+  });
+});
+
+describe("contrato efectivo desde BROKER_CONTRACTS, no reescritura manual", () => {
+  const empty = { tickSize: null, tickValue: null, minLot: null, lotStep: null };
+
+  it("persisted Pendiente drafts become complete without the user retyping", () => {
+    for (const id of ["XAUUSD", "BTCUSD", "US100", "WTI"] as const) {
+      assert.equal(isDraftComplete(empty), false, `${id} raw empty`);
+      const eff = effectiveContractDraft(id, empty);
+      assert.equal(isDraftComplete(eff), true, `${id} effective`);
+      assert.deepEqual(missingContractFields(empty, id), []);
+      assert.ok(specFromDraft(eff), `${id} spec`);
+    }
+  });
+
+  it("XAUUSD effective: tick 0.01 / value 1 / min 0.01 / step 0.01", () => {
+    const d = effectiveContractDraft("XAUUSD", empty);
+    assert.equal(d.tickSize, 0.01);
+    assert.equal(d.tickValue, 1);
+    assert.equal(d.minLot, 0.01);
+    assert.equal(d.lotStep, 0.01);
+  });
+
+  it("BTCUSD effective: tick 0.01 / value 1 / min 0.01 / step 0.01", () => {
+    const d = effectiveContractDraft("BTCUSD", empty);
+    assert.equal(d.tickSize, 0.01);
+    assert.equal(d.tickValue, 1);
+    assert.equal(d.minLot, 0.01);
+    assert.equal(d.lotStep, 0.01);
+  });
+
+  it("US100 effective: tick 0.01 / value 0.01 / min 0.10 / step 0.01", () => {
+    const d = effectiveContractDraft("US100", empty);
+    assert.equal(d.tickSize, 0.01);
+    assert.equal(d.tickValue, 0.01);
+    assert.equal(d.minLot, 0.1);
+    assert.equal(d.lotStep, 0.01);
+  });
+
+  it("WTI effective: tick 0.01 / value 10 / min 0.01 / step 0.01", () => {
+    const d = effectiveContractDraft("WTI", empty);
+    assert.equal(d.tickSize, 0.01);
+    assert.equal(d.tickValue, 10);
+    assert.equal(d.minLot, 0.01);
+    assert.equal(d.lotStep, 0.01);
+  });
+
+  it("seed of a stored account with null capture fields completes all four", () => {
+    const stored = {
+      ...EMPTY_ACCOUNT,
+      contracts: {
+        XAUUSD: { tickSize: 0.01, tickValue: null, minLot: null, lotStep: null },
+        BTCUSD: { tickSize: 0.01, tickValue: null, minLot: null, lotStep: null },
+        US100: { tickSize: 0.01, tickValue: null, minLot: null, lotStep: null },
+        WTI: { tickSize: 0.01, tickValue: null, minLot: null, lotStep: null },
+      },
+    };
+    const seeded = seedContracts(stored);
+    for (const id of ["XAUUSD", "BTCUSD", "US100", "WTI"] as const) {
+      assert.equal(isDraftComplete(seeded.contracts[id]), true, id);
+      assert.equal(seeded.contracts[id].tickSize, BROKER_CONTRACTS[id].tickSize);
+      assert.equal(seeded.contracts[id].tickValue, BROKER_CONTRACTS[id].tickValueUsd);
+      assert.equal(seeded.contracts[id].minLot, BROKER_CONTRACTS[id].minLot);
+      assert.equal(seeded.contracts[id].lotStep, BROKER_CONTRACTS[id].lotStep);
+    }
+  });
+
+  it("effective draft is what risk.ts consumes — XAU 10 $ SL · 10 000 € → lote 0,05", () => {
+    const spec = specFromDraft(effectiveContractDraft("XAUUSD", empty));
+    assert.ok(spec);
+    assert.equal(spec.tickSize, 0.01);
+    assert.equal(spec.tickValue, 1);
+    assert.equal(spec.minLot, 0.01);
+    assert.equal(spec.lotStep, 0.01);
+    const calc = calculateRisk({ capital: 10_000, spec, slDistance: 10 });
+    assert.equal(calc.calculable, true);
+    assert.equal(calc.usedLot, 0.05);
+    assert.equal(calc.realEur, 50);
   });
 });
 

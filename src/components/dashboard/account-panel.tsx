@@ -6,7 +6,6 @@ import {
   RISK_RECOMMENDED_PCT,
   calculateRisk,
   isDraftComplete,
-  quoteTickSize,
   readAccount,
   specFromDraft,
   writeAccount,
@@ -15,6 +14,7 @@ import {
 } from "@/lib/trading/risk";
 import {
   CAPTURED,
+  effectiveContractDraft,
   formatCaptureNumber,
   isDecimalTyping,
   missingContractLabel,
@@ -46,7 +46,7 @@ export function AccountPanel({
 }) {
   const [open, setOpen] = useState(false);
   const [assetOpen, setAssetOpen] = useState<AssetId | null>(null);
-  const incomplete = ASSETS.filter((a) => !isDraftComplete(value.contracts[a.id])).length;
+  const incomplete = ASSETS.filter((a) => !isDraftComplete(effectiveContractDraft(a.id, value.contracts[a.id]))).length;
   const rec =
     value.capital != null && value.capital > 0
       ? calculateRisk({ capital: value.capital, spec: null, slDistance: 0 })
@@ -139,7 +139,6 @@ function ContractRow({
   id,
   label,
   blurb,
-  digits,
   spec,
   costs,
   expanded,
@@ -158,29 +157,22 @@ function ContractRow({
   onChange: (spec: ContractDraft) => void;
   onCostsChange: (row: AssetCosts) => void;
 }) {
-  const knownTick = quoteTickSize(digits);
   const capture = CAPTURED[id];
-  const [tickSize, setTickSize] = useState(
-    fieldValue(capture.tickSize ?? (id === "BTCUSD" ? null : spec.tickSize ?? knownTick)),
-  );
-  const [tickValue, setTickValue] = useState(fieldValue(spec.tickValue));
-  const [minLot, setMinLot] = useState(fieldValue(spec.minLot));
-  const [lotStep, setLotStep] = useState(fieldValue(spec.lotStep));
+  const effective = effectiveContractDraft(id, spec);
+  const [tickSize, setTickSize] = useState(fieldValue(effective.tickSize));
+  const [tickValue, setTickValue] = useState(fieldValue(effective.tickValue));
+  const [minLot, setMinLot] = useState(fieldValue(effective.minLot));
+  const [lotStep, setLotStep] = useState(fieldValue(effective.lotStep));
   const [spreadTicks, setSpreadTicks] = useState(fieldValue(costs.spreadTicks));
   const [commissionEur, setCommissionEur] = useState(fieldValue(costs.commissionEur));
 
   useEffect(() => {
-    if (capture.tickSize != null) {
-      setTickSize(fieldValue(spec.tickSize ?? capture.tickSize));
-    } else if (id === "BTCUSD") {
-      setTickSize(spec.tickSize != null && spec.tickSize !== knownTick ? fieldValue(spec.tickSize) : "");
-    } else {
-      setTickSize(fieldValue(spec.tickSize ?? knownTick));
-    }
-    setTickValue(fieldValue(spec.tickValue));
-    setMinLot(fieldValue(spec.minLot));
-    setLotStep(fieldValue(spec.lotStep));
-  }, [spec, knownTick, capture.tickSize, id]);
+    const eff = effectiveContractDraft(id, spec);
+    setTickSize(fieldValue(eff.tickSize));
+    setTickValue(fieldValue(eff.tickValue));
+    setMinLot(fieldValue(eff.minLot));
+    setLotStep(fieldValue(eff.lotStep));
+  }, [spec, id]);
 
   useEffect(() => {
     setSpreadTicks(fieldValue(costs.spreadTicks));
@@ -193,18 +185,14 @@ function ContractRow({
     minLot: string;
     lotStep: string;
   }) {
-    const parsedTick = parseDecimalPositive(next.tickSize);
-    onChange({
-      tickSize:
-        capture.tickSize != null
-          ? parsedTick ?? capture.tickSize
-          : id === "BTCUSD"
-            ? parsedTick
-            : parsedTick ?? knownTick,
-      tickValue: parseDecimalPositive(next.tickValue),
-      minLot: parseDecimalPositive(next.minLot),
-      lotStep: parseDecimalPositive(next.lotStep),
-    });
+    onChange(
+      effectiveContractDraft(id, {
+        tickSize: parseDecimalPositive(next.tickSize),
+        tickValue: parseDecimalPositive(next.tickValue),
+        minLot: parseDecimalPositive(next.minLot),
+        lotStep: parseDecimalPositive(next.lotStep),
+      }),
+    );
   }
 
   function onLotField(
@@ -223,17 +211,15 @@ function ContractRow({
     }
   }
 
-  const draft = {
-    tickSize:
-      parseDecimalPositive(tickSize) ??
-      (capture.tickSize != null ? capture.tickSize : id === "BTCUSD" ? null : knownTick),
+  const draft = effectiveContractDraft(id, {
+    tickSize: parseDecimalPositive(tickSize),
     tickValue: parseDecimalPositive(tickValue),
     minLot: parseDecimalPositive(minLot),
     lotStep: parseDecimalPositive(lotStep),
-  };
+  });
   const complete = isDraftComplete(draft);
   const riskSpec = specFromDraft(draft);
-  const missing = missingContractLabel(draft);
+  const missing = missingContractLabel(draft, id);
   const riskPreview = calculateRisk({
     capital: null,
     spec: riskSpec,
@@ -506,7 +492,7 @@ function NumField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onBlur={onBlur}
-        placeholder={optional ? "Opcional" : "Pendiente"}
+        placeholder={optional ? "Opcional" : known ? undefined : "Pendiente"}
         data-contract-field={`${asset}:${field}`}
         data-decimal={decimal ? "1" : undefined}
         aria-label={known ? `${label} (captura)` : optional ? `${label} opcional` : `${label} pendiente de configurar`}
@@ -517,7 +503,7 @@ function NumField({
 }
 
 export function useAccountSettings(): [AccountSettings, (next: AccountSettings) => void] {
-  const [settings, setSettings] = useState<AccountSettings>(EMPTY_ACCOUNT);
+  const [settings, setSettings] = useState<AccountSettings>(() => seedContracts(EMPTY_ACCOUNT));
   useEffect(() => {
     const seeded = seedContracts(readAccount());
     setSettings(seeded);

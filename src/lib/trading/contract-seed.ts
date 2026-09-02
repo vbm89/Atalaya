@@ -84,11 +84,11 @@ export function missingContractFields(
   id?: AssetId,
 ): Array<"tickSize" | "tickValue" | "minLot" | "lotStep"> {
   const miss: Array<"tickSize" | "tickValue" | "minLot" | "lotStep"> = [];
-  const cap = id ? CAPTURED[id] : null;
-  if (cap ? cap.tickSize == null && d.tickSize == null : d.tickSize == null) miss.push("tickSize");
-  if (d.tickValue == null) miss.push("tickValue");
-  if (d.minLot == null) miss.push("minLot");
-  if (d.lotStep == null) miss.push("lotStep");
+  const eff = id ? effectiveContractDraft(id, d) : d;
+  if (eff.tickSize == null) miss.push("tickSize");
+  if (eff.tickValue == null) miss.push("tickValue");
+  if (eff.minLot == null) miss.push("minLot");
+  if (eff.lotStep == null) miss.push("lotStep");
   return miss;
 }
 
@@ -106,9 +106,19 @@ export function captureTickSize(id: AssetId): number | null {
   return CAPTURED[id].tickSize;
 }
 
-function seedDraft(id: AssetId, row: ContractDraft): ContractDraft {
+/**
+ * Effective contract for sizing/UI: BROKER_CONTRACTS filled onto the persisted draft.
+ * Null/empty persisted fields take the confirmed T4Trade value.
+ * Does not overwrite a user-typed positive value, except the known-wrong BTC tickValue 0.01.
+ */
+export function effectiveContractDraft(id: AssetId, row?: ContractDraft | null): ContractDraft {
   const cap = CAPTURED[id];
-  const next = { ...row };
+  const next: ContractDraft = {
+    tickSize: row?.tickSize ?? null,
+    tickValue: row?.tickValue ?? null,
+    minLot: row?.minLot ?? null,
+    lotStep: row?.lotStep ?? null,
+  };
   if (cap.tickSize != null && (next.tickSize == null || next.tickSize === 0)) next.tickSize = cap.tickSize;
   if (cap.tickValue != null && next.tickValue == null) next.tickValue = cap.tickValue;
   if (cap.minLot != null && next.minLot == null) next.minLot = cap.minLot;
@@ -128,7 +138,7 @@ function seedDraft(id: AssetId, row: ContractDraft): ContractDraft {
 export function seedContracts(account: AccountSettings): AccountSettings {
   const contracts = { ...account.contracts };
   (Object.keys(CAPTURED) as AssetId[]).forEach((id) => {
-    contracts[id] = seedDraft(id, contracts[id]);
+    contracts[id] = effectiveContractDraft(id, contracts[id]);
   });
   return { ...account, contracts };
 }

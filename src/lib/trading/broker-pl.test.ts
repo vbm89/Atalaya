@@ -213,6 +213,86 @@ describe("swap y spread flotante", () => {
   });
 });
 
+describe("P/L USD — 1.00 de precio × 1 lote (ficha T4Trade)", () => {
+  it("XAUUSD 1 lote · +1.00 → +100 USD", () => {
+    const r = calculateTradePl({
+      assetId: "XAUUSD",
+      direction: "buy",
+      entry: 4300,
+      exit: 4301,
+      volume: 1,
+    });
+    assert.equal(r.calculable, true);
+    assert.equal(r.ticks, 100);
+    assert.equal(r.tickSize, 0.01);
+    assert.equal(r.tickValueUsd, 1);
+    assert.equal(r.grossUsd, 100);
+  });
+
+  it("BTCUSD 1 lote · +1.00 → +100 USD (tickValue 1, not contractSize 1)", () => {
+    const r = calculateTradePl({
+      assetId: "BTCUSD",
+      direction: "buy",
+      entry: 80_000,
+      exit: 80_001,
+      volume: 1,
+    });
+    assert.equal(r.calculable, true);
+    assert.equal(r.ticks, 100);
+    assert.equal(r.tickValueUsd, 1);
+    assert.equal(r.contractSize, 1);
+    assert.equal(r.grossUsd, 100);
+    assert.notEqual(r.grossUsd, 1);
+  });
+
+  it("US100 1 lote · +1.00 → +1 USD", () => {
+    const r = calculateTradePl({
+      assetId: "US100",
+      direction: "buy",
+      entry: 20_000,
+      exit: 20_001,
+      volume: 1,
+    });
+    assert.equal(r.calculable, true);
+    assert.equal(r.tickValueUsd, 0.01);
+    assert.equal(r.tickSize, 0.01);
+    assert.equal(r.grossUsd, 1);
+  });
+
+  it("WTI 1 lote · +1.00 → +1000 USD", () => {
+    const r = calculateTradePl({
+      assetId: "WTI",
+      direction: "buy",
+      entry: 90,
+      exit: 91,
+      volume: 1,
+    });
+    assert.equal(r.calculable, true);
+    assert.equal(r.tickValueUsd, 10);
+    assert.equal(r.tickSize, 0.01);
+    assert.equal(r.grossUsd, 1000);
+  });
+
+  it("lotes mínimos: XAU 0.01 → 1 USD, BTC 0.01 → 1 USD, US100 0.10 → 0.10 USD, WTI 0.01 → 10 USD", () => {
+    assert.equal(
+      calculateTradePl({ assetId: "XAUUSD", direction: "buy", entry: 4300, exit: 4301, volume: 0.01 }).grossUsd,
+      1,
+    );
+    assert.equal(
+      calculateTradePl({ assetId: "BTCUSD", direction: "buy", entry: 80_000, exit: 80_001, volume: 0.01 }).grossUsd,
+      1,
+    );
+    assert.equal(
+      calculateTradePl({ assetId: "US100", direction: "buy", entry: 20_000, exit: 20_001, volume: 0.1 }).grossUsd,
+      0.1,
+    );
+    assert.equal(
+      calculateTradePl({ assetId: "WTI", direction: "buy", entry: 90, exit: 91, volume: 0.01 }).grossUsd,
+      10,
+    );
+  });
+});
+
 describe("no inventar si falta un campo crítico", () => {
   it("unknown tickValue refuses instead of assuming 0 or 1", () => {
     const r = calculateTradePl({
