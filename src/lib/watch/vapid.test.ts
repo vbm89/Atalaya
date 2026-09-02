@@ -8,6 +8,7 @@ import {
   normalizeVapidB64,
   pushServiceOrigin,
   resolveVapidSubject,
+  vapidEnvKeys,
   vapidJwtPreview,
   vapidKeyPairMatches,
   vapidPublicFromPrivate,
@@ -113,8 +114,33 @@ describe("VAPID key pair", () => {
   it("normalizes padded standard base64", () => {
     const k = pair();
     const padded = Buffer.from(k.publicKey, "base64url").toString("base64");
-    assert.ok(padded.includes("=") || true);
     assert.equal(normalizeVapidB64(padded), k.publicKey);
+  });
+
+  it("when env public does not match private, derived public is used so the JWT can verify", () => {
+    const a = pair();
+    const b = pair();
+    const prevPub = process.env.VAPID_PUBLIC_KEY;
+    const prevPriv = process.env.VAPID_PRIVATE_KEY;
+    const prevVite = process.env.VITE_VAPID_PUBLIC_KEY;
+    process.env.VAPID_PUBLIC_KEY = a.publicKey;
+    process.env.VAPID_PRIVATE_KEY = b.privateKey;
+    delete process.env.VITE_VAPID_PUBLIC_KEY;
+    try {
+      const keys = vapidEnvKeys();
+      assert.ok(keys);
+      assert.equal(keys!.privateKey, b.privateKey);
+      assert.equal(keys!.publicKey, b.publicKey);
+      assert.notEqual(keys!.publicKey, a.publicKey);
+      assert.equal(vapidKeyPairMatches(keys!.publicKey, keys!.privateKey), true);
+    } finally {
+      if (prevPub === undefined) delete process.env.VAPID_PUBLIC_KEY;
+      else process.env.VAPID_PUBLIC_KEY = prevPub;
+      if (prevPriv === undefined) delete process.env.VAPID_PRIVATE_KEY;
+      else process.env.VAPID_PRIVATE_KEY = prevPriv;
+      if (prevVite === undefined) delete process.env.VITE_VAPID_PUBLIC_KEY;
+      else process.env.VITE_VAPID_PUBLIC_KEY = prevVite;
+    }
   });
 });
 

@@ -96,7 +96,10 @@ export function vapidSubjectForEndpoint(
 
 export function vapidPublicFromPrivate(privateKey: string): string | null {
   try {
-    const priv = Buffer.from(normalizeVapidB64(privateKey), "base64url");
+    let priv = Buffer.from(normalizeVapidB64(privateKey), "base64url");
+    if (priv.length < 32) {
+      priv = Buffer.concat([Buffer.alloc(32 - priv.length), priv]);
+    }
     if (priv.length !== 32) return null;
     const ecdh = createECDH("prime256v1");
     ecdh.setPrivateKey(priv);
@@ -151,15 +154,20 @@ export function inspectVapidEnv(): {
   subjectKind: "https" | "mailto";
   subjectOverridden: boolean;
   keyPairMatch: boolean | null;
+  publicCorrected: boolean;
   publicFingerprint: string | null;
 } {
   const info = resolveVapidSubject(process.env.VAPID_SUBJECT);
   const keys = vapidEnvKeys();
+  const rawPub = process.env.VAPID_PUBLIC_KEY?.trim() || process.env.VITE_VAPID_PUBLIC_KEY?.trim();
+  const publicCorrected =
+    keys != null && rawPub != null && normalizeVapidB64(rawPub) !== keys.publicKey;
   return {
     configured: keys != null,
     subjectKind: info.kind,
     subjectOverridden: info.overridden,
     keyPairMatch: keys ? vapidKeyPairMatches(keys.publicKey, keys.privateKey) : null,
+    publicCorrected,
     publicFingerprint: keys ? vapidPublicFingerprint(keys.publicKey) : null,
   };
 }
@@ -168,17 +176,17 @@ export function vapidEnvKeys(): VapidKeys | null {
   const publicRaw = process.env.VAPID_PUBLIC_KEY?.trim() || process.env.VITE_VAPID_PUBLIC_KEY?.trim();
   const privateRaw = process.env.VAPID_PRIVATE_KEY?.trim();
   const subject = resolveVapidSubject(process.env.VAPID_SUBJECT).subject;
-  if (!publicRaw || !privateRaw) return null;
-  const publicKey = normalizeVapidB64(publicRaw);
+  if (!privateRaw) return null;
   const privateKey = normalizeVapidB64(privateRaw);
+  const derived = vapidPublicFromPrivate(privateKey);
+  if (!derived) return null;
   const vitePub = process.env.VITE_VAPID_PUBLIC_KEY?.trim();
-  let chosen = publicKey;
-  if (!vapidKeyPairMatches(publicKey, privateKey) && vitePub) {
-    const alt = normalizeVapidB64(vitePub);
-    if (vapidKeyPairMatches(alt, privateKey)) chosen = alt;
-  }
-  return { publicKey: chosen, privateKey, subject };
+  const candidates = [publicRaw, vitePub].filter((x): x is string => !!x).map(normalizeVapidB64);
+  const matched = candidates.find((p) => p === derived);
+  const publicKey = matched ?? derived;
+  return { publicKey, privateKey, subject };
 }
+
 
 export function vapidConfigured(): boolean {
   return vapidEnvKeys() != null;

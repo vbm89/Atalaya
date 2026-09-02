@@ -29,6 +29,7 @@ type ServerStatus = {
   vapidSubjectKind?: "https" | "mailto";
   vapidSubjectOverridden?: boolean;
   vapidKeyPairMatch?: boolean | null;
+  vapidPublicCorrected?: boolean;
   vapidPublicFingerprint?: string | null;
   vapidJwt?: {
     alg: string;
@@ -250,6 +251,7 @@ export function AlertsPanel() {
           Servidor: {server.vapidConfigured ? "VAPID listo" : "VAPID ausente"}
           {server.vapidKeyPairMatch === false ? " · claves pública/privada NO coinciden" : ""}
           {server.vapidKeyPairMatch === true ? " · par de claves OK" : ""}
+          {server.vapidPublicCorrected ? " · pública corregida (reactiva avisos)" : ""}
           {server.vapidJwt?.aud ? ` · aud ${server.vapidJwt.aud}` : ""}
           {server.vapidJwt?.sub ? ` · sub ${server.vapidJwt.sub}` : ""}
           {server.vapidJwt ? ` · exp ${server.vapidJwt.secondsUntilExp}s` : ""} ·{" "}

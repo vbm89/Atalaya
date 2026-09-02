@@ -132,6 +132,7 @@ export const getPushStatus = createServerFn({ method: "POST" })
       vapidSubjectKind: jwt ? (jwt.sub.startsWith("mailto:") ? "mailto" : "https") : vapid.subjectKind,
       vapidSubjectOverridden: vapid.subjectOverridden,
       vapidKeyPairMatch: vapid.keyPairMatch,
+      vapidPublicCorrected: vapid.publicCorrected,
       vapidPublicFingerprint: vapid.publicFingerprint,
       vapidJwt: jwt
         ? {
