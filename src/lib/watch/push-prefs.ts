@@ -1,4 +1,5 @@
 import type { SetupState } from "../trading/types";
+import { shouldPushState } from "./policy";
 
 export interface PushPrefs {
   enabled: boolean;
@@ -16,7 +17,7 @@ export interface PushPrefs {
 export const DEFAULT_PUSH_PREFS: PushPrefs = {
   enabled: true,
   entry: true,
-  pending: true,
+  pending: false,
   map: false,
   expired: false,
   quietStart: null,
@@ -40,7 +41,7 @@ export function parsePushPrefs(raw: unknown): PushPrefs {
   return {
     enabled: o.enabled !== false,
     entry: o.entry !== false,
-    pending: o.pending !== false,
+    pending: o.pending === true,
     map: o.map === true,
     expired: o.expired === true,
     quietStart: hm(o.quietStart),
@@ -85,10 +86,7 @@ export function shouldPushWithPrefs(
   if (!prefs.enabled) return false;
   if (prefs.pausedUntilMs != null && nowMs < prefs.pausedUntilMs) return false;
   if (inQuietWindow(nowMs, prefs.quietStart, prefs.quietEnd)) return false;
-  /** Caducidad/ESPERAR: bandeja sí, Push nunca — aunque prefs.expired esté a true. */
-  if (to === "wait") return false;
+  if (!shouldPushState(to)) return false;
   if (to === "entry") return prefs.entry;
-  if (to === "pending") return prefs.pending;
-  if (to === "map") return prefs.map;
   return false;
 }

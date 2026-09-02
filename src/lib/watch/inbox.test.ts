@@ -37,7 +37,7 @@ describe("bandeja de avisos", () => {
     assert.equal(inboxStateLabel("wait"), "ESPERAR");
   });
 
-  it("push label keeps MAPA as bandeja-only and PENDING as unsent until notified", () => {
+  it("push label keeps MAPA, PENDING and ESPERAR as bandeja-only", () => {
     const base = {
       episodeId: "x",
       assetId: "XAUUSD" as const,
@@ -49,10 +49,11 @@ describe("bandeja de avisos", () => {
     };
     assert.equal(inboxPushLabel({ ...base, toState: "map", notified: false }), "solo bandeja");
     assert.equal(inboxPushLabel({ ...base, toState: "wait", notified: false }), "solo bandeja");
-    assert.equal(inboxPushLabel({ ...base, toState: "pending", notified: false }), "Push no enviado");
+    assert.equal(inboxPushLabel({ ...base, toState: "pending", notified: false }), "solo bandeja");
+    assert.equal(inboxPushLabel({ ...base, toState: "entry", notified: false }), "Push no enviado");
     assert.equal(inboxPushLabel({ ...base, toState: "entry", notified: true }), "Push enviado");
     assert.equal(
-      inboxPushLabel({ ...base, toState: "pending", notified: false, notifyStatus: "failed", notifyLastError: "gone" }),
+      inboxPushLabel({ ...base, toState: "entry", notified: false, notifyStatus: "failed", notifyLastError: "gone" }),
       "Push falló · gone",
     );
   });
@@ -122,7 +123,7 @@ describe("bandeja de avisos", () => {
     await store.upsertPushSub({ endpoint: "https://push.example/1", p256dh: "a", auth: "b" }, null);
     const f = foldEpisode(
       null,
-      { id: "XAUUSD", setupState: "pending", setup: { ...setup, state: "pending" }, waitReason: null, digits: 2 },
+      { id: "XAUUSD", setupState: "entry", setup, waitReason: null, digits: 2 },
       50,
       1_000,
     );
@@ -132,7 +133,7 @@ describe("bandeja de avisos", () => {
     assert.equal(n.failed, 1);
     const inbox = await store.listInbox(20);
     assert.equal(inbox[0]?.notified, false);
-    assert.equal(inbox[0]?.toState, "pending");
+    assert.equal(inbox[0]?.toState, "entry");
   });
 
   it("second dispatch of the same episode transition does not send again", async () => {
@@ -266,13 +267,13 @@ describe("compartir setup", () => {
     assert.doesNotMatch(text, /WATCH_SECRET|VAPID|DATABASE_URL/);
   });
 
-  it("zero subscriptions skip pushable PENDING and leave notified false", async () => {
+  it("zero subscriptions skip pushable ENTRADA and leave notified false", async () => {
     const store = createMemoryStore();
     const counts0 = await store.countPushSubs();
     assert.equal(counts0.active, 0);
     const f = foldEpisode(
       null,
-      { id: "XAUUSD", setupState: "pending", setup: { ...setup, state: "pending" }, waitReason: null, digits: 2 },
+      { id: "XAUUSD", setupState: "entry", setup, waitReason: null, digits: 2 },
       50,
       1_000,
     );

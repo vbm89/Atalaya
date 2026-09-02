@@ -1,5 +1,6 @@
 import type { AssetId, SetupState } from "../trading/types";
-import { setupStateEs } from "./memory";
+import { getAsset } from "../trading/assets";
+import { formatPrice } from "../utils";
 import { watchLinkPath } from "./link";
 import type { EpisodeDraft } from "./episode";
 import { directionUi, displayEntryPrice } from "../chart/labels";
@@ -13,25 +14,20 @@ export interface PushPayload {
   state: SetupState;
 }
 
-function compact(n: number): string {
-  const abs = Math.abs(n);
-  const digits = abs >= 1000 ? 0 : abs >= 100 ? 1 : 2;
-  return n.toLocaleString("es-ES", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
-}
-
 export function buildPushPayload(episode: EpisodeDraft, to: SetupState): PushPayload {
-  const stateEs = setupStateEs(to);
   const dir = directionUi(episode.direction);
-  const entry = compact(displayEntryPrice(episode.direction, episode.zoneLow, episode.zoneHigh));
-  const sl = compact(episode.sl);
-  const tp1 = compact(episode.tp1);
-  const pendingNote = to === "pending" ? " — no es orden" : "";
+  const d = getAsset(episode.assetId).digits;
+  const entry = formatPrice(
+    displayEntryPrice(episode.direction, episode.zoneLow, episode.zoneHigh),
+    d,
+  );
+  const sl = formatPrice(episode.sl, d);
+  const tp1 = formatPrice(episode.tp1, d);
+  const lines = [`ENTRADA ${dir}`, `Entrada: ${entry}`, `SL: ${sl}`, `TP1: ${tp1}`];
+  if (episode.tp2 != null) lines.push(`TP2: ${formatPrice(episode.tp2, d)}`);
   return {
     title: `ATALAYA · ${episode.assetId}`,
-    body: `${stateEs} ${dir}${pendingNote}\nENTRADA ${entry}\nSL ${sl} · TP1 ${tp1}`,
+    body: lines.join("\n"),
     url: watchLinkPath(episode.assetId, episode.episodeId),
     episodeId: episode.episodeId,
     assetId: episode.assetId,
@@ -42,10 +38,10 @@ export function buildPushPayload(episode: EpisodeDraft, to: SetupState): PushPay
 export function buildTestPushPayload(): PushPayload {
   return {
     title: "ATALAYA · prueba",
-    body: "Registro correcto. PENDING y ENTRADA avisarán así. MAPA no.",
+    body: "Registro correcto. Solo ENTRADA avisará así. MAPA, PENDING y ESPERAR no.",
     url: "/",
     episodeId: "test",
     assetId: "XAUUSD",
-    state: "pending",
+    state: "entry",
   };
 }

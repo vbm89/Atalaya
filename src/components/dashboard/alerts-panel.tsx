@@ -262,12 +262,12 @@ export function AlertsPanel() {
             : server.thisDeviceRegistered === false
               ? " · este dispositivo NO está en Neon"
               : ""}
-          {pushableUnsent ? ` · ${pushableUnsent} PENDING/ENTRADA sin Push enviado` : ""}
+          {pushableUnsent ? ` · ${pushableUnsent} ENTRADA sin Push enviado` : ""}
         </p>
       ) : null}
       {lastSendError ? (
         <p className="mt-2 text-xs leading-relaxed text-wait" data-push-last-error>
-          Último envío PENDING/ENTRADA: {lastSendError}
+          Último envío ENTRADA: {lastSendError}
         </p>
       ) : null}
       {state === "ios-browser" ? (
@@ -340,8 +340,6 @@ export function AlertsPanel() {
             [
               ["enabled", "Avisos globales"],
               ["entry", "ENTRADA"],
-              ["pending", "TRIGGER PENDIENTE"],
-              ["map", "MAPA"],
             ] as const
           ).map(([key, label]) => (
             <label key={key} className="flex min-h-11 items-center justify-between gap-2 text-sm">
@@ -358,8 +356,8 @@ export function AlertsPanel() {
             </label>
           ))}
           <p className="text-xs leading-relaxed text-subtle" data-caducity-policy>
-            CADUCIDAD / ESPERAR: se guarda en la bandeja. No genera Push. No es un aviso de
-            proximidad ni una nueva señal.
+            MAPA, TRIGGER PENDIENTE y ESPERAR se guardan en la bandeja. No generan Push. Solo
+            ENTRADA avisa, una vez por episodio.
           </p>
           <p className="pt-2 text-xs font-medium tracking-wider text-muted uppercase">Horas silenciosas</p>
           <p className="text-xs text-subtle">

@@ -34,11 +34,19 @@ describe("horas silenciosas (Europe/Madrid)", () => {
 });
 
 describe("shouldPushWithPrefs", () => {
-  it("defaults push ENTRADA and TRIGGER, never MAPA/ESPERAR", () => {
+  it("defaults push ENTRADA only — never MAPA, PENDING or ESPERAR", () => {
     assert.equal(shouldPushWithPrefs("entry", DEFAULT_PUSH_PREFS), true);
-    assert.equal(shouldPushWithPrefs("pending", DEFAULT_PUSH_PREFS), true);
+    assert.equal(shouldPushWithPrefs("pending", DEFAULT_PUSH_PREFS), false);
     assert.equal(shouldPushWithPrefs("map", DEFAULT_PUSH_PREFS), false);
     assert.equal(shouldPushWithPrefs("wait", DEFAULT_PUSH_PREFS), false);
+  });
+
+  it("prefs cannot re-enable PENDING or MAPA", () => {
+    const prefs = { ...DEFAULT_PUSH_PREFS, pending: true, map: true, expired: true };
+    assert.equal(shouldPushWithPrefs("pending", prefs), false);
+    assert.equal(shouldPushWithPrefs("map", prefs), false);
+    assert.equal(shouldPushWithPrefs("wait", prefs), false);
+    assert.equal(shouldPushWithPrefs("entry", prefs), true);
   });
 
   it("CADUCIDAD checkbox never turns ESPERAR into a Push", () => {

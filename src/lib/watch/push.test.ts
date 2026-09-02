@@ -84,9 +84,9 @@ function loadAll(
 }
 
 describe("push policy", () => {
-  it("pushes ENTRADA and TRIGGER PENDIENTE only", () => {
+  it("pushes ENTRADA only — never MAPA, PENDING or ESPERAR", () => {
     assert.equal(shouldPushState("entry"), true);
-    assert.equal(shouldPushState("pending"), true);
+    assert.equal(shouldPushState("pending"), false);
     assert.equal(shouldPushState("map"), false);
     assert.equal(shouldPushState("wait"), false);
   });
@@ -123,8 +123,13 @@ describe("push policy", () => {
     );
     assert.equal(p.title, "ATALAYA · BTCUSD");
     assert.match(p.body, /ENTRADA VENTA/);
-    assert.match(p.body, /ENTRADA 77\.626/);
+    assert.match(p.body, /Entrada: 77\.626,01/);
+    assert.match(p.body, /SL: 77\.747,00/);
+    assert.match(p.body, /TP1: 76\.888,00/);
+    assert.match(p.body, /TP2: 76\.670,01/);
     assert.doesNotMatch(p.body, /Zona /);
+    assert.doesNotMatch(p.body, /TRIGGER PENDIENTE/);
+    assert.doesNotMatch(p.body, /no es orden/i);
     assert.doesNotMatch(p.body, /COMPRA AHORA|VENDE AHORA|EJECUTA/i);
     assert.equal(p.url, "/?asset=BTCUSD&episode=ep-1");
     assert.equal(p.episodeId, "ep-1");
@@ -132,30 +137,34 @@ describe("push policy", () => {
     assert.equal(p.state, "entry");
   });
 
-  it("pending notification says it is not an order", () => {
+  it("XAU ENTRADA payload is one price, not a zone, and names TP2", () => {
     const p = buildPushPayload(
       {
-        episodeId: "ep-2",
-        assetId: "WTI",
-        direction: "buy",
+        episodeId: "ep-xau",
+        assetId: "XAUUSD",
+        direction: "sell",
         kind: "continuation",
-        zoneLow: 1,
-        zoneHigh: 2,
-        sl: 0.5,
-        tp1: 3,
-        tp2: null,
+        zoneLow: 4303.98,
+        zoneHigh: 4338.15,
+        sl: 4339.89,
+        tp1: 4223.41,
+        tp2: 4170.69,
         openedAtMs: 1,
-        openedState: "pending",
-        currentState: "pending",
+        openedState: "entry",
+        currentState: "entry",
         closedAtMs: null,
         levelsKey: "k",
         openedSlot: 1,
         freeze: null,
       },
-      "pending",
+      "entry",
     );
-    assert.match(p.body, /TRIGGER PENDIENTE/);
-    assert.match(p.body, /no es orden/);
+    assert.equal(p.title, "ATALAYA · XAUUSD");
+    assert.equal(
+      p.body,
+      "ENTRADA VENTA\nEntrada: 4303,98\nSL: 4339,89\nTP1: 4223,41\nTP2: 4170,69",
+    );
+    assert.doesNotMatch(p.body, /TRIGGER PENDIENTE|no es orden/i);
   });
 });
 
@@ -172,7 +181,7 @@ describe("deep link", () => {
 });
 
 describe("notify claim is one-shot", () => {
-  it("ESPERAR → ENTRADA sends one push; same event none; pending one more; caducity none", async () => {
+  it("ESPERAR → ENTRADA sends one push; same event none; PENDING none; caducity none", async () => {
     const store = createMemoryStore();
     const sent: string[] = [];
     const send = async () => {
@@ -223,16 +232,118 @@ describe("notify claim is one-shot", () => {
     await store.upsertEpisode(f2.episode!);
     for (const ev of f2.events) await store.insertEvent(ev);
     const n2 = await dispatchEventPushes(store, f2.events, send);
-    assert.equal(n2.claimed, 1);
-    assert.equal(sent.length, 2);
+    assert.equal(n2.claimed, 0);
+    assert.equal(sent.length, 1);
 
     const f3 = foldEpisode(f2.episode, wait, slot + 1800, now + 1_800_000);
     if (f3.closePrevious) await store.upsertEpisode(f3.closePrevious);
     for (const ev of f3.events) await store.insertEvent(ev);
     const n3 = await dispatchEventPushes(store, f3.events, send);
     assert.equal(n3.claimed, 0);
-    assert.equal(sent.length, 2);
+    assert.equal(sent.length, 1);
     assert.ok(f3.closePrevious?.closedAtMs);
+  });
+
+  it("PENDING, MAPA and ESPERAR never push; only NO-ENTRADA → ENTRADA once per episode", async () => {
+    const store = createMemoryStore();
+    const sent: string[] = [];
+    const send = async () => {
+      sent.push("x");
+      return "ok" as const;
+    };
+    await store.upsertPushSub({ endpoint: "https://push.example/1", p256dh: "a", auth: "b" }, null);
+    await store.setPushPrefs({ ...DEFAULT_PUSH_PREFS, pending: true, map: true, expired: true });
+
+    const now = Date.parse("2026-08-29T08:15:08.000Z");
+    const slot = Math.floor(now / 1000);
+    const setup: SetupProposal = {
+      state: "pending",
+      kind: "continuation",
+      direction: "sell",
+      zone: { low: 4303.98, high: 4338.15 },
+      invalidation: 4340,
+      stopLoss: 4339.89,
+      takeProfit1: 4223.41,
+      takeProfit2: 4170.69,
+      riskReward: 2.2,
+      quality: "media",
+      qualityPhase: "final",
+      supersedeLevel: null,
+      missingForEntry: "volumen 15M",
+      slWide: false,
+      warnings: [],
+      managementNote: "",
+      entryLabel: "4303.98",
+    };
+    const wait = { id: "XAUUSD" as const, setupState: "wait" as const, setup: null, waitReason: "ESPERAR", digits: 2 };
+    const map = { ...wait, setupState: "map" as const, setup: { ...setup, state: "map" as const }, waitReason: null };
+    const pending = { ...wait, setupState: "pending" as const, setup, waitReason: null };
+    const entry = {
+      ...wait,
+      setupState: "entry" as const,
+      setup: { ...setup, state: "entry" as const, missingForEntry: null },
+      waitReason: null,
+    };
+
+    const fMap = foldEpisode(null, map, slot, now);
+    await store.upsertEpisode(fMap.episode!);
+    for (const ev of fMap.events) await store.insertEvent(ev);
+    const nMap = await dispatchEventPushes(store, fMap.events, send);
+    assert.equal(nMap.claimed, 0);
+    assert.equal(sent.length, 0);
+
+    const fPend = foldEpisode(fMap.episode, pending, slot + 900, now + 900_000);
+    await store.upsertEpisode(fPend.episode!);
+    for (const ev of fPend.events) await store.insertEvent(ev);
+    const nPend = await dispatchEventPushes(store, fPend.events, send);
+    assert.equal(nPend.claimed, 0);
+    assert.equal(sent.length, 0);
+
+    const stillPend = foldEpisode(fPend.episode, pending, slot + 1800, now + 1_800_000);
+    assert.equal(stillPend.events.length, 0);
+    const nStill = await dispatchEventPushes(store, stillPend.events, send);
+    assert.equal(nStill.claimed, 0);
+    assert.equal(sent.length, 0);
+
+    const fEntry = foldEpisode(fPend.episode, entry, slot + 2700, now + 2_700_000);
+    assert.equal(fEntry.events.length, 1);
+    assert.equal(fEntry.events[0]?.fromState, "pending");
+    assert.equal(fEntry.events[0]?.toState, "entry");
+    await store.upsertEpisode(fEntry.episode!);
+    for (const ev of fEntry.events) await store.insertEvent(ev);
+    const nEntry = await dispatchEventPushes(store, fEntry.events, send);
+    assert.equal(nEntry.claimed, 1);
+    assert.equal(sent.length, 1);
+
+    const stillEntry = foldEpisode(fEntry.episode, entry, slot + 3600, now + 3_600_000);
+    assert.equal(stillEntry.events.length, 0);
+    const nStay = await dispatchEventPushes(store, stillEntry.events, send);
+    assert.equal(nStay.claimed, 0);
+    assert.equal(sent.length, 1);
+
+    const closed = foldEpisode(fEntry.episode, wait, slot + 4500, now + 4_500_000);
+    if (closed.closePrevious) await store.upsertEpisode(closed.closePrevious);
+    for (const ev of closed.events) await store.insertEvent(ev);
+    const nWait = await dispatchEventPushes(store, closed.events, send);
+    assert.equal(nWait.claimed, 0);
+    assert.equal(sent.length, 1);
+
+    const other: SetupProposal = {
+      ...setup,
+      state: "entry",
+      zone: { low: 4310, high: 4340 },
+      stopLoss: 4342,
+      takeProfit1: 4230,
+      takeProfit2: 4180,
+      missingForEntry: null,
+    };
+    const next = foldEpisode(closed.episode, { ...entry, setup: other }, slot + 5400, now + 5_400_000);
+    assert.notEqual(next.episode?.episodeId, fEntry.episode?.episodeId);
+    await store.upsertEpisode(next.episode!);
+    for (const ev of next.events) await store.insertEvent(ev);
+    const nNew = await dispatchEventPushes(store, next.events, send);
+    assert.equal(nNew.claimed, 1);
+    assert.equal(sent.length, 2);
   });
 
   it("failed send stays unsent and retries once", async () => {
@@ -294,7 +405,7 @@ describe("notify claim is one-shot", () => {
     const send = async () => "proveedor HTTP 403 · BadJwtToken";
     await store.upsertPushSub({ endpoint: "https://web.push.apple.com/1", p256dh: "a", auth: "b" }, null);
     const setup: SetupProposal = {
-      state: "pending",
+      state: "entry",
       kind: "continuation",
       direction: "buy",
       zone: { low: 1, high: 2 },
@@ -315,7 +426,7 @@ describe("notify claim is one-shot", () => {
     const now = Date.parse("2026-08-29T08:15:08.000Z");
     const f = foldEpisode(
       null,
-      { id: "XAUUSD", setupState: "pending", setup, waitReason: null, digits: 2 },
+      { id: "XAUUSD", setupState: "entry", setup, waitReason: null, digits: 2 },
       Math.floor(now / 1000),
       now,
     );
@@ -711,7 +822,7 @@ describe("horas silenciosas y pausa 24h no paran V1", () => {
     });
     const f = foldEpisode(
       null,
-      { id: "WTI", setupState: "pending", setup: { ...setup, state: "pending" }, waitReason: null, digits: 2 },
+      { id: "WTI", setupState: "entry", setup, waitReason: null, digits: 2 },
       Math.floor(now / 1000),
       now,
     );
