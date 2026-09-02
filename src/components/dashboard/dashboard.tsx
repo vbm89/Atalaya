@@ -13,7 +13,7 @@ import { AssetSheet } from "./asset-sheet";
 import { CalendarList } from "./calendar-list";
 import { AccountPanel, useAccountSettings, useCosts } from "./account-panel";
 import { ChartsScreen, type ChartIntent } from "@/components/charts/charts-screen";
-import { hasChartableSetup, SETUP_CHART_TF, chartIntentFromAnalysis, frozenLevelsFromEpisode } from "@/lib/chart/setup-overlay";
+import { hasChartableSetup, SETUP_CHART_TF, chartIntentFromAnalysis, frozenLevelsFromEpisode, type StudyClock } from "@/lib/chart/setup-overlay";
 import { PullRefresh } from "./pull-refresh";
 import { getAsset } from "@/lib/trading/assets";
 import { foldWatchBook, type WatchBook } from "@/lib/watch/memory";
@@ -290,11 +290,37 @@ export function Dashboard() {
     const row = snapshot?.assets.find((a) => a.id === id);
     const shown = row ? overlayAsset(row, episodeFocus) : null;
     if (!shown || !hasChartableSetup(shown)) return;
-    const intent = chartIntentFromAnalysis(shown);
+    const fromFocus =
+      episodeFocus && episodeFocus.assetId === id
+        ? { openedAtMs: episodeFocus.openedAtMs, closedAtMs: episodeFocus.closedAtMs }
+        : null;
+    const fromSnap = snaps.data?.find((s) => s.assetId === id);
+    const clock: StudyClock | null =
+      fromFocus ??
+      (fromSnap?.openedAtMs != null
+        ? { openedAtMs: fromSnap.openedAtMs, closedAtMs: fromSnap.closedAtMs ?? null }
+        : null);
+    const intent = chartIntentFromAnalysis(shown, clock);
     if (!intent) return;
     setOpenId(null);
     setChartIntent(intent);
     setTab("charts");
+    const episodeId = fromSnap?.episodeId;
+    if (clock?.openedAtMs || !episodeId) return;
+    void getWatchEpisode({ data: { episodeId } }).then((view) => {
+      if (!view || view.assetId !== id) return;
+      setChartIntent((prev) => {
+        if (!prev?.freeze || prev.assetId !== id) return prev;
+        return {
+          ...prev,
+          freeze: {
+            ...prev.freeze,
+            openedAtMs: view.openedAtMs,
+            closedAtMs: view.closedAtMs,
+          },
+        };
+      });
+    });
   };
 
   return (
@@ -339,6 +365,21 @@ export function Dashboard() {
                 : snapshot
             }
             intent={chartIntent}
+            studyClockByAsset={(() => {
+              const out: Partial<Record<AssetId, StudyClock>> = {};
+              for (const s of snaps.data ?? []) {
+                if (s.openedAtMs != null && Number.isFinite(s.openedAtMs) && s.openedAtMs > 0) {
+                  out[s.assetId] = { openedAtMs: s.openedAtMs, closedAtMs: s.closedAtMs ?? null };
+                }
+              }
+              if (episodeFocus && episodeFocus.openedAtMs > 0) {
+                out[episodeFocus.assetId] = {
+                  openedAtMs: episodeFocus.openedAtMs,
+                  closedAtMs: episodeFocus.closedAtMs,
+                };
+              }
+              return out;
+            })()}
             onBack={() => {
               setTab("markets");
               setChartIntent(null);
