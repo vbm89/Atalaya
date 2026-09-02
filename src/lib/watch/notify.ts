@@ -120,13 +120,17 @@ export async function dispatchEventPushes(
 
 export async function sendWebPush(sub: PushSub, payload: PushPayload): Promise<"ok" | "gone" | string> {
   const { getSql } = await import("@/lib/db");
-  const { loadVapidKeys } = await import("./vapid");
+  const { loadVapidKeys, vapidKeyPairMatches, vapidSubjectForEndpoint } = await import("./vapid");
   const webpush = await import("web-push");
   const sql = await getSql();
   const keys = await loadVapidKeys(sql);
   if (!keys) return "vapid ausente";
+  if (!vapidKeyPairMatches(keys.publicKey, keys.privateKey)) {
+    return "vapid claves no coinciden";
+  }
+  const subject = vapidSubjectForEndpoint(keys.subject, sub.endpoint).subject;
   try {
-    await webpush.sendNotification(
+    const res = (await webpush.sendNotification(
       {
         endpoint: sub.endpoint,
         keys: { p256dh: sub.p256dh, auth: sub.auth },
@@ -134,7 +138,7 @@ export async function sendWebPush(sub: PushSub, payload: PushPayload): Promise<"
       JSON.stringify(payload),
       {
         vapidDetails: {
-          subject: keys.subject,
+          subject,
           publicKey: keys.publicKey,
           privateKey: keys.privateKey,
         },
@@ -142,8 +146,10 @@ export async function sendWebPush(sub: PushSub, payload: PushPayload): Promise<"
         urgency: "high",
         contentEncoding: "aes128gcm",
       },
-    );
-    return "ok";
+    )) as { statusCode?: number; headers?: Record<string, string | string[] | undefined> };
+    const http = typeof res?.statusCode === "number" ? res.statusCode : 201;
+    if (http === 201 || (http >= 200 && http < 300)) return "ok";
+    return `proveedor HTTP ${http}`;
   } catch (e) {
     const mapped = formatPushSendError(e);
     console.info("[watch] push send failed", {

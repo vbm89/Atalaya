@@ -109,7 +109,7 @@ export const getPushStatus = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { getSql } = await import("@/lib/db");
     const { createPgStore } = await import("./store");
-    const { inspectVapidEnv } = await import("./vapid");
+    const { inspectVapidEnv, loadVapidKeys, vapidJwtPreview } = await import("./vapid");
     const { shouldPushState } = await import("./policy");
     const { pushEndpointHost } = await import("./notify");
     const sql = await getSql();
@@ -121,10 +121,31 @@ export const getPushStatus = createServerFn({ method: "POST" })
     const subs = await store.listActivePushSubs();
     const hosts = [...new Set(subs.map((s) => pushEndpointHost(s.endpoint)))];
     const vapid = inspectVapidEnv();
+    const keys = await loadVapidKeys(sql);
+    const sample =
+      subs.find((s) => pushEndpointHost(s.endpoint).includes("push.apple.com"))?.endpoint ??
+      subs[0]?.endpoint ??
+      "https://web.push.apple.com/x";
+    const jwt = keys ? vapidJwtPreview(sample, keys.subject) : null;
     return {
       vapidConfigured: vapid.configured,
-      vapidSubjectKind: vapid.subjectKind,
+      vapidSubjectKind: jwt ? (jwt.sub.startsWith("mailto:") ? "mailto" : "https") : vapid.subjectKind,
       vapidSubjectOverridden: vapid.subjectOverridden,
+      vapidKeyPairMatch: vapid.keyPairMatch,
+      vapidPublicFingerprint: vapid.publicFingerprint,
+      vapidJwt: jwt
+        ? {
+            alg: jwt.alg,
+            typ: jwt.typ,
+            kid: jwt.kid,
+            aud: jwt.aud,
+            sub: jwt.sub,
+            iat: jwt.iat,
+            exp: jwt.exp,
+            secondsUntilExp: jwt.secondsUntilExp,
+            appleHost: jwt.appleHost,
+          }
+        : null,
       activeSubscriptions: counts.active,
       disabledSubscriptions: counts.disabled,
       subscriptionHosts: hosts,
@@ -184,6 +205,7 @@ export const sendTestPush = createServerFn({ method: "POST" })
       sent,
       failed,
       subs: subs.length,
+      appleAccepted: sent > 0,
       error: sent > 0 ? null : lastError ?? "El proveedor no aceptó el envío.",
     };
   });

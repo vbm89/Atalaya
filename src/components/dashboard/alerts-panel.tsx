@@ -28,6 +28,19 @@ type ServerStatus = {
   vapidConfigured: boolean;
   vapidSubjectKind?: "https" | "mailto";
   vapidSubjectOverridden?: boolean;
+  vapidKeyPairMatch?: boolean | null;
+  vapidPublicFingerprint?: string | null;
+  vapidJwt?: {
+    alg: string;
+    typ: string;
+    kid: null;
+    aud: string | null;
+    sub: string;
+    iat: number;
+    exp: number;
+    secondsUntilExp: number;
+    appleHost: boolean;
+  } | null;
   activeSubscriptions: number;
   disabledSubscriptions: number;
   subscriptionHosts?: string[];
@@ -41,6 +54,7 @@ type ServerStatus = {
     pushable: boolean;
   }>;
 };
+
 
 export function AlertsPanel() {
   const [state, setState] = useState<PushUiState>("checking");
@@ -157,7 +171,7 @@ export function AlertsPanel() {
       try {
         const test = await sendTestPush({ data: { pin: pin || undefined } });
         if (test.sent > 0) {
-          setTestNote("Prueba enviada. Si el sistema lo permite, verás un aviso ahora.");
+          setTestNote("Prueba aceptada por Apple (HTTP 201). Si iOS lo permite, verás el aviso.");
         } else {
           setTestNote(test.error ?? "El proveedor no aceptó la prueba.");
         }
@@ -199,7 +213,7 @@ export function AlertsPanel() {
     setTestNote(null);
     try {
       const r = await sendTestPush({ data: { pin: pin || undefined } });
-      if (r.sent > 0) setTestNote(`Prueba aceptada por el proveedor (${r.sent}/${r.subs}).`);
+      if (r.sent > 0) setTestNote(`Prueba aceptada por Apple (HTTP 201) · ${r.sent}/${r.subs}.`);
       else setError(r.error ?? "Ningún envío aceptado.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo enviar la prueba.");
@@ -234,8 +248,11 @@ export function AlertsPanel() {
       {server ? (
         <p className="mt-2 text-xs leading-relaxed text-subtle" data-push-server>
           Servidor: {server.vapidConfigured ? "VAPID listo" : "VAPID ausente"}
-          {server.vapidSubjectKind ? ` · subject ${server.vapidSubjectKind}` : ""}
-          {server.vapidSubjectOverridden ? " (el .local se sustituyó)" : ""} ·{" "}
+          {server.vapidKeyPairMatch === false ? " · claves pública/privada NO coinciden" : ""}
+          {server.vapidKeyPairMatch === true ? " · par de claves OK" : ""}
+          {server.vapidJwt?.aud ? ` · aud ${server.vapidJwt.aud}` : ""}
+          {server.vapidJwt?.sub ? ` · sub ${server.vapidJwt.sub}` : ""}
+          {server.vapidJwt ? ` · exp ${server.vapidJwt.secondsUntilExp}s` : ""} ·{" "}
           {server.activeSubscriptions} dispositivo{server.activeSubscriptions === 1 ? "" : "s"} en Neon
           {hostLine ? ` · ${hostLine}` : ""}
           {server.thisDeviceRegistered === true
