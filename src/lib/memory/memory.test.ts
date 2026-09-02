@@ -13,6 +13,7 @@ import {
   mergeJournal,
   parseClearFields,
   parseJournalInput,
+  sheetJournalEpisodeId,
 } from "./journal.ts";
 import {
   rememberAfterTick,
@@ -24,6 +25,7 @@ import {
   loadTape,
   loadContext,
   loadPostMortem,
+  loadJournal,
 } from "./persist.ts";
 import { readGitSha, V1_LABEL } from "./sha.ts";
 import { sessionFromStamp, madridStamp } from "./session.ts";
@@ -124,6 +126,54 @@ describe("memory journal + postmortem", () => {
     assert.equal(journalIncomplete({ action: "took", lots: 0.1, entryPrice: 88.4 }), false);
     assert.equal(journalIncomplete({ action: "skipped", lots: null, entryPrice: null }), false);
     assert.deepEqual(parseClearFields(["lots", "nope", "note", "lots"]), ["lots", "note"]);
+  });
+
+  it("live sheet journal attaches only to MAPA/PENDING/ENTRADA with episode_id", () => {
+    const id = "BTCUSD-1787991300-abcd1234";
+    for (const state of ["map", "pending", "entry"] as const) {
+      assert.equal(
+        sheetJournalEpisodeId({
+          assetId: "BTCUSD",
+          setupState: state,
+          snapshotEpisodeId: id,
+        }),
+        id,
+      );
+    }
+    assert.equal(
+      sheetJournalEpisodeId({
+        assetId: "WTI",
+        setupState: "wait",
+        snapshotEpisodeId: "WTI-1788354900-83d68711",
+      }),
+      null,
+    );
+    assert.equal(
+      sheetJournalEpisodeId({
+        assetId: "BTCUSD",
+        setupState: "entry",
+        snapshotEpisodeId: null,
+      }),
+      null,
+    );
+    assert.equal(
+      sheetJournalEpisodeId({
+        assetId: "BTCUSD",
+        setupState: "wait",
+        snapshotEpisodeId: null,
+        focus: { assetId: "BTCUSD", episodeId: id, live: true },
+      }),
+      id,
+    );
+    assert.equal(
+      sheetJournalEpisodeId({
+        assetId: "BTCUSD",
+        setupState: "wait",
+        snapshotEpisodeId: id,
+        focus: { assetId: "BTCUSD", episodeId: id, live: false },
+      }),
+      null,
+    );
   });
 
   it("marks missing tape/context as PENDIENTE, never causal", () => {
@@ -445,6 +495,83 @@ describe("memory persist PGLite", () => {
     const stillMap = await store.getEpisode(ep.episodeId);
     assert.equal(stillMap?.openedState, "map");
     assert.equal(stillMap?.currentState, ep.currentState);
+  });
+
+  it("live MAPA/PENDING/ENTRADA share one journal; TOMÉ does not change V1", async () => {
+    for (const state of ["map", "pending", "entry"] as const) {
+      const { sql, store } = await boot();
+      const now = Date.parse("2026-08-29T08:15:08.000Z");
+      const slot = slotSecFromNow(now);
+      const open = slot - 900;
+      const m15 = [bar(open, 110)];
+      await runWatchTick({
+        nowMs: now,
+        store,
+        load: async () => ({
+          assets: [
+            { id: "XAUUSD", setupState: "wait", setup: null, waitReason: "ESPERAR", digits: 2 },
+            { id: "BTCUSD", setupState: state, setup: { ...setup, state }, waitReason: null, digits: 2 },
+            { id: "US100", setupState: "wait", setup: null, waitReason: "ESPERAR", digits: 2 },
+            { id: "WTI", setupState: "wait", setup: null, waitReason: "ESPERAR", digits: 2 },
+          ],
+          m15ByAsset: { BTCUSD: m15, XAUUSD: m15, US100: m15, WTI: m15 },
+          errors: [],
+        }),
+      });
+      const ep = await store.getOpenEpisode("BTCUSD");
+      assert.ok(ep);
+      assert.equal(ep.currentState, state);
+      assert.equal(ep.openedState, state);
+      const snap = await store.getSnapshot("BTCUSD");
+      assert.equal(snap?.state, state);
+      assert.equal(snap?.episodeId, ep.episodeId);
+      assert.equal(
+        sheetJournalEpisodeId({
+          assetId: "BTCUSD",
+          setupState: snap?.state ?? "wait",
+          snapshotEpisodeId: snap?.episodeId ?? null,
+        }),
+        ep.episodeId,
+      );
+      const waitHidden = sheetJournalEpisodeId({
+        assetId: "BTCUSD",
+        setupState: "wait",
+        snapshotEpisodeId: ep.episodeId,
+      });
+      assert.equal(waitHidden, null);
+      const first = parseJournalInput({
+        episodeId: ep.episodeId,
+        action: "took",
+        lots: 0.1,
+        entryPrice: 110.5,
+        note: "keep me",
+      });
+      assert.ok(!("error" in first));
+      if ("error" in first) return;
+      await upsertJournal(sql, first);
+      const blank = parseJournalInput({ episodeId: ep.episodeId, action: "took" });
+      assert.ok(!("error" in blank));
+      if ("error" in blank) return;
+      const kept = await upsertJournal(sql, blank);
+      assert.equal(kept.lots, 0.1);
+      assert.equal(kept.entryPrice, 110.5);
+      assert.equal(kept.note, "keep me");
+      const wiped = await upsertJournal(sql, blank, ["lots"]);
+      assert.equal(wiped.lots, null);
+      assert.equal(wiped.entryPrice, 110.5);
+      const loaded = await loadJournal(sql, ep.episodeId);
+      assert.equal(loaded?.action, "took");
+      assert.equal(loaded?.entryPrice, 110.5);
+      const history = await store.listHistory(80);
+      const hist = history.find((row) => row.episode.episodeId === ep.episodeId);
+      assert.ok(hist);
+      const fromHistory = await loadJournal(sql, hist.episode.episodeId);
+      assert.deepEqual(fromHistory, loaded);
+      const still = await store.getEpisode(ep.episodeId);
+      assert.equal(still?.currentState, state);
+      assert.equal(still?.openedState, state);
+      assert.equal(still?.closedAtMs, null);
+    }
   });
 
   it("post-mortem first write wins and sweep fills a miss", async () => {

@@ -9,6 +9,7 @@ import { assetDataLamp } from "@/lib/watch/feed-lamp";
 import { WatchPhaseBadge } from "./signal-badge";
 import { SetupPanel } from "./setup-panel";
 import { DataLampChip } from "./data-lamp";
+import { EpisodeMemory } from "./episode-memory";
 
 export function AssetSheet({
   asset,
@@ -19,6 +20,7 @@ export function AssetSheet({
   costs,
   onViewChart,
   onWhy,
+  episodeId,
 }: {
   asset: AssetAnalysis | null;
   watch?: AssetWatch | null;
@@ -28,6 +30,7 @@ export function AssetSheet({
   costs?: AssetCosts;
   onViewChart?: () => void;
   onWhy?: () => void;
+  episodeId?: string | null;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -55,6 +58,7 @@ export function AssetSheet({
         onClose={() => onOpenChange(false)}
         onViewChart={onViewChart}
         onWhy={onWhy}
+        episodeId={episodeId ?? null}
       />
     </div>
   );
@@ -68,6 +72,7 @@ function SheetBody({
   onClose,
   onViewChart,
   onWhy,
+  episodeId,
 }: {
   asset: AssetAnalysis;
   watch: AssetWatch | null;
@@ -76,6 +81,7 @@ function SheetBody({
   onClose: () => void;
   onViewChart?: () => void;
   onWhy?: () => void;
+  episodeId: string | null;
 }) {
   const lastAt = asset.lastDataAt ?? asset.marketTime;
   const isXau = asset.id === "XAUUSD";
@@ -118,18 +124,11 @@ function SheetBody({
             <p className="font-mono text-3xl font-medium tabular">
               {displayPrice == null ? "—" : formatPrice(displayPrice, asset.digits)}
             </p>
-            <p className="mt-1 text-xs font-medium tracking-wider text-muted uppercase">
-              Precio de análisis
-            </p>
             {isXau ? (
               <p className="mt-1 text-xs font-medium tracking-wider text-subtle uppercase">
-                SPOT XAUUSD · no es last T4Trade
+                SPOT XAUUSD
               </p>
-            ) : (
-              <p className="mt-1 text-xs font-medium tracking-wide text-subtle">
-                {asset.feedSymbol} · {asset.venue} · PROXY
-              </p>
-            )}
+            ) : null}
             <p className="mt-1 text-sm text-muted">
               {asset.dayChangePct == null ? "var. n/d" : formatPct(asset.dayChangePct)}
             </p>
@@ -160,6 +159,11 @@ function SheetBody({
             onViewChart={onViewChart}
             onWhy={onWhy}
           />
+          {episodeId ? (
+            <div data-live-journal={episodeId}>
+              <EpisodeMemory episodeId={episodeId} />
+            </div>
+          ) : null}
         </section>
 
         <p className="mt-4 text-sm leading-snug text-muted">{asset.technicalSummary}</p>
@@ -170,7 +174,7 @@ function SheetBody({
           </h3>
           <dl className="mt-2 space-y-1.5 text-sm">
             <Meta
-              label="Precio de análisis"
+              label="Precio actual"
               value={
                 displayPrice == null
                   ? "DATOS NO DISPONIBLES"

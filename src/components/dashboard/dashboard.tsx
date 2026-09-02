@@ -13,7 +13,7 @@ import { AssetSheet } from "./asset-sheet";
 import { CalendarList } from "./calendar-list";
 import { AccountPanel, useAccountSettings, useCosts } from "./account-panel";
 import { ChartsScreen, type ChartIntent } from "@/components/charts/charts-screen";
-import { hasChartableSetup, SETUP_CHART_TF, chartIntentFromAnalysis, frozenLevelsFromEpisode, type StudyClock } from "@/lib/chart/setup-overlay";
+import { hasChartableSetup, SETUP_CHART_TF, chartIntentFromAnalysis, frozenLevelsFromEpisode } from "@/lib/chart/setup-overlay";
 import { PullRefresh } from "./pull-refresh";
 import { getAsset } from "@/lib/trading/assets";
 import { foldWatchBook, type WatchBook } from "@/lib/watch/memory";
@@ -28,6 +28,7 @@ import { LearnPanel } from "./learn-panel";
 import { explainFromAnalysis, explainFromHistory, type ExplainView } from "@/lib/learn/explain";
 import type { HistoryRow } from "@/lib/watch/store";
 import { InboxPanel } from "./inbox-panel";
+import { sheetJournalEpisodeId } from "@/lib/memory/journal";
 
 const CACHE_KEY = "atalaya:last-analysis:v5";
 const QUERY_KEY = ["market-analysis"] as const;
@@ -262,6 +263,22 @@ export function Dashboard() {
   const rawOpen = snapshot?.assets.find((a) => a.id === openId) ?? null;
   const openAsset = rawOpen ? overlayAsset(rawOpen, episodeFocus) : null;
   const sheetOpen = openId != null;
+  const snapForOpen = openId && snaps.data ? snaps.data.find((s) => s.assetId === openId) : undefined;
+  const journalEpisodeId =
+    openId != null
+      ? sheetJournalEpisodeId({
+          assetId: openId,
+          setupState: openAsset?.setupState ?? snapForOpen?.state ?? "wait",
+          snapshotEpisodeId: snapForOpen?.episodeId ?? null,
+          focus: episodeFocus
+            ? {
+                assetId: episodeFocus.assetId,
+                episodeId: episodeFocus.episodeId,
+                live: episodeFocus.live,
+              }
+            : null,
+        })
+      : null;
   const error =
     refresh.error instanceof Error
       ? refresh.error.message
@@ -273,37 +290,11 @@ export function Dashboard() {
     const row = snapshot?.assets.find((a) => a.id === id);
     const shown = row ? overlayAsset(row, episodeFocus) : null;
     if (!shown || !hasChartableSetup(shown)) return;
-    const fromFocus =
-      episodeFocus && episodeFocus.assetId === id
-        ? { openedAtMs: episodeFocus.openedAtMs, closedAtMs: episodeFocus.closedAtMs }
-        : null;
-    const fromSnap = snaps.data?.find((s) => s.assetId === id);
-    const clock: StudyClock | null =
-      fromFocus ??
-      (fromSnap?.openedAtMs != null
-        ? { openedAtMs: fromSnap.openedAtMs, closedAtMs: fromSnap.closedAtMs ?? null }
-        : null);
-    const intent = chartIntentFromAnalysis(shown, clock);
+    const intent = chartIntentFromAnalysis(shown);
     if (!intent) return;
     setOpenId(null);
     setChartIntent(intent);
     setTab("charts");
-    const episodeId = fromSnap?.episodeId;
-    if (clock?.openedAtMs || !episodeId) return;
-    void getWatchEpisode({ data: { episodeId } }).then((view) => {
-      if (!view || view.assetId !== id) return;
-      setChartIntent((prev) => {
-        if (!prev?.freeze || prev.assetId !== id) return prev;
-        return {
-          ...prev,
-          freeze: {
-            ...prev.freeze,
-            openedAtMs: view.openedAtMs,
-            closedAtMs: view.closedAtMs,
-          },
-        };
-      });
-    });
   };
 
   return (
@@ -348,21 +339,6 @@ export function Dashboard() {
                 : snapshot
             }
             intent={chartIntent}
-            studyClockByAsset={(() => {
-              const out: Partial<Record<AssetId, StudyClock>> = {};
-              for (const s of snaps.data ?? []) {
-                if (s.openedAtMs != null && Number.isFinite(s.openedAtMs) && s.openedAtMs > 0) {
-                  out[s.assetId] = { openedAtMs: s.openedAtMs, closedAtMs: s.closedAtMs ?? null };
-                }
-              }
-              if (episodeFocus && episodeFocus.openedAtMs > 0) {
-                out[episodeFocus.assetId] = {
-                  openedAtMs: episodeFocus.openedAtMs,
-                  closedAtMs: episodeFocus.closedAtMs,
-                };
-              }
-              return out;
-            })()}
             onBack={() => {
               setTab("markets");
               setChartIntent(null);
@@ -508,6 +484,7 @@ export function Dashboard() {
           open={sheetOpen}
           account={account}
           costs={openAsset ? costs[openAsset.id] : undefined}
+          episodeId={journalEpisodeId}
           onOpenChange={(v) => {
             if (!v) setOpenId(null);
           }}

@@ -20,6 +20,8 @@ export const JOURNAL_LABEL: Record<JournalAction, string> = {
   partial: "PARCIAL",
 };
 
+const LIVE_JOURNAL_STATES = new Set(["map", "pending", "entry"]);
+
 function finiteOrNull(n: unknown): number | null {
   if (n == null || n === "") return null;
   const v = typeof n === "number" ? n : Number(n);
@@ -109,4 +111,24 @@ export function mergeJournal(
 export function journalIncomplete(row: Pick<JournalEntry, "action" | "lots" | "entryPrice">): boolean {
   if (row.action === "skipped") return false;
   return row.lots == null || row.entryPrice == null;
+}
+
+/**
+ * Attach the human journal to the live sheet only when there is a real V1
+ * episode_id in MAPA/PENDING/ENTRADA. Wait leftovers must not open a diary.
+ */
+export function sheetJournalEpisodeId(input: {
+  assetId: string;
+  setupState: string;
+  snapshotEpisodeId?: string | null;
+  focus?: { assetId: string; episodeId: string; live: boolean } | null;
+}): string | null {
+  const focus = input.focus;
+  if (focus?.live && focus.assetId === input.assetId) {
+    const id = focus.episodeId.trim();
+    return id.length >= 8 ? id : null;
+  }
+  if (!LIVE_JOURNAL_STATES.has(input.setupState)) return null;
+  const id = (input.snapshotEpisodeId ?? "").trim();
+  return id.length >= 8 ? id : null;
 }
