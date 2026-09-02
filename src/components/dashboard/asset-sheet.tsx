@@ -118,11 +118,18 @@ function SheetBody({
             <p className="font-mono text-3xl font-medium tabular">
               {displayPrice == null ? "—" : formatPrice(displayPrice, asset.digits)}
             </p>
+            <p className="mt-1 text-xs font-medium tracking-wider text-muted uppercase">
+              Precio de análisis
+            </p>
             {isXau ? (
               <p className="mt-1 text-xs font-medium tracking-wider text-subtle uppercase">
-                SPOT XAUUSD
+                SPOT XAUUSD · no es last T4Trade
               </p>
-            ) : null}
+            ) : (
+              <p className="mt-1 text-xs font-medium tracking-wide text-subtle">
+                {asset.feedSymbol} · {asset.venue} · PROXY
+              </p>
+            )}
             <p className="mt-1 text-sm text-muted">
               {asset.dayChangePct == null ? "var. n/d" : formatPct(asset.dayChangePct)}
             </p>
@@ -163,7 +170,7 @@ function SheetBody({
           </h3>
           <dl className="mt-2 space-y-1.5 text-sm">
             <Meta
-              label="Precio actual"
+              label="Precio de análisis"
               value={
                 displayPrice == null
                   ? "DATOS NO DISPONIBLES"

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { AnalysisSnapshot, AssetAnalysis, SetupQuality, SetupState } from "@/lib/trading/types";
 import { formatPrice } from "@/lib/utils";
 import { displayEntryPrice } from "@/lib/chart/labels";
+import { analysisPriceCaption } from "@/lib/broker/broker-view";
 import { setupStateEs } from "@/lib/watch/memory";
 import { DataLampChip } from "./data-lamp";
 import { formatCountdown, formatMadridClock } from "@/lib/watch/clock";
@@ -64,10 +65,11 @@ export function BestOpportunityCard({
           </p>
           <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-2 text-sm">
             <div className="col-span-3">
-              <dt className="text-xs text-subtle">ENTRADA</dt>
+              <dt className="text-xs text-subtle">ENTRADA V1</dt>
               <dd className="font-mono tabular" data-entry-px>
                 {formatPrice(displayEntryPrice(setup.direction, setup.zone.low, setup.zone.high), asset.digits)}
               </dd>
+              <p className="mt-1 text-xs text-subtle">{analysisPriceCaption(asset.id, asset)}</p>
             </div>
             <div>
               <dt className="text-xs text-subtle">SL</dt>

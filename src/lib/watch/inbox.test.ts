@@ -214,13 +214,15 @@ describe("compartir setup", () => {
     const text = setupShareText(asset);
     assert.match(text, /ATALAYA/);
     assert.match(text, /TRIGGER PENDIENTE/);
-    assert.match(text, /ENTRADA:/);
+    assert.match(text, /ENTRADA V1:/);
     assert.match(text, /77\.626,01/);
     assert.doesNotMatch(text, /77\.626,01 – 77\.731/);
-    assert.match(text, /SL:/);
+    assert.match(text, /SL de análisis:/);
     assert.match(text, /TP1:/);
     assert.match(text, /Estado de datos: DATOS OK/);
     assert.match(text, /Proxy\/fuente: PROXY · BTCUSDT/);
+    assert.match(text, /BTCUSDT/);
+    assert.match(text, /T4Trade BTCUSD/);
     assert.match(text, /ANÁLISIS — NO ES UNA ORDEN/);
     assert.equal(shareContainsSecrets(text), false);
     assert.doesNotMatch(text, /WATCH_SECRET|VAPID|DATABASE_URL|API_KEY/i);

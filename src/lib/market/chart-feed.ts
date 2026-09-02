@@ -278,13 +278,13 @@ export async function loadChartSeries(assetId: AssetId, tf: ChartTf): Promise<Ch
   let proxyNote: string | null = null;
   if (asset.instrumentKind === "proxy") {
     if (asset.id === "XAUUSD") {
-      proxyNote = "Velas PROXY XAUUSDT. No es el spot XAUUSD ni un futuro COMEX.";
+      proxyNote = "Velas PROXY XAUUSDT. No es el spot XAUUSD ni un futuro COMEX. No es last T4Trade.";
     } else if (asset.id === "WTI") {
-      proxyNote = "PROXY CLUSDT. No es el futuro NYMEX CL.";
+      proxyNote = "ANÁLISIS · CLUSDT · BITGET · PROXY. No es T4Trade WTICash.";
     } else if (asset.id === "US100") {
-      proxyNote = "PROXY NDX100USDT. No es el Nasdaq 100 al contado ni NQ.";
+      proxyNote = "ANÁLISIS · NDX100USDT · BITGET · PROXY. No es T4Trade US100Cash.";
     } else {
-      proxyNote = `PROXY ${asset.feedSymbol}. No es el par al contado ${asset.label}.`;
+      proxyNote = `ANÁLISIS · PROXY ${asset.feedSymbol}. No es T4Trade ${asset.label}.`;
     }
   }
 

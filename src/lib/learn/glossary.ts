@@ -135,6 +135,13 @@ export const GLOSSARY: GlossaryEntry[] = [
     example: "ENTRADA vigente. Análisis, no orden.",
   },
   {
+    id: "proxy-broker",
+    title: "PROXY vs bróker",
+    what: "V1 analiza un instrumento público (CLUSDT, NDX100USDT, BTCUSDT, velas XAUUSDT). T4Trade opera otros símbolos (WTICash, US100Cash, BTCUSD, XAUUSD).",
+    forAtalaya: "La ENTRADA V1 es del análisis. Sin feed T4Trade no hay precio de ejecución. No copies 89,64 a WTICash.",
+    example: "WTI ENTRADA V1 89,64 sobre CLUSDT. Broker WTICash: FEED NO DISPONIBLE.",
+  },
+  {
     id: "wait",
     title: "ESPERAR",
     what: "No hay setup operable ahora.",

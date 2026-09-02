@@ -11,6 +11,15 @@ import { distanceUnavailableLabel, setupDistance } from "@/lib/chart/zone-distan
 import type { AssetWatch } from "@/lib/watch/memory";
 import { setupStateEs, watchPhaseCaption } from "@/lib/watch/memory";
 import { setupShareText } from "@/lib/watch/share-setup";
+import {
+  analysisDisclaimer,
+  analysisPriceCaption,
+  executionCostsLabel,
+  executionRiskLabel,
+  mappingStateLabel,
+  theoreticalRiskNote,
+  viewsFromAsset,
+} from "@/lib/broker/broker-view";
 import { QualityBadge, RiskBadge, WatchPhaseBadge } from "./signal-badge";
 
 export function SetupPanel({
@@ -31,6 +40,9 @@ export function SetupPanel({
   const setup = asset.setup;
   const phase = watch?.phase ?? (asset.setupState === "wait" ? "wait" : "live");
   const [shareNote, setShareNote] = useState<string | null>(null);
+  const views = viewsFromAsset(asset);
+  const broker = views.broker;
+  const analysisCap = analysisPriceCaption(asset.id, asset);
 
   async function share() {
     const text = setupShareText(asset);
@@ -62,8 +74,9 @@ export function SetupPanel({
         <WatchPhaseBadge phase="expired" signal="wait" />
         <p className="text-sm font-medium text-wait">{watchPhaseCaption(watch)}</p>
         <p className="text-sm text-muted">
-          {dir} · era {was} · ENTRADA {formatPrice(entryPx, d)}
+          {dir} · era {was} · ENTRADA V1 {formatPrice(entryPx, d)}
         </p>
+        <p className="text-xs text-muted">{analysisCap}</p>
         <p className="text-xs text-subtle" data-zone-distance="unavailable">
           {distanceUnavailableLabel(true)}
         </p>
@@ -106,6 +119,7 @@ export function SetupPanel({
         <p className="rounded-[var(--radius-lg)] bg-wait-dim px-3 py-3 text-sm text-wait">
           {asset.waitReason ?? "ESPERAR — no existe oportunidad definida."}
         </p>
+        <p className="text-xs text-muted">{analysisCap}</p>
         {onWhy ? <WhyButton onClick={onWhy} /> : null}
       </div>
     );
@@ -114,7 +128,7 @@ export function SetupPanel({
   const d = asset.digits;
   const dir = setup.direction === "buy" ? "COMPRA" : "VENTA";
   const kind = setup.kind === "continuation" ? "A · continuación / retest" : "B · ruptura + retest";
-  const entryPx = displayEntryPrice(setup.direction, setup.zone.low, setup.zone.high);
+  const entryPx = views.analysis.entry ?? displayEntryPrice(setup.direction, setup.zone.low, setup.zone.high);
   const slDist = Math.abs(entryPx - setup.stopLoss);
   const contract = effectiveContractDraft(asset.id, account.contracts[asset.id]);
   const spec = specFromDraft(contract);
@@ -134,6 +148,9 @@ export function SetupPanel({
     zoneHigh: setup.zone.high,
     entry: entryPx,
   });
+  const execRisk = executionRiskLabel();
+  const execCost = executionCostsLabel();
+  const analysisKind = views.analysis.kind === "proxy" ? "PROXY" : "SPOT";
 
   return (
     <div className="mt-2 space-y-3">
@@ -145,7 +162,7 @@ export function SetupPanel({
       {isPending ? (
         <p className="text-sm font-medium text-wait">TRIGGER PENDIENTE — vigente, no es orden</p>
       ) : isEntry ? (
-        <p className="text-sm font-medium">ENTRADA vigente. Análisis, no orden.</p>
+        <p className="text-sm font-medium">ENTRADA V1 vigente. Análisis, no orden.</p>
       ) : (
         <p className="text-sm font-medium text-map">MAPA — vigente, no es orden</p>
       )}
@@ -163,23 +180,72 @@ export function SetupPanel({
           value={`${setup.quality.toUpperCase()} · ${setup.qualityPhase}`}
           wide
         />
-        <Item label="ENTRADA" value={formatPrice(entryPx, d)} wide />
-        <Item label="Invalidación" value={formatPrice(setup.invalidation, d)} />
-        <Item label="SL" value={formatPrice(setup.stopLoss, d)} />
-        <Item label="TP1" value={formatPrice(setup.takeProfit1, d)} />
-        <Item
-          label="TP2"
-          value={setup.takeProfit2 != null ? formatPrice(setup.takeProfit2, d) : "n/d"}
-        />
-        <Item label="R:R teórico V1" value={`1 : ${setup.riskReward.toFixed(1)}`} />
       </dl>
+
+      <section
+        className="space-y-2 rounded-[var(--radius-md)] bg-elevated px-3 py-3"
+        data-analysis-block
+        data-analysis-instrument={views.analysis.instrument}
+      >
+        <h4 className="text-xs font-medium tracking-wider text-muted uppercase">Análisis</h4>
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+          <Item
+            label="Instrumento"
+            value={`${views.analysis.instrument} · ${views.analysis.provider} · ${analysisKind}`}
+            wide
+          />
+          <Item
+            label="Precio de análisis"
+            value={views.analysis.price == null ? "—" : formatPrice(views.analysis.price, d)}
+            wide
+          />
+          <Item label="ENTRADA V1" value={formatPrice(entryPx, d)} wide />
+          <Item label="Invalidación" value={formatPrice(setup.invalidation, d)} />
+          <Item label="SL de análisis" value={formatPrice(setup.stopLoss, d)} />
+          <Item label="TP1" value={formatPrice(setup.takeProfit1, d)} />
+          <Item
+            label="TP2"
+            value={setup.takeProfit2 != null ? formatPrice(setup.takeProfit2, d) : "n/d"}
+          />
+          <Item label="R:R teórico V1" value={`1 : ${setup.riskReward.toFixed(1)}`} />
+        </dl>
+      </section>
+
+      <section
+        className="space-y-2 rounded-[var(--radius-md)] bg-elevated px-3 py-3"
+        data-broker-block
+        data-broker-instrument={broker.instrument}
+        data-broker-mapping={broker.mappingState}
+      >
+        <h4 className="text-xs font-medium tracking-wider text-muted uppercase">Broker</h4>
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+          <Item label="Instrumento" value={`${broker.instrument} · ${broker.provider}`} wide />
+          <Item label="Precio ahora" value="—" />
+          <Item label="ENTRADA" value="—" />
+          <Item label="SL" value="—" />
+          <Item label="TP1" value="—" />
+          <Item label="TP2" value="—" />
+          <Item label="Estado" value={mappingStateLabel(broker.mappingState)} wide />
+          <Item label="Riesgo ejecución" value={execRisk.label} wide />
+          <Item label="Spread broker" value={execCost.label} />
+          <Item label="Comisión broker" value={execCost.label} />
+          <Item label="Coste de ejecución" value={execCost.label} wide />
+        </dl>
+      </section>
+
+      <p className="text-sm leading-relaxed text-wait whitespace-pre-line" data-instrument-disclaimer>
+        {analysisDisclaimer(asset.id)}
+      </p>
 
       <p className="text-xs leading-relaxed text-subtle" data-zone-distance data-distance-source={dist?.source ?? "none"}>
         {dist ? dist.label : distanceUnavailableLabel(false)}
       </p>
 
       <p className="text-xs leading-relaxed text-subtle" data-cost-estimate>
-        Coste estimado: {costEst.text}
+        Coste estimado (manual T4Trade): {costEst.text}. No es spread del PROXY.
+      </p>
+      <p className="text-xs leading-relaxed text-subtle">
+        Coste de ejecución: {execCost.label}
       </p>
 
       {setup.missingForEntry ? (
@@ -240,7 +306,7 @@ export function SetupPanel({
 
       <section className="rounded-[var(--radius-md)] bg-elevated px-3 py-3">
         <h4 className="text-xs font-medium tracking-wider text-muted uppercase">
-          Riesgo para esta cuenta
+          Riesgo teórico V1
         </h4>
         {risk.calculable ? (
           <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
@@ -248,6 +314,11 @@ export function SetupPanel({
             <Item
               label="Riesgo recomendado"
               value={`${fmtEur(risk.recommendedEur)} € · ${risk.recommendedPct.toFixed(2)} %`}
+            />
+            <Item label="Distancia analizada" value={formatPrice(slDist, d)} />
+            <Item
+              label="Contrato de referencia"
+              value={`T4Trade ${broker.instrument}`}
             />
             <Item
               label="Lote teórico"
@@ -262,7 +333,7 @@ export function SetupPanel({
               value={risk.usedLot != null ? fmtLot(risk.usedLot) : "—"}
             />
             <Item
-              label="Riesgo real"
+              label="Riesgo teórico"
               value={`${fmtEur(risk.realEur)} € · ${risk.realPct != null ? risk.realPct.toFixed(2) : "—"} %`}
             />
           </dl>
@@ -277,7 +348,18 @@ export function SetupPanel({
         {risk.minLotExceeds ? (
           <p className="mt-2 text-sm text-sell">{risk.reason}</p>
         ) : null}
+        <p className="mt-2 text-xs text-subtle">{theoreticalRiskNote()}</p>
         <p className="mt-2 text-xs text-subtle">Calidad alta ≠ más lote. R:R de V1 intacto.</p>
+      </section>
+
+      <section className="rounded-[var(--radius-md)] bg-elevated px-3 py-3">
+        <h4 className="text-xs font-medium tracking-wider text-muted uppercase">
+          Riesgo de ejecución
+        </h4>
+        <p className="mt-2 text-sm text-wait">{execRisk.label}</p>
+        <p className="mt-1 text-xs text-subtle">
+          Sin niveles {broker.instrument} no hay sizing operativo. No se usa el SL del PROXY como SL del broker.
+        </p>
       </section>
 
       {setup.warnings.length ? (

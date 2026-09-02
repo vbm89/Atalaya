@@ -4,6 +4,7 @@ import type { AssetAnalysis, Timeframe } from "@/lib/trading/types";
 import { hasChartableSetup } from "@/lib/chart/setup-overlay";
 import { displayEntryPrice } from "@/lib/chart/labels";
 import { setupDistance, distanceUnavailableLabel } from "@/lib/chart/zone-distance";
+import { analysisPriceCaption } from "@/lib/broker/broker-view";
 import type { AssetWatch } from "@/lib/watch/memory";
 import { setupStateEs, watchPhaseCaption } from "@/lib/watch/memory";
 import { assetDataLamp } from "@/lib/watch/feed-lamp";
@@ -94,16 +95,25 @@ export function AssetCard({
               size="lg"
               align="left"
             />
-            {isXau ? null : asset.id === "US100" || asset.id === "WTI" ? (
+            {isXau ? (
               <p className="mt-1 text-xs font-medium tracking-wider text-subtle uppercase">
-                PROXY · sin basis · no es precio de bróker
+                Precio de análisis · SPOT · no es last T4Trade
               </p>
-            ) : null}
+            ) : (
+              <>
+                <p className="mt-1 text-xs font-medium tracking-wider text-muted uppercase">
+                  Precio de análisis
+                </p>
+                <p className="mt-0.5 text-xs font-medium tracking-wide text-subtle">
+                  {analysisPriceCaption(asset.id, asset)}
+                </p>
+              </>
+            )}
             {dist ? (
               <p className="mt-1 text-xs text-muted" data-zone-distance data-distance-source={dist.source}>
                 {dist.label}
                 {liveSetup
-                  ? ` · ENTRADA ${formatPrice(displayEntryPrice(liveSetup.direction, liveSetup.zone.low, liveSetup.zone.high), asset.digits)}`
+                  ? ` · ENTRADA V1 ${formatPrice(displayEntryPrice(liveSetup.direction, liveSetup.zone.low, liveSetup.zone.high), asset.digits)}`
                   : ""}
               </p>
             ) : phase === "expired" ? (
@@ -149,7 +159,7 @@ export function AssetCard({
             <>
               <Meta label="Fuente" value={asset.venue || asset.dataSource} />
               <Meta label="Símbolo" value={asset.feedSymbol || "—"} />
-              <Meta label="Tipo" value={proxy ? "PROXY" : "NATIVO"} />
+              <Meta label="Tipo" value={proxy ? "PROXY · no es precio de bróker" : "NATIVO"} />
             </>
           )}
           <Meta
@@ -291,7 +301,7 @@ function SetupLine({
       <div className="mt-3" data-setup-kind="expired">
         <p className="text-sm font-medium text-wait">{watchPhaseCaption(watch)}</p>
         <p className="mt-0.5 text-sm leading-snug text-muted">
-          {s.direction === "buy" ? "COMPRA" : "VENTA"} · era {was} · ENTRADA{" "}
+          {s.direction === "buy" ? "COMPRA" : "VENTA"} · era {was} · ENTRADA V1{" "}
           {formatPrice(entryPx, asset.digits)}
         </p>
         <p className="mt-0.5 text-xs text-subtle">
@@ -313,12 +323,12 @@ function SetupLine({
   }
 
   const entryPx = displayEntryPrice(setup.direction, setup.zone.low, setup.zone.high);
-  const detail = `${setup.direction === "buy" ? "COMPRA" : "VENTA"} · calidad ${setup.quality.toUpperCase()} · ENTRADA ${formatPrice(entryPx, asset.digits)}`;
+  const detail = `${setup.direction === "buy" ? "COMPRA" : "VENTA"} · calidad ${setup.quality.toUpperCase()} · ENTRADA V1 ${formatPrice(entryPx, asset.digits)}`;
 
   if (asset.setupState === "entry") {
     return (
       <div className="mt-3" data-setup-kind="entry">
-        <p className="text-sm font-medium">ENTRADA DISPONIBLE · vigente</p>
+        <p className="text-sm font-medium">ENTRADA V1 · vigente</p>
         <p className="mt-0.5 text-sm leading-snug text-muted">{detail}</p>
         {watch?.transition ? (
           <p className="mt-0.5 text-xs text-subtle">Cambio: {watch.transition}</p>

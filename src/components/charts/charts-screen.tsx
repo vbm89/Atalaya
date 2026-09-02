@@ -494,9 +494,7 @@ function ChartWorkspace({
             <span className={`shrink-0 ${LIVE_CLASS[liveStatus]}`}>{LIVE_LABEL[liveStatus]}</span>
           )}
           {series?.instrumentKind === "proxy" ? (
-            <span className="shrink-0 text-wait">
-              {assetId === "XAUUSD" ? "velas PROXY XAUUSDT" : "PROXY"}
-            </span>
+            <span className="shrink-0 text-wait">{CHART_ASSET_BLURB[assetId]}</span>
           ) : null}
         </p>
       </div>
@@ -737,7 +735,7 @@ function ObjectsFromEngine({
           {" · congelada"}
         </li>
         <li>{lv.direction === "buy" ? "COMPRA" : "VENTA"}</li>
-        <li>ENTRADA {lv.labelEntry}</li>
+        <li>ENTRADA V1 {lv.labelEntry}</li>
         <li>SL {lv.labelSl}</li>
         <li>TP1 {lv.labelTp1}</li>
         {lv.labelTp2 ? <li>TP2 {lv.labelTp2}</li> : null}
@@ -774,7 +772,7 @@ function ObjectsFromEngine({
       </li>
       <li>{s.direction === "buy" ? "COMPRA" : "VENTA"}</li>
       <li>
-        ENTRADA {formatMaybe(displayEntryPrice(s.direction, s.zone.low, s.zone.high), d)}
+        ENTRADA V1 {formatMaybe(displayEntryPrice(s.direction, s.zone.low, s.zone.high), d)}
       </li>
       <li>SL {formatMaybe(s.stopLoss, d)}</li>
       <li>TP1 {formatMaybe(s.takeProfit1, d)}</li>

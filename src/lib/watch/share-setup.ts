@@ -1,12 +1,15 @@
-import type { AssetAnalysis, SetupProposal, SetupState } from "../trading/types";
+import type { AssetId, AssetAnalysis, SetupProposal, SetupState } from "../trading/types";
 import { formatPrice } from "../utils";
 import { displayEntryPrice } from "../chart/labels";
+import { analysisDisclaimer } from "../broker/broker-view";
 import { assetDataLamp, type DataLamp } from "./feed-lamp";
 import { inboxStateLabel } from "./inbox";
 import type { EpisodeDraft } from "./episode";
 
 const SECRET_RE =
   /WATCH_SECRET|VAPID|DATABASE_URL|API[_-]?KEY|PRIVATE[_-]?KEY|BEGIN [A-Z ]+PRIVATE/i;
+
+const ASSET_IDS: AssetId[] = ["XAUUSD", "BTCUSD", "US100", "WTI"];
 
 export interface ShareCardInput {
   assetId: string;
@@ -31,6 +34,10 @@ function lampMark(lamp: DataLamp): string {
   return "DATOS NO DISPONIBLES";
 }
 
+function asAssetId(id: string): AssetId | null {
+  return ASSET_IDS.includes(id as AssetId) ? (id as AssetId) : null;
+}
+
 export function formatShareCard(input: ShareCardInput): string {
   const lines = ["ATALAYA", input.assetId, inboxStateLabel(input.state)];
   if (input.direction === "buy") lines.push("COMPRA");
@@ -38,9 +45,9 @@ export function formatShareCard(input: ShareCardInput): string {
   const d = input.digits;
   if (input.direction && input.zoneLow != null && input.zoneHigh != null) {
     const entry = displayEntryPrice(input.direction, input.zoneLow, input.zoneHigh);
-    lines.push(`ENTRADA: ${formatPrice(entry, d)}`);
+    lines.push(`ENTRADA V1: ${formatPrice(entry, d)}`);
   }
-  if (input.sl != null) lines.push(`SL: ${formatPrice(input.sl, d)}`);
+  if (input.sl != null) lines.push(`SL de análisis: ${formatPrice(input.sl, d)}`);
   if (input.tp1 != null) lines.push(`TP1: ${formatPrice(input.tp1, d)}`);
   if (input.tp2 != null) lines.push(`TP2: ${formatPrice(input.tp2, d)}`);
   if (input.riskReward != null && Number.isFinite(input.riskReward)) {
@@ -50,6 +57,7 @@ export function formatShareCard(input: ShareCardInput): string {
     lines.push(input.waitReason ?? "Sin setup");
   }
   lines.push(`Estado de datos: ${lampMark(input.dataLamp.lamp)}`);
+  const id = asAssetId(input.assetId);
   const fuente =
     input.instrumentKind === "proxy"
       ? `PROXY${input.feedSymbol ? ` · ${input.feedSymbol}` : ""}`
@@ -57,6 +65,7 @@ export function formatShareCard(input: ShareCardInput): string {
         ? "NATIVO"
         : input.feedSymbol ?? "n/d";
   lines.push(`Proxy/fuente: ${fuente}`);
+  if (id) lines.push(analysisDisclaimer(id).replace(/\n/g, " "));
   lines.push("ANÁLISIS — NO ES UNA ORDEN");
   const text = lines.join("\n");
   if (SECRET_RE.test(text)) {

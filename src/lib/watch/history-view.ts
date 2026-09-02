@@ -2,6 +2,7 @@ import { formatPrice } from "../utils";
 import { ASSETS } from "../trading/assets";
 import type { AssetId, SetupState } from "../trading/types";
 import { displayEntryPrice } from "../chart/labels";
+import { analysisDisclaimer } from "../broker/broker-view";
 import { formatMadridStamp } from "./clock";
 import { setupStateEs } from "./memory";
 import type { HistoryRow } from "./store";
@@ -109,6 +110,6 @@ export function historyCardModel(row: HistoryRow): HistoryCardModel {
     wick: wickNote(row),
     quality: q,
     rr: rr != null && Number.isFinite(rr) ? rr.toFixed(2).replace(".", ",") : null,
-    disclaimer: HISTORY_DISCLAIMER,
+    disclaimer: `${HISTORY_DISCLAIMER} · ${analysisDisclaimer(ep.assetId).replace(/\n/g, " ")}`,
   };
 }

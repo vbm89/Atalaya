@@ -81,7 +81,8 @@ describe("history-view", () => {
     assert.equal(card.outcome, "TP1");
     assert.doesNotMatch(card.outcome, /WIN|LOSS|ganad|perdid/i);
     assert.doesNotMatch(card.wick, /WIN|LOSS/i);
-    assert.equal(card.disclaimer, HISTORY_DISCLAIMER);
+    assert.ok(card.disclaimer.includes(HISTORY_DISCLAIMER));
+    assert.match(card.disclaimer, /BTCUSDT/);
     assert.equal(card.timeframe, "M15");
     assert.equal(card.signalOpened, "ENTRADA");
     assert.equal(card.direction, "VENTA");

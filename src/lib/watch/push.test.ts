@@ -121,12 +121,13 @@ describe("push policy", () => {
       },
       "entry",
     );
-    assert.equal(p.title, "ATALAYA · BTCUSD");
-    assert.match(p.body, /ENTRADA VENTA/);
-    assert.match(p.body, /Entrada: 77\.626,01/);
-    assert.match(p.body, /SL: 77\.747,00/);
+    assert.equal(p.title, "ATALAYA · BTCUSD · ENTRADA V1");
+    assert.match(p.body, /VENTA · BTCUSDT · PROXY/);
+    assert.match(p.body, /Entrada de análisis: 77\.626,01/);
+    assert.match(p.body, /SL de análisis: 77\.747,00/);
     assert.match(p.body, /TP1: 76\.888,00/);
     assert.match(p.body, /TP2: 76\.670,01/);
+    assert.match(p.body, /NO ES PRECIO DE EJECUCIÓN T4TRADE/);
     assert.doesNotMatch(p.body, /Zona /);
     assert.doesNotMatch(p.body, /TRIGGER PENDIENTE/);
     assert.doesNotMatch(p.body, /no es orden/i);
@@ -159,11 +160,13 @@ describe("push policy", () => {
       },
       "entry",
     );
-    assert.equal(p.title, "ATALAYA · XAUUSD");
-    assert.equal(
-      p.body,
-      "ENTRADA VENTA\nEntrada: 4303,98\nSL: 4339,89\nTP1: 4223,41\nTP2: 4170,69",
-    );
+    assert.equal(p.title, "ATALAYA · XAUUSD · ENTRADA V1");
+    assert.match(p.body, /VENTA · SPOT XAUUSD/);
+    assert.match(p.body, /Entrada de análisis: 4303,98/);
+    assert.match(p.body, /SL de análisis: 4339,89/);
+    assert.match(p.body, /TP1: 4223,41/);
+    assert.match(p.body, /TP2: 4170,69/);
+    assert.match(p.body, /NO ES PRECIO DE EJECUCIÓN T4TRADE/);
     assert.doesNotMatch(p.body, /TRIGGER PENDIENTE|no es orden/i);
   });
 });
