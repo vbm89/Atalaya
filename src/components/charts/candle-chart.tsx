@@ -156,7 +156,7 @@ const CandleChartInner = forwardRef<
     subscribeTick: (fn: TickHandler) => () => void;
     getBars: () => Candle[];
     hudEl?: HTMLElement | null;
-    visibleLevels?: { zone: boolean; sl: boolean; tp1: boolean; tp2: boolean };
+    visibleLevels?: { entry?: boolean; zone: boolean; sl: boolean; tp1: boolean; tp2: boolean };
     studyClock?: StudyClock | null;
   }
 >(function CandleChartInner(
@@ -182,7 +182,7 @@ const CandleChartInner = forwardRef<
   const viewTimerRef = useRef(0);
   const [chartBoot, setChartBoot] = useState(0);
   const levels = frozenLevels ?? (analysis ? chartSetupLevels(analysis, studyClock) : null);
-  const visKey = `${visibleLevels?.zone !== false ? 1 : 0}${visibleLevels?.sl !== false ? 1 : 0}${visibleLevels?.tp1 !== false ? 1 : 0}${visibleLevels?.tp2 !== false ? 1 : 0}`;
+  const visKey = `${visibleLevels?.entry !== false ? 1 : 0}${visibleLevels?.zone !== false ? 1 : 0}${visibleLevels?.sl !== false ? 1 : 0}${visibleLevels?.tp1 !== false ? 1 : 0}${visibleLevels?.tp2 !== false ? 1 : 0}`;
   const overlayKey = `${setupLevelsKey(levels)}:${visKey}`;
 
   const writeHud = (c: Candle | undefined) => {
@@ -613,7 +613,7 @@ const CandleChartInner = forwardRef<
             }),
           );
         };
-        const toneColor = (tone: "sl" | "tp" | "zone") =>
+        const toneColor = (tone: "sl" | "tp" | "entry") =>
           tone === "sl" ? c.sell : tone === "tp" ? c.buy : c.entry;
         for (const spec of chartPriceLineSpecs(lv, visibleLevels)) {
           add(spec.price, toneColor(spec.tone));
@@ -684,7 +684,7 @@ const CandleChartInner = forwardRef<
         <span
           data-chart-setup={levels.state}
           data-chart-dir={levels.direction}
-          data-chart-zone={levels.labelZone}
+          data-chart-entry={levels.labelEntry}
           data-chart-sl={levels.labelSl}
           data-chart-tp1={levels.labelTp1}
           data-chart-tp2={levels.labelTp2 ?? ""}

@@ -1,6 +1,7 @@
 import { formatPrice } from "../utils";
 import { ASSETS } from "../trading/assets";
 import type { AssetId, SetupState } from "../trading/types";
+import { displayEntryPrice } from "../chart/labels";
 import { formatMadridStamp } from "./clock";
 import { setupStateEs } from "./memory";
 import type { HistoryRow } from "./store";
@@ -8,7 +9,7 @@ import type { HistoryRow } from "./store";
 export const HISTORY_DISCLAIMER = "ANÁLISIS — NO ES UNA ORDEN";
 
 export function entryPrice(direction: "buy" | "sell", zoneLow: number, zoneHigh: number): number {
-  return direction === "sell" ? zoneLow : zoneHigh;
+  return displayEntryPrice(direction, zoneLow, zoneHigh);
 }
 
 export function kindLabel(kind: string): string {

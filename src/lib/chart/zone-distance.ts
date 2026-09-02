@@ -21,15 +21,15 @@ export function zoneDistance(
 ): ZoneDistance | null {
   if (price == null || !Number.isFinite(price) || zoneHigh <= zoneLow) return null;
   if (price >= zoneLow && price <= zoneHigh) {
-    return { relation: "inside", pct: 0, label: "DENTRO DE ZONA" };
+    return { relation: "inside", pct: 0, label: "DENTRO DE LA ZONA DE ORIGEN" };
   }
   const mid = (zoneLow + zoneHigh) / 2;
   if (price > zoneHigh) {
     const pct = ((price - zoneHigh) / mid) * 100;
-    return { relation: "above", pct, label: `A ${pct.toFixed(2).replace(".", ",")} % DE LA ZONA` };
+    return { relation: "above", pct, label: `A ${pct.toFixed(2).replace(".", ",")} % DE LA ZONA DE ORIGEN` };
   }
   const pct = ((zoneLow - price) / mid) * 100;
-  return { relation: "below", pct, label: `A ${pct.toFixed(2).replace(".", ",")} % DE LA ZONA` };
+  return { relation: "below", pct, label: `A ${pct.toFixed(2).replace(".", ",")} % DE LA ZONA DE ORIGEN` };
 }
 
 /**

@@ -1,5 +1,6 @@
 import { formatPrice } from "../utils";
 import type { AssetAnalysis, AssetId, SetupProposal, SetupState } from "../trading/types";
+import { displayEntryPrice } from "../chart/labels";
 import { setupStateEs } from "../watch/memory";
 import type { HistoryRow } from "../watch/store";
 import { freezeField } from "../watch/freeze";
@@ -358,7 +359,7 @@ function marketSeeing(input: ExplainInput, failed: boolean): { status: CheckStat
 }
 
 function levelsFromSetup(setup: SetupProposal, digits: number): ExplainLevels {
-  const entryPx = setup.direction === "sell" ? setup.zone.low : setup.zone.high;
+  const entryPx = displayEntryPrice(setup.direction, setup.zone.low, setup.zone.high);
   return {
     zone: `${formatPrice(setup.zone.low, digits)} – ${formatPrice(setup.zone.high, digits)}`,
     entry: formatPrice(entryPx, digits),
@@ -372,7 +373,7 @@ function levelsFromSetup(setup: SetupProposal, digits: number): ExplainLevels {
 function levelsFromHistory(row: HistoryRow): ExplainLevels | null {
   const ep = row.episode;
   const digits = 2;
-  const entryPx = ep.direction === "sell" ? ep.zoneLow : ep.zoneHigh;
+  const entryPx = displayEntryPrice(ep.direction, ep.zoneLow, ep.zoneHigh);
   const rr = ep.freeze?.riskReward;
   return {
     zone: `${formatPrice(ep.zoneLow, digits)} – ${formatPrice(ep.zoneHigh, digits)}`,
@@ -529,7 +530,7 @@ export function explain(input: ExplainInput): ExplainView {
       originStatus === "fail"
         ? waitGuide?.plain ?? motive
         : originStatus === "ok" && setup
-          ? `Zona ${formatPrice(setup.zone.low, input.digits)} – ${formatPrice(setup.zone.high, input.digits)}.`
+          ? `Zona de origen ${formatPrice(setup.zone.low, input.digits)} – ${formatPrice(setup.zone.high, input.digits)}.`
           : originStatus === "na"
             ? "No aplica todavía."
             : pendingText(input.source),

@@ -2,6 +2,7 @@ import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AnalysisSnapshot, AssetAnalysis, SetupQuality, SetupState } from "@/lib/trading/types";
 import { formatPrice } from "@/lib/utils";
+import { displayEntryPrice } from "@/lib/chart/labels";
 import { setupStateEs } from "@/lib/watch/memory";
 import { DataLampChip } from "./data-lamp";
 import { formatCountdown, formatMadridClock } from "@/lib/watch/clock";
@@ -63,10 +64,14 @@ export function BestOpportunityCard({
           </p>
           <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-2 text-sm">
             <div className="col-span-3">
-              <dt className="text-xs text-subtle">Zona de entrada</dt>
-              <dd className="font-mono tabular">
-                {formatPrice(setup.zone.low, asset.digits)} – {formatPrice(setup.zone.high, asset.digits)}
+              <dt className="text-xs text-subtle">ENTRADA</dt>
+              <dd className="font-mono tabular" data-entry-px>
+                {formatPrice(displayEntryPrice(setup.direction, setup.zone.low, setup.zone.high), asset.digits)}
               </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-subtle">SL</dt>
+              <dd className="font-mono tabular">{formatPrice(setup.stopLoss, asset.digits)}</dd>
             </div>
             <div>
               <dt className="text-xs text-subtle">TP1</dt>
@@ -77,10 +82,6 @@ export function BestOpportunityCard({
               <dd className="font-mono tabular">
                 {setup.takeProfit2 != null ? formatPrice(setup.takeProfit2, asset.digits) : "n/d"}
               </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-subtle">SL</dt>
-              <dd className="font-mono tabular">{formatPrice(setup.stopLoss, asset.digits)}</dd>
             </div>
             <div>
               <dt className="text-xs text-subtle">R:R</dt>

@@ -24,10 +24,10 @@ export const GLOSSARY: GlossaryEntry[] = [
   },
   {
     id: "zona",
-    title: "Zona",
-    what: "Franja de precio donde se espera que el mercado reaccione.",
-    forAtalaya: "Sale del origen HTF. No se dibuja si V1 no tiene setup. Los niveles del gráfico son esos, no otros.",
-    example: "Zona 77.500–77.600: ahí está el origen, no un número redondo inventado.",
+    title: "Zona de origen",
+    what: "Franja estructural del candle de origen. No es un rango de ejecución.",
+    forAtalaya: "V1 la usa para triggers. La ficha muestra un solo precio de ENTRADA, no esta banda.",
+    example: "El origen puede medir 34 $. La ENTRADA es un solo número.",
   },
   {
     id: "origen-htf",
@@ -60,9 +60,9 @@ export const GLOSSARY: GlossaryEntry[] = [
   {
     id: "entrada",
     title: "Entrada",
-    what: "El precio de referencia de la zona: alto en compra, bajo en venta.",
-    forAtalaya: "No es una orden. Es el nivel que V1 usa para el setup cuando el estado es ENTRADA.",
-    example: "COMPRA · entrada en el techo de la zona. Análisis, no orden.",
+    what: "El único precio de referencia del setup: el bajo de la zona en venta, el alto en compra.",
+    forAtalaya: "No es una orden. No es un rango. Es el entryPx de V1, el mismo que usa el R:R.",
+    example: "VENTA · ENTRADA 4303,98. Análisis, no orden.",
   },
   {
     id: "sl",

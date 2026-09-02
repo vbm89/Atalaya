@@ -98,8 +98,7 @@ function ExplainBody({
 
       {view.levels ? (
         <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-[var(--radius-md)] bg-elevated px-3 py-3 text-sm">
-          <Level label="Zona" value={view.levels.zone} />
-          {view.levels.entry ? <Level label="Entrada" value={view.levels.entry} /> : null}
+          <Level label="ENTRADA" value={view.levels.entry ?? "—"} />
           <Level label="SL" value={view.levels.sl} />
           <Level label="TP1" value={view.levels.tp1} />
           <Level label="TP2" value={view.levels.tp2} />

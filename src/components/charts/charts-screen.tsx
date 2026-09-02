@@ -24,7 +24,7 @@ import {
   type LiveStatus,
 } from "@/lib/chart/types";
 import { SETUP_CHART_TF, hasChartableSetup, setupStateCaption, activeStudyOverlay, chartSetupLevelsFromFrozen, type ChartIntent, type FrozenChartLevels, type StudyClock } from "@/lib/chart/setup-overlay";
-import { CHART_ASSET_BLURB } from "@/lib/chart/labels";
+import { CHART_ASSET_BLURB, displayEntryPrice } from "@/lib/chart/labels";
 import { ASSETS } from "@/lib/trading/assets";
 import type { AnalysisSnapshot, AssetId } from "@/lib/trading/types";
 import { formatPrice } from "@/lib/utils";
@@ -122,7 +122,7 @@ export const ChartsScreen = memo(function ChartsScreen({
   const [favs, setFavs] = useState<AssetId[]>(readFavs);
   const chartRef = useRef<CandleChartHandle>(null);
   const hudEl = useRef<HTMLSpanElement>(null);
-  const [levelsOn, setLevelsOn] = useState({ zone: true, sl: true, tp1: true, tp2: true });
+  const [levelsOn, setLevelsOn] = useState({ entry: true, zone: true, sl: true, tp1: true, tp2: true });
   const [freeze, setFreeze] = useState<FrozenChartLevels | null>(intent?.freeze ?? null);
 
   useEffect(() => {
@@ -337,7 +337,7 @@ function ChartWorkspace({
   overlays: ChartOverlays;
   menu: "asset" | "tf" | "indicators" | "draw" | "objects" | "levels" | null;
   favs: AssetId[];
-  levelsOn: { zone: boolean; sl: boolean; tp1: boolean; tp2: boolean };
+  levelsOn: { entry: boolean; zone: boolean; sl: boolean; tp1: boolean; tp2: boolean };
   freeze: FrozenChartLevels | null;
   studyClock?: StudyClock | null;
   chartRef: RefObject<CandleChartHandle | null>;
@@ -348,7 +348,7 @@ function ChartWorkspace({
   onOverlays: (o: ChartOverlays) => void;
   onMenu: (m: "asset" | "tf" | "indicators" | "draw" | "objects" | "levels" | null) => void;
   onFavs: (fn: (prev: AssetId[]) => AssetId[]) => void;
-  onLevels: (v: { zone: boolean; sl: boolean; tp1: boolean; tp2: boolean }) => void;
+  onLevels: (v: { entry: boolean; zone: boolean; sl: boolean; tp1: boolean; tp2: boolean }) => void;
 }) {
   const query = useQuery({
     queryKey: ["chart-series", assetId, tf],
@@ -615,7 +615,8 @@ function ChartWorkspace({
       {menu === "levels" ? (
         <Panel title="Niveles del setup" onClose={() => onMenu(null)}>
           <p className="mb-3 text-xs text-subtle">Solo mostrar u ocultar. No recalcula V1.</p>
-          <Toggle label="Zona" on={levelsOn.zone} onChange={(v) => onLevels({ ...levelsOn, zone: v })} />
+          <Toggle label="ENTRADA" on={levelsOn.entry} onChange={(v) => onLevels({ ...levelsOn, entry: v })} />
+          <Toggle label="Zona de origen" on={levelsOn.zone} onChange={(v) => onLevels({ ...levelsOn, zone: v })} />
           <Toggle label="SL" on={levelsOn.sl} onChange={(v) => onLevels({ ...levelsOn, sl: v })} />
           <Toggle label="TP1" on={levelsOn.tp1} onChange={(v) => onLevels({ ...levelsOn, tp1: v })} />
           <Toggle label="TP2" on={levelsOn.tp2} onChange={(v) => onLevels({ ...levelsOn, tp2: v })} />
@@ -736,9 +737,7 @@ function ObjectsFromEngine({
           {" · congelada"}
         </li>
         <li>{lv.direction === "buy" ? "COMPRA" : "VENTA"}</li>
-        <li>
-          Zona {lv.labelZone}
-        </li>
+        <li>ENTRADA {lv.labelEntry}</li>
         <li>SL {lv.labelSl}</li>
         <li>TP1 {lv.labelTp1}</li>
         {lv.labelTp2 ? <li>TP2 {lv.labelTp2}</li> : null}
@@ -755,7 +754,7 @@ function ObjectsFromEngine({
   if (!hasChartableSetup(analysis) || !analysis.setup) {
     return (
       <p className="text-sm text-wait">
-        {analysis.waitReason ?? "ESPERAR — no hay zona ni entrada que dibujar."}
+        {analysis.waitReason ?? "ESPERAR — no hay entrada que dibujar."}
       </p>
     );
   }
@@ -775,7 +774,7 @@ function ObjectsFromEngine({
       </li>
       <li>{s.direction === "buy" ? "COMPRA" : "VENTA"}</li>
       <li>
-        Zona {formatMaybe(s.zone.low, d)} – {formatMaybe(s.zone.high, d)}
+        ENTRADA {formatMaybe(displayEntryPrice(s.direction, s.zone.low, s.zone.high), d)}
       </li>
       <li>SL {formatMaybe(s.stopLoss, d)}</li>
       <li>TP1 {formatMaybe(s.takeProfit1, d)}</li>

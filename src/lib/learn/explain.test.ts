@@ -260,6 +260,7 @@ describe("P5.1 explain ENTRY", () => {
       assert.equal(view.checks.find((c) => c.id === id)?.status, "ok", id);
     }
     assert.ok(view.levels);
+    assert.match(view.levels!.entry ?? "", /77\.500/);
     assert.match(view.levels!.sl, /78\.150/);
     assert.match(view.levels!.tp1, /77\.100/);
     assert.match(view.levels!.tp2, /76\.800/);

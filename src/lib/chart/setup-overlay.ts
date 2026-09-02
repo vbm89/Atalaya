@@ -1,6 +1,7 @@
 import type { AssetAnalysis, AssetId, SetupProposal, SetupState } from "../trading/types";
 import type { ChartTf } from "./types";
 import { formatPrice } from "../utils";
+import { displayEntryPrice } from "./labels";
 import type { EpisodeFreeze } from "../watch/freeze";
 
 /** V1 trigger is always a 15M close. Zone/SL/TP are price levels, not TF-bound. */
@@ -154,7 +155,7 @@ function levelsFromSetup(
   const d = digits;
   const shift = basis != null && Number.isFinite(basis) ? basis : 0;
   const toChart = (n: number) => n + shift;
-  const entrySpot = setup.direction === "sell" ? setup.zone.low : setup.zone.high;
+  const entrySpot = displayEntryPrice(setup.direction, setup.zone.low, setup.zone.high);
   const state: SetupState = assetState === "wait" ? setup.state : assetState;
   const openedAtSec = msToUnixSec(clock?.openedAtMs);
   const closedAtSec = msToUnixSec(clock?.closedAtMs);
@@ -188,7 +189,7 @@ export function frozenLevelsFromSetup(
 ): FrozenChartLevels | null {
   const setup = asset.setup;
   if (!setup) return null;
-  const entry = setup.direction === "sell" ? setup.zone.low : setup.zone.high;
+  const entry = displayEntryPrice(setup.direction, setup.zone.low, setup.zone.high);
   const state: SetupState = asset.setupState === "wait" ? setup.state : asset.setupState;
   return {
     episodeId,
@@ -234,7 +235,7 @@ export function frozenLevelsFromEpisode(
   const zoneHigh = setup?.zone.high ?? ep.zoneHigh;
   if (!(zoneHigh > zoneLow)) return null;
   const direction = setup?.direction ?? ep.direction;
-  const entry = direction === "sell" ? zoneLow : zoneHigh;
+  const entry = displayEntryPrice(direction, zoneLow, zoneHigh);
   const tf = (ep.freeze?.timeframe ?? SETUP_CHART_TF) as ChartTf;
   const state: SetupState = ep.live
     ? ep.state
@@ -381,10 +382,10 @@ export function zoneBandAutoscaleRange(
   };
 }
 
-export type ChartPriceLineTone = "sl" | "tp" | "zone";
+export type ChartPriceLineTone = "sl" | "tp" | "entry";
 
 export interface ChartPriceLineSpec {
-  id: "zoneHigh" | "zoneLow" | "sl" | "tp1" | "tp2";
+  id: "entry" | "sl" | "tp1" | "tp2";
   price: number;
   /** Empty: the axis shows the number only. Identification is color + line. */
   title: "";
@@ -392,6 +393,7 @@ export interface ChartPriceLineSpec {
 }
 
 export type ChartLevelVisibility = {
+  entry?: boolean;
   zone?: boolean;
   sl?: boolean;
   tp1?: boolean;
@@ -400,6 +402,7 @@ export type ChartLevelVisibility = {
 
 /**
  * Native price-line specs. Prices come from V1/freeze levels, never from last.
+ * One ENTRADA line (V1 entryPx). Zone edges are fill-only — not a second entry.
  * Invalidation and Last are not drawn.
  */
 export function chartPriceLineSpecs(
@@ -407,9 +410,8 @@ export function chartPriceLineSpecs(
   visible?: ChartLevelVisibility,
 ): ChartPriceLineSpec[] {
   const out: ChartPriceLineSpec[] = [];
-  if (visible?.zone !== false) {
-    out.push({ id: "zoneHigh", price: lv.zoneHigh, title: "", tone: "zone" });
-    out.push({ id: "zoneLow", price: lv.zoneLow, title: "", tone: "zone" });
+  if (visible?.entry !== false) {
+    out.push({ id: "entry", price: lv.entry, title: "", tone: "entry" });
   }
   if (visible?.sl !== false) out.push({ id: "sl", price: lv.stopLoss, title: "", tone: "sl" });
   if (visible?.tp1 !== false) out.push({ id: "tp1", price: lv.takeProfit1, title: "", tone: "tp" });
@@ -425,7 +427,8 @@ export interface ChartFillBand {
   kind: "zone" | "risk" | "reward";
 }
 
-/** Very light fills. Direction and prices come from V1; nothing is recalculated. */
+/** Very light fills. Direction and prices come from V1; nothing is recalculated.
+ * Zone band = origin (no price-line labels). Risk/reward use V1 entryPx. */
 export function setupFillBands(lv: ChartSetupLevels, visible?: ChartLevelVisibility): ChartFillBand[] {
   const out: ChartFillBand[] = [];
   if (visible?.zone !== false) {
@@ -433,13 +436,9 @@ export function setupFillBands(lv: ChartSetupLevels, visible?: ChartLevelVisibil
   }
   const sl = lv.stopLoss;
   const tp = lv.takeProfit2 ?? lv.takeProfit1;
-  if (lv.direction === "sell") {
-    out.push({ low: Math.min(lv.zoneHigh, sl), high: Math.max(lv.zoneHigh, sl), kind: "risk" });
-    out.push({ low: Math.min(lv.zoneLow, tp), high: Math.max(lv.zoneLow, tp), kind: "reward" });
-  } else {
-    out.push({ low: Math.min(lv.zoneLow, sl), high: Math.max(lv.zoneLow, sl), kind: "risk" });
-    out.push({ low: Math.min(lv.zoneHigh, tp), high: Math.max(lv.zoneHigh, tp), kind: "reward" });
-  }
+  const entry = lv.entry;
+  out.push({ low: Math.min(entry, sl), high: Math.max(entry, sl), kind: "risk" });
+  out.push({ low: Math.min(entry, tp), high: Math.max(entry, tp), kind: "reward" });
   return out;
 }
 

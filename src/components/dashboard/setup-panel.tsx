@@ -5,6 +5,7 @@ import type { AssetAnalysis } from "@/lib/trading/types";
 import { calculateRisk, specFromDraft, type AccountSettings } from "@/lib/trading/risk";
 import { costEstimateLabel, type AssetCosts } from "@/lib/trading/costs";
 import { hasChartableSetup } from "@/lib/chart/setup-overlay";
+import { displayEntryPrice } from "@/lib/chart/labels";
 import { distanceUnavailableLabel, setupDistance } from "@/lib/chart/zone-distance";
 import type { AssetWatch } from "@/lib/watch/memory";
 import { setupStateEs, watchPhaseCaption } from "@/lib/watch/memory";
@@ -54,12 +55,13 @@ export function SetupPanel({
     const d = asset.digits;
     const dir = s.direction === "buy" ? "COMPRA" : "VENTA";
     const was = watch.expiredFromState ? setupStateEs(watch.expiredFromState) : "setup";
+    const entryPx = displayEntryPrice(s.direction, s.zone.low, s.zone.high);
     return (
       <div className="mt-2 space-y-2 rounded-[var(--radius-lg)] bg-wait-dim px-3 py-3" data-setup-kind="expired">
         <WatchPhaseBadge phase="expired" signal="wait" />
         <p className="text-sm font-medium text-wait">{watchPhaseCaption(watch)}</p>
         <p className="text-sm text-muted">
-          {dir} · era {was} · zona {formatPrice(s.zone.low, d)} – {formatPrice(s.zone.high, d)}
+          {dir} · era {was} · ENTRADA {formatPrice(entryPx, d)}
         </p>
         <p className="text-xs text-subtle" data-zone-distance="unavailable">
           {distanceUnavailableLabel(true)}
@@ -111,9 +113,8 @@ export function SetupPanel({
   const d = asset.digits;
   const dir = setup.direction === "buy" ? "COMPRA" : "VENTA";
   const kind = setup.kind === "continuation" ? "A · continuación / retest" : "B · ruptura + retest";
-  const slDist = Math.abs(
-    (setup.direction === "sell" ? setup.zone.low : setup.zone.high) - setup.stopLoss,
-  );
+  const entryPx = displayEntryPrice(setup.direction, setup.zone.low, setup.zone.high);
+  const slDist = Math.abs(entryPx - setup.stopLoss);
   const spec = specFromDraft(account.contracts[asset.id]);
   const risk = calculateRisk({ capital: account.capital, spec, slDistance: slDist });
   const isEntry = asset.setupState === "entry";
@@ -129,7 +130,7 @@ export function SetupPanel({
     frozen: false,
     zoneLow: setup.zone.low,
     zoneHigh: setup.zone.high,
-    entry: setup.direction === "sell" ? setup.zone.low : setup.zone.high,
+    entry: entryPx,
   });
 
   return (
@@ -160,17 +161,9 @@ export function SetupPanel({
           value={`${setup.quality.toUpperCase()} · ${setup.qualityPhase}`}
           wide
         />
-        <Item
-          label="Zona"
-          value={`${formatPrice(setup.zone.low, d)} – ${formatPrice(setup.zone.high, d)}`}
-          wide
-        />
-        {isEntry ? <Item label="Entrada" value={setup.entryLabel} wide /> : null}
+        <Item label="ENTRADA" value={formatPrice(entryPx, d)} wide />
         <Item label="Invalidación" value={formatPrice(setup.invalidation, d)} />
-        <Item
-          label={isEntry ? "Stop loss" : "SL teórico"}
-          value={formatPrice(setup.stopLoss, d)}
-        />
+        <Item label="SL" value={formatPrice(setup.stopLoss, d)} />
         <Item label="TP1" value={formatPrice(setup.takeProfit1, d)} />
         <Item
           label="TP2"

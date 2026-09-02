@@ -23,6 +23,7 @@ import {
   studyStartClock,
   msToUnixSec,
 } from "./setup-overlay.ts";
+import { displayEntryPrice } from "./labels.ts";
 import type { AssetAnalysis, SetupProposal } from "../trading/types.ts";
 
 function setup(partial: Partial<SetupProposal> = {}): SetupProposal {
@@ -203,6 +204,9 @@ describe("chart setup overlay", () => {
     const sl = lastA.find((s) => s.id === "sl")!;
     const tp1 = lastA.find((s) => s.id === "tp1")!;
     const tp2 = lastA.find((s) => s.id === "tp2")!;
+    const entry = lastA.find((s) => s.id === "entry")!;
+    assert.equal(entry.price, 29024);
+    assert.equal(entry.tone, "entry");
     assert.equal(sl.price, 29088.81);
     assert.equal(sl.tone, "sl");
     assert.equal(tp1.price, 28950);
@@ -218,7 +222,7 @@ describe("chart setup overlay", () => {
     );
   });
 
-  it("sell fill is risk above the zone and reward below; buy is the reverse", () => {
+  it("sell fill is risk from entryPx to SL and reward from entryPx to TP", () => {
     const sell = chartSetupLevels(
       asset({
         setupState: "map",
@@ -250,11 +254,11 @@ describe("chart setup overlay", () => {
     const buyRisk = buyFills.find((b) => b.kind === "risk")!;
     const buyReward = buyFills.find((b) => b.kind === "reward")!;
     assert.equal(sellRisk.high, 120);
-    assert.equal(sellRisk.low, 110);
+    assert.equal(sellRisk.low, 100);
     assert.equal(sellReward.high, 100);
     assert.equal(sellReward.low, 80);
     assert.equal(buyRisk.low, 90);
-    assert.equal(buyRisk.high, 100);
+    assert.equal(buyRisk.high, 110);
     assert.equal(buyReward.low, 110);
     assert.equal(buyReward.high, 130);
   });
@@ -421,7 +425,7 @@ describe("temporal study overlay", () => {
     const nowMs = Date.parse("2026-09-01T21:30:00Z");
     assert.equal(studyHorizonSec(lv, nowMs), nowMs / 1000);
     const sell = setupFillBands(lv);
-    assert.equal(sell.find((b) => b.kind === "risk")?.low, 4005);
+    assert.equal(sell.find((b) => b.kind === "risk")?.low, 4000);
     assert.equal(sell.find((b) => b.kind === "risk")?.high, 4010);
     assert.equal(sell.find((b) => b.kind === "zone")?.low, 4000);
     assert.equal(sell.find((b) => b.kind === "zone")?.high, 4005);
@@ -446,7 +450,7 @@ describe("temporal study overlay", () => {
     )!;
     const fills = setupFillBands(lv);
     assert.equal(fills.find((b) => b.kind === "risk")?.low, 3990);
-    assert.equal(fills.find((b) => b.kind === "risk")?.high, 4000);
+    assert.equal(fills.find((b) => b.kind === "risk")?.high, 4005);
     assert.equal(fills.find((b) => b.kind === "reward")?.low, 4005);
     assert.equal(fills.find((b) => b.kind === "reward")?.high, 4025);
   });
@@ -504,5 +508,57 @@ describe("temporal study overlay", () => {
     const b = chartSetupLevels(asset({ setupState: "map", setup: setup(), lastDataAt: "later" }), clock)!;
     assert.equal(setupLevelsKey(a), setupLevelsKey(b));
     assert.notEqual(studyHorizonSec(a, clock.openedAtMs + 60_000), studyHorizonSec(a, clock.openedAtMs + 1_800_000));
+  });
+});
+
+describe("UI entryPx is the single V1 reference, not a zone band", () => {
+  it("SELL entry is zone.low — XAU 4303.98–4338.15 → 4303.98", () => {
+    assert.equal(displayEntryPrice("sell", 4303.98, 4338.15), 4303.98);
+    const lv = chartSetupLevels(
+      asset({
+        id: "XAUUSD",
+        digits: 2,
+        setupState: "pending",
+        setup: setup({
+          direction: "sell",
+          zone: { low: 4303.98, high: 4338.15 },
+          stopLoss: 4339.89,
+          takeProfit1: 4223.41,
+          takeProfit2: 4170.69,
+        }),
+      }),
+    )!;
+    assert.equal(lv.entry, 4303.98);
+    assert.equal(lv.labelEntry, "4303,98");
+    const lines = chartPriceLineSpecs(lv);
+    assert.equal(lines.filter((s) => s.id === "entry").length, 1);
+    assert.equal(lines.find((s) => s.id === "entry")?.price, 4303.98);
+    assert.equal(lines.some((s) => s.id === "sl" && s.price === 4339.89), true);
+    assert.equal(lines.some((s) => s.id === "tp1" && s.price === 4223.41), true);
+    assert.equal(lines.some((s) => s.id === "tp2" && s.price === 4170.69), true);
+    assert.equal(
+      lines.some((s) => s.price === 4338.15 && s.id !== "entry"),
+      false,
+    );
+  });
+
+  it("BUY entry is zone.high", () => {
+    assert.equal(displayEntryPrice("buy", 100, 110), 110);
+    const lv = chartSetupLevels(
+      asset({
+        setupState: "map",
+        setup: setup({
+          direction: "buy",
+          zone: { low: 100, high: 110 },
+          stopLoss: 90,
+          takeProfit1: 120,
+          takeProfit2: 130,
+        }),
+      }),
+    )!;
+    assert.equal(lv.entry, 110);
+    const lines = chartPriceLineSpecs(lv);
+    assert.equal(lines.find((s) => s.id === "entry")?.price, 110);
+    assert.equal(lines.length, 4);
   });
 });

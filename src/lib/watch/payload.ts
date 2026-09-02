@@ -2,7 +2,7 @@ import type { AssetId, SetupState } from "../trading/types";
 import { setupStateEs } from "./memory";
 import { watchLinkPath } from "./link";
 import type { EpisodeDraft } from "./episode";
-import { directionUi } from "../chart/labels";
+import { directionUi, displayEntryPrice } from "../chart/labels";
 
 export interface PushPayload {
   title: string;
@@ -25,13 +25,13 @@ function compact(n: number): string {
 export function buildPushPayload(episode: EpisodeDraft, to: SetupState): PushPayload {
   const stateEs = setupStateEs(to);
   const dir = directionUi(episode.direction);
-  const zone = `${compact(episode.zoneLow)}–${compact(episode.zoneHigh)}`;
+  const entry = compact(displayEntryPrice(episode.direction, episode.zoneLow, episode.zoneHigh));
   const sl = compact(episode.sl);
   const tp1 = compact(episode.tp1);
   const pendingNote = to === "pending" ? " — no es orden" : "";
   return {
     title: `ATALAYA · ${episode.assetId}`,
-    body: `${stateEs} ${dir}${pendingNote}\nZona ${zone}\nSL ${sl} · TP1 ${tp1}`,
+    body: `${stateEs} ${dir}${pendingNote}\nENTRADA ${entry}\nSL ${sl} · TP1 ${tp1}`,
     url: watchLinkPath(episode.assetId, episode.episodeId),
     episodeId: episode.episodeId,
     assetId: episode.assetId,

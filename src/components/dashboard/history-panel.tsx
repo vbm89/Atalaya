@@ -76,7 +76,7 @@ export function HistoryPanel({
                   {card.closedStamp ? ` → ${card.closedStamp}` : ""}
                 </p>
                 <p className="mt-1 text-xs text-muted">
-                  Entrada {card.entry} · Zona {card.zone} · SL {card.sl} · TP1 {card.tp1}
+                  ENTRADA {card.entry} · SL {card.sl} · TP1 {card.tp1}
                   {card.tp2 ? ` · TP2 ${card.tp2}` : ""}
                 </p>
                 <p className="mt-1 text-xs leading-snug text-subtle">{card.wick}</p>

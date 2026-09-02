@@ -66,6 +66,8 @@ describe("history-view", () => {
   it("SHORT entry is the low of the zone, not a fabricated price", () => {
     assert.equal(entryPrice("sell", 77500, 77600), 77500);
     assert.equal(entryPrice("buy", 77500, 77600), 77600);
+    assert.equal(entryPrice("sell", 4303.98, 4338.15), 4303.98);
+    assert.equal(entryPrice("buy", 4303.98, 4338.15), 4338.15);
   });
 
   it("does not invent WIN/LOSS labels", () => {

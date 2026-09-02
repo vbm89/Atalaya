@@ -1,5 +1,6 @@
 import type { AssetAnalysis, SetupProposal, SetupState } from "../trading/types";
 import { formatPrice } from "../utils";
+import { displayEntryPrice } from "../chart/labels";
 import { assetDataLamp, type DataLamp } from "./feed-lamp";
 import { inboxStateLabel } from "./inbox";
 import type { EpisodeDraft } from "./episode";
@@ -35,8 +36,9 @@ export function formatShareCard(input: ShareCardInput): string {
   if (input.direction === "buy") lines.push("COMPRA");
   if (input.direction === "sell") lines.push("VENTA");
   const d = input.digits;
-  if (input.zoneLow != null && input.zoneHigh != null) {
-    lines.push(`Zona: ${formatPrice(input.zoneLow, d)} – ${formatPrice(input.zoneHigh, d)}`);
+  if (input.direction && input.zoneLow != null && input.zoneHigh != null) {
+    const entry = displayEntryPrice(input.direction, input.zoneLow, input.zoneHigh);
+    lines.push(`ENTRADA: ${formatPrice(entry, d)}`);
   }
   if (input.sl != null) lines.push(`SL: ${formatPrice(input.sl, d)}`);
   if (input.tp1 != null) lines.push(`TP1: ${formatPrice(input.tp1, d)}`);

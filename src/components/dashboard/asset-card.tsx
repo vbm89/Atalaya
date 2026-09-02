@@ -2,6 +2,7 @@ import { ChevronRight, HelpCircle } from "lucide-react";
 import { cn, formatDateTime, formatPct, formatPrice, decodeEntities } from "@/lib/utils";
 import type { AssetAnalysis, Timeframe } from "@/lib/trading/types";
 import { hasChartableSetup } from "@/lib/chart/setup-overlay";
+import { displayEntryPrice } from "@/lib/chart/labels";
 import { setupDistance, distanceUnavailableLabel } from "@/lib/chart/zone-distance";
 import type { AssetWatch } from "@/lib/watch/memory";
 import { setupStateEs, watchPhaseCaption } from "@/lib/watch/memory";
@@ -43,7 +44,7 @@ export function AssetCard({
           frozen: false,
           zoneLow: liveSetup.zone.low,
           zoneHigh: liveSetup.zone.high,
-          entry: liveSetup.direction === "sell" ? liveSetup.zone.low : liveSetup.zone.high,
+          entry: displayEntryPrice(liveSetup.direction, liveSetup.zone.low, liveSetup.zone.high),
         })
       : null;
   const dataLamp = assetDataLamp({
@@ -102,7 +103,7 @@ export function AssetCard({
               <p className="mt-1 text-xs text-muted" data-zone-distance data-distance-source={dist.source}>
                 {dist.label}
                 {liveSetup
-                  ? ` · zona ${formatPrice(liveSetup.zone.low, asset.digits)}–${formatPrice(liveSetup.zone.high, asset.digits)}`
+                  ? ` · ENTRADA ${formatPrice(displayEntryPrice(liveSetup.direction, liveSetup.zone.low, liveSetup.zone.high), asset.digits)}`
                   : ""}
               </p>
             ) : phase === "expired" ? (
@@ -284,13 +285,14 @@ function SetupLine({
 
   if (phase === "expired" && watch?.expiredSetup) {
     const s = watch.expiredSetup;
-    const zone = `${formatPrice(s.zone.low, asset.digits)}–${formatPrice(s.zone.high, asset.digits)}`;
+    const entryPx = displayEntryPrice(s.direction, s.zone.low, s.zone.high);
     const was = watch.expiredFromState ? setupStateEs(watch.expiredFromState) : "setup";
     return (
       <div className="mt-3" data-setup-kind="expired">
         <p className="text-sm font-medium text-wait">{watchPhaseCaption(watch)}</p>
         <p className="mt-0.5 text-sm leading-snug text-muted">
-          {s.direction === "buy" ? "COMPRA" : "VENTA"} · era {was} · zona {zone}
+          {s.direction === "buy" ? "COMPRA" : "VENTA"} · era {was} · ENTRADA{" "}
+          {formatPrice(entryPx, asset.digits)}
         </p>
         <p className="mt-0.5 text-xs text-subtle">
           Ya no vigente según el motor. {watch.expiredReason ?? asset.waitReason ?? "ESPERAR"}
@@ -310,8 +312,8 @@ function SetupLine({
     );
   }
 
-  const zone = `${formatPrice(setup.zone.low, asset.digits)}–${formatPrice(setup.zone.high, asset.digits)}`;
-  const detail = `${setup.direction === "buy" ? "COMPRA" : "VENTA"} · calidad ${setup.quality.toUpperCase()} · zona ${zone}`;
+  const entryPx = displayEntryPrice(setup.direction, setup.zone.low, setup.zone.high);
+  const detail = `${setup.direction === "buy" ? "COMPRA" : "VENTA"} · calidad ${setup.quality.toUpperCase()} · ENTRADA ${formatPrice(entryPx, asset.digits)}`;
 
   if (asset.setupState === "entry") {
     return (

@@ -123,6 +123,8 @@ describe("push policy", () => {
     );
     assert.equal(p.title, "ATALAYA · BTCUSD");
     assert.match(p.body, /ENTRADA VENTA/);
+    assert.match(p.body, /ENTRADA 77\.626/);
+    assert.doesNotMatch(p.body, /Zona /);
     assert.doesNotMatch(p.body, /COMPRA AHORA|VENDE AHORA|EJECUTA/i);
     assert.equal(p.url, "/?asset=BTCUSD&episode=ep-1");
     assert.equal(p.episodeId, "ep-1");

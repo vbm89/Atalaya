@@ -11,3 +11,15 @@ export const CHART_ASSET_BLURB: Record<AssetId, string> = {
 export function directionUi(dir: "buy" | "sell"): "COMPRA" | "VENTA" {
   return dir === "buy" ? "COMPRA" : "VENTA";
 }
+
+/**
+ * V1 entryPx as shown in the UI. Not a fill band.
+ * Sell → zone.low. Buy → zone.high. Same formula as engine.ts entryPx.
+ */
+export function displayEntryPrice(
+  direction: "buy" | "sell",
+  zoneLow: number,
+  zoneHigh: number,
+): number {
+  return direction === "sell" ? zoneLow : zoneHigh;
+}

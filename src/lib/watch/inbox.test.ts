@@ -213,7 +213,9 @@ describe("compartir setup", () => {
     const text = setupShareText(asset);
     assert.match(text, /ATALAYA/);
     assert.match(text, /TRIGGER PENDIENTE/);
-    assert.match(text, /Zona:/);
+    assert.match(text, /ENTRADA:/);
+    assert.match(text, /77\.626,01/);
+    assert.doesNotMatch(text, /77\.626,01 – 77\.731/);
     assert.match(text, /SL:/);
     assert.match(text, /TP1:/);
     assert.match(text, /Estado de datos: DATOS OK/);
