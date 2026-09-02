@@ -101,10 +101,7 @@ export function HistoryPanel({
               >
                 VER GRÁFICO
               </button>
-              <EpisodeMemory
-                episodeId={card.episodeId}
-                allowJournal={row.episode.openedState === "entry" || row.episode.currentState === "entry"}
-              />
+              <EpisodeMemory episodeId={card.episodeId} />
             </article>
           </li>
         );

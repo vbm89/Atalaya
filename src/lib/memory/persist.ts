@@ -2,7 +2,7 @@ import type { AssetId, CalendarEvent, Candle } from "../trading/types";
 import type { EpisodeDraft } from "../watch/episode";
 import type { HistoryRow, SqlQuery } from "../watch/store";
 import { snapshotContext, type EpisodeContext } from "./context";
-import type { JournalEntry } from "./journal";
+import { mergeJournal, type JournalClearField, type JournalEntry } from "./journal";
 import { buildPostMortem, type PostMortem } from "./postmortem";
 import { V1_LABEL, readGitSha } from "./sha";
 import {
@@ -255,7 +255,13 @@ export async function persistPostMortemOnce(
   return rows.length > 0;
 }
 
-export async function upsertJournal(sql: SqlQuery, row: JournalEntry): Promise<void> {
+export async function upsertJournal(
+  sql: SqlQuery,
+  row: JournalEntry,
+  clear: readonly JournalClearField[] = [],
+): Promise<JournalEntry> {
+  const existing = await loadJournal(sql, row.episodeId);
+  const merged = mergeJournal(existing, row, clear);
   await sql.query(
     `insert into episode_journal (
        episode_id, action, lots, entry_price, exit_price, note, updated_at
@@ -267,8 +273,9 @@ export async function upsertJournal(sql: SqlQuery, row: JournalEntry): Promise<v
        exit_price = excluded.exit_price,
        note = excluded.note,
        updated_at = excluded.updated_at`,
-    [row.episodeId, row.action, row.lots, row.entryPrice, row.exitPrice, row.note, iso(row.updatedAtMs)],
+    [merged.episodeId, merged.action, merged.lots, merged.entryPrice, merged.exitPrice, merged.note, iso(merged.updatedAtMs)],
   );
+  return merged;
 }
 
 export interface MemoryLoad {

@@ -8,7 +8,12 @@ import { createPgStore } from "../watch/store.ts";
 import { runWatchTick, type WatchLoad } from "../watch/tick.ts";
 import { OUTCOME_RULE } from "../watch/outcome.ts";
 import { buildPostMortem } from "./postmortem.ts";
-import { parseJournalInput } from "./journal.ts";
+import {
+  journalIncomplete,
+  mergeJournal,
+  parseClearFields,
+  parseJournalInput,
+} from "./journal.ts";
 import {
   rememberAfterTick,
   persistArchiveM15,
@@ -84,6 +89,41 @@ describe("memory journal + postmortem", () => {
       assert.equal(ok.lots, null);
       assert.equal(ok.entryPrice, null);
     }
+  });
+
+  it("merge keeps stored numbers when the new payload is blank", () => {
+    const existing = parseJournalInput({
+      episodeId: "WTI-1788354900-83d68711",
+      action: "took",
+      lots: 0.1,
+      entryPrice: 88.41,
+      exitPrice: 89.1,
+      note: "7,68€",
+    });
+    assert.ok(!("error" in existing));
+    if ("error" in existing) return;
+    const blank = parseJournalInput({
+      episodeId: existing.episodeId,
+      action: "took",
+    });
+    assert.ok(!("error" in blank));
+    if ("error" in blank) return;
+    const merged = mergeJournal(existing, blank);
+    assert.equal(merged.lots, 0.1);
+    assert.equal(merged.entryPrice, 88.41);
+    assert.equal(merged.exitPrice, 89.1);
+    assert.equal(merged.note, "7,68€");
+    const wiped = mergeJournal(existing, blank, ["lots"]);
+    assert.equal(wiped.lots, null);
+    assert.equal(wiped.entryPrice, 88.41);
+  });
+
+  it("TOMÉ without lot or fill is incomplete; NO TOMÉ is not", () => {
+    assert.equal(journalIncomplete({ action: "took", lots: null, entryPrice: null }), true);
+    assert.equal(journalIncomplete({ action: "partial", lots: 0.1, entryPrice: null }), true);
+    assert.equal(journalIncomplete({ action: "took", lots: 0.1, entryPrice: 88.4 }), false);
+    assert.equal(journalIncomplete({ action: "skipped", lots: null, entryPrice: null }), false);
+    assert.deepEqual(parseClearFields(["lots", "nope", "note", "lots"]), ["lots", "note"]);
   });
 
   it("marks missing tape/context as PENDIENTE, never causal", () => {
@@ -342,6 +382,69 @@ describe("memory persist PGLite", () => {
     assert.deepEqual(after, before);
     const ep2 = await store.getEpisode(ep.episodeId);
     assert.deepEqual(ep2, ep);
+  });
+
+  it("journal blank save does not null existing lots; Vaciar does", async () => {
+    const { sql, store } = await boot();
+    const now = Date.parse("2026-08-29T08:15:08.000Z");
+    const slot = slotSecFromNow(now);
+    const open = slot - 900;
+    const m15 = [bar(open, 110)];
+    await runWatchTick({
+      nowMs: now,
+      store,
+      load: async () => ({
+        assets: [
+          { id: "XAUUSD", setupState: "wait", setup: null, waitReason: "ESPERAR", digits: 2 },
+          { id: "BTCUSD", setupState: "map", setup, waitReason: null, digits: 2 },
+          { id: "US100", setupState: "wait", setup: null, waitReason: "ESPERAR", digits: 2 },
+          { id: "WTI", setupState: "wait", setup: null, waitReason: "ESPERAR", digits: 2 },
+        ],
+        m15ByAsset: { BTCUSD: m15, XAUUSD: m15, US100: m15, WTI: m15 },
+        errors: [],
+      }),
+    });
+    const ep = await store.getOpenEpisode("BTCUSD");
+    assert.ok(ep);
+    assert.equal(ep.openedState, "map");
+    const first = parseJournalInput({
+      episodeId: ep.episodeId,
+      action: "took",
+      lots: 0.25,
+      entryPrice: 110.5,
+      note: "keep me",
+    });
+    assert.ok(!("error" in first));
+    if ("error" in first) return;
+    await upsertJournal(sql, first);
+    const blank = parseJournalInput({
+      episodeId: ep.episodeId,
+      action: "took",
+      note: "only note",
+    });
+    assert.ok(!("error" in blank));
+    if ("error" in blank) return;
+    const kept = await upsertJournal(sql, blank);
+    assert.equal(kept.lots, 0.25);
+    assert.equal(kept.entryPrice, 110.5);
+    assert.equal(kept.note, "only note");
+    const skipped = parseJournalInput({ episodeId: ep.episodeId, action: "skipped" });
+    assert.ok(!("error" in skipped));
+    if ("error" in skipped) return;
+    const asSkip = await upsertJournal(sql, skipped);
+    assert.equal(asSkip.action, "skipped");
+    assert.equal(asSkip.lots, 0.25);
+    const emptyTook = parseJournalInput({ episodeId: ep.episodeId, action: "took" });
+    assert.ok(!("error" in emptyTook));
+    if ("error" in emptyTook) return;
+    const incomplete = await upsertJournal(sql, emptyTook, ["lots", "entryPrice"]);
+    assert.equal(incomplete.lots, null);
+    assert.equal(incomplete.entryPrice, null);
+    assert.equal(incomplete.note, "only note");
+    assert.equal(journalIncomplete(incomplete), true);
+    const stillMap = await store.getEpisode(ep.episodeId);
+    assert.equal(stillMap?.openedState, "map");
+    assert.equal(stillMap?.currentState, ep.currentState);
   });
 
   it("post-mortem first write wins and sweep fills a miss", async () => {

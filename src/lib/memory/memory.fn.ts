@@ -1,11 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
-import { parseJournalInput } from "./journal";
+import { journalIncomplete, parseClearFields, parseJournalInput } from "./journal";
 
 export const saveEpisodeJournal = createServerFn({ method: "POST" })
   .validator((input: unknown) => input)
   .handler(async ({ data }) => {
-    const parsed = parseJournalInput(data as Record<string, unknown>);
+    const raw = data as Record<string, unknown>;
+    const parsed = parseJournalInput(raw);
     if ("error" in parsed) throw new Error(parsed.error);
+    const clear = parseClearFields(raw.clearFields);
     const { getSql } = await import("@/lib/db");
     const sql = await getSql();
     const exists = await sql.query<{ episode_id: string }>(
@@ -14,8 +16,13 @@ export const saveEpisodeJournal = createServerFn({ method: "POST" })
     );
     if (!exists.length) throw new Error("Episodio no encontrado.");
     const { upsertJournal } = await import("./persist");
-    await upsertJournal(sql, parsed);
-    return { ok: true as const, action: parsed.action };
+    const journal = await upsertJournal(sql, parsed, clear);
+    return {
+      ok: true as const,
+      action: journal.action,
+      journal,
+      incomplete: journalIncomplete(journal),
+    };
   });
 
 export const getEpisodeMemory = createServerFn({ method: "POST" })
