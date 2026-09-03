@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, House, BarChart3, CalendarDays, BookOpen, GraduationCap, Ellipsis, Settings, Download } from "lucide-react";
 import { getMarketAnalysis } from "@/lib/market/analysis.fn";
@@ -16,11 +16,17 @@ import { ChartsScreen, type ChartIntent } from "@/components/charts/charts-scree
 import { hasChartableSetup, SETUP_CHART_TF, chartIntentFromAnalysis, frozenLevelsFromEpisode, type StudyClock } from "@/lib/chart/setup-overlay";
 import { PullRefresh } from "./pull-refresh";
 import { getAsset } from "@/lib/trading/assets";
-import { foldWatchBook, type WatchBook } from "@/lib/watch/memory";
+import {
+  foldAssetWatch,
+  foldWatchBook,
+  setupsEqual,
+  watchBooksEqual,
+  type AssetWatch,
+  type WatchBook,
+} from "@/lib/watch/memory";
 import { readWatchBook, writeWatchBook } from "@/lib/watch/persist";
 import { useWatchLoop } from "@/lib/watch/use-watch-loop";
 import { parseWatchLink } from "@/lib/watch/link";
-import { foldAssetWatch, type AssetWatch } from "@/lib/watch/memory";
 import { AlertsPanel } from "./alerts-panel";
 import { HistoryPanel } from "./history-panel";
 import { ExplainSheet } from "./explain-sheet";
@@ -76,6 +82,18 @@ function HeaderClock() {
   );
 }
 
+function overlayAssetsEqual(a: AssetAnalysis[], b: AssetAnalysis[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]!;
+    const y = b[i]!;
+    if (x.id !== y.id || x.setupState !== y.setupState || x.waitReason !== y.waitReason) return false;
+    if (!setupsEqual(x.setup, y.setup)) return false;
+  }
+  return true;
+}
+
 function applyServerTruth(
   assets: AssetAnalysis[],
   snaps: SnapshotDraft[] | undefined,
@@ -83,16 +101,25 @@ function applyServerTruth(
 ): AssetAnalysis[] {
   if (stale || !snaps?.length) return assets;
   const byId = new Map(snaps.map((s) => [s.assetId, s]));
-  return assets.map((a) => {
+  let changed = false;
+  const next = assets.map((a) => {
     const s = byId.get(a.id);
     if (!s) return a;
+    const setupState = s.state;
+    const setup = s.state === "wait" ? null : (s.setup ?? a.setup);
+    const waitReason = s.waitReason ?? a.waitReason;
+    if (a.setupState === setupState && a.waitReason === waitReason && setupsEqual(a.setup, setup)) {
+      return a;
+    }
+    changed = true;
     return {
       ...a,
-      setupState: s.state,
-      setup: s.state === "wait" ? null : (s.setup ?? a.setup),
-      waitReason: s.waitReason ?? a.waitReason,
+      setupState,
+      setup,
+      waitReason,
     };
   });
+  return changed ? next : assets;
 }
 
 function overlayAsset(asset: AssetAnalysis, focus: WatchEpisodeView | null): AssetAnalysis {
@@ -145,6 +172,7 @@ export function Dashboard() {
   const [book, setBook] = useState<WatchBook>({});
   const [episodeFocus, setEpisodeFocus] = useState<WatchEpisodeView | null>(null);
   const [explainView, setExplainView] = useState<ExplainView | null>(null);
+  const snapshotRef = useRef<AnalysisSnapshot | undefined>(undefined);
 
   useEffect(() => {
     const cached = readCache();
@@ -192,12 +220,24 @@ export function Dashboard() {
     },
   });
 
-  const snapshot: AnalysisSnapshot | undefined = query.data
-    ? {
-        ...query.data,
-        assets: applyServerTruth(query.data.assets, snaps.data, health.data?.stale ?? true),
-      }
-    : undefined;
+  const serverStale = health.data?.stale ?? true;
+  const serverSnaps = snaps.data;
+  const snapshot = useMemo((): AnalysisSnapshot | undefined => {
+    if (!query.data) return undefined;
+    const assets = applyServerTruth(query.data.assets, serverSnaps, serverStale);
+    const next: AnalysisSnapshot =
+      assets === query.data.assets ? query.data : { ...query.data, assets };
+    const prev = snapshotRef.current;
+    if (
+      prev &&
+      next.generatedAt === prev.generatedAt &&
+      overlayAssetsEqual(next.assets, prev.assets)
+    ) {
+      return prev;
+    }
+    return next;
+  }, [query.data, serverSnaps, serverStale]);
+  snapshotRef.current = snapshot;
   const lastEvalMs = (() => {
     if (!snapshot?.generatedAt) return null;
     const t = Date.parse(snapshot.generatedAt);
@@ -220,6 +260,7 @@ export function Dashboard() {
     setBook((prev) => {
       const base = Object.keys(prev).length ? prev : readWatchBook(now);
       const next = foldWatchBook(base, snapshot.assets, now);
+      if (watchBooksEqual(next, base)) return Object.is(base, prev) ? prev : base;
       writeWatchBook(next);
       return next;
     });

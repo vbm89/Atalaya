@@ -122,6 +122,74 @@ export function foldWatchBook(
   return next;
 }
 
+function warningsEqual(a: string[], b: string[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+/** Value equality for setups. Used to skip WatchBook writes when fold output is unchanged. */
+export function setupsEqual(
+  a: SetupProposal | null | undefined,
+  b: SetupProposal | null | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.state === b.state &&
+    a.kind === b.kind &&
+    a.direction === b.direction &&
+    a.zone.low === b.zone.low &&
+    a.zone.high === b.zone.high &&
+    a.invalidation === b.invalidation &&
+    a.stopLoss === b.stopLoss &&
+    a.takeProfit1 === b.takeProfit1 &&
+    a.takeProfit2 === b.takeProfit2 &&
+    a.riskReward === b.riskReward &&
+    a.quality === b.quality &&
+    a.qualityPhase === b.qualityPhase &&
+    a.supersedeLevel === b.supersedeLevel &&
+    a.missingForEntry === b.missingForEntry &&
+    a.slWide === b.slWide &&
+    a.managementNote === b.managementNote &&
+    a.entryLabel === b.entryLabel &&
+    warningsEqual(a.warnings, b.warnings)
+  );
+}
+
+function watchesEqual(a: AssetWatch | undefined, b: AssetWatch | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.id === b.id &&
+    a.phase === b.phase &&
+    a.currentState === b.currentState &&
+    a.previousState === b.previousState &&
+    a.transition === b.transition &&
+    a.expiredFromState === b.expiredFromState &&
+    a.expiredAt === b.expiredAt &&
+    a.expiredReason === b.expiredReason &&
+    setupsEqual(a.liveSetup, b.liveSetup) &&
+    setupsEqual(a.expiredSetup, b.expiredSetup)
+  );
+}
+
+/**
+ * WatchBook value equality. `evaluatedAt` is a fold stamp, not watch state —
+ * two books that differ only there are treated as the same book.
+ */
+export function watchBooksEqual(a: WatchBook, b: WatchBook): boolean {
+  if (a === b) return true;
+  const ids = new Set<string>([...Object.keys(a), ...Object.keys(b)]);
+  for (const id of ids) {
+    if (!watchesEqual(a[id as AssetId], b[id as AssetId])) return false;
+  }
+  return true;
+}
+
 export function watchPhaseCaption(w: AssetWatch): string {
   if (w.phase === "live") return `Vigente · ${setupStateEs(w.currentState)}`;
   if (w.phase === "expired") {
