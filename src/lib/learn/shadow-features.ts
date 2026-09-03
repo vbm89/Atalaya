@@ -11,6 +11,7 @@ export type ShadowCaseInput = Pick<
   | "direction"
   | "kind"
   | "openedAtMs"
+  | "openedState"
   | "currentState"
   | "bias4hLabel"
   | "qualityPhase"
@@ -27,6 +28,7 @@ export type ShadowCaseInput = Pick<
   | "sl"
   | "tp1"
   | "tp2"
+  | "invalidation"
   | "riskReward"
   | "quality"
   | "slWide"
@@ -48,8 +50,10 @@ export interface ShadowFeatureVector {
   underlyingClosed: boolean | null;
   bias4h: string | null;
   setupState: ShadowCaseInput["currentState"];
+  openedState: ShadowCaseInput["openedState"];
   qualityPhase: string | null;
   slWide: boolean | null;
+  invalidation: number | null;
   zoneWidth: number;
   riskDistance: number | null;
   rewardDistance1: number | null;
@@ -109,8 +113,10 @@ export function toShadowFeatures(c: ShadowCaseInput): ShadowFeatureVector {
     underlyingClosed: c.underlyingClosed,
     bias4h: c.bias4hLabel,
     setupState: c.currentState,
+    openedState: c.openedState,
     qualityPhase: c.qualityPhase,
     slWide: c.slWide,
+    invalidation: c.invalidation,
     zoneWidth,
     riskDistance,
     rewardDistance1,
