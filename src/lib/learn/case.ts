@@ -4,6 +4,12 @@ import { freezeField, type EpisodeFreeze } from "../watch/freeze";
 import type { HistoryRow } from "../watch/store";
 import { entryPrice } from "../watch/history-view";
 
+/**
+ * P5.2 persistence: DERIVE from signal_episodes + episode_freeze + outcomes.
+ * Freeze JSON on the episode is the photograph (enriched at capture).
+ * No learning_cases table — avoids a second source of truth that could drift.
+ */
+
 export type ExclusionReason =
   | "OUTCOME_PENDING"
   | "DATA_INVALID"
@@ -55,6 +61,7 @@ export interface LearningCase {
   trainable: boolean;
   exclusionReason: ExclusionReason | null;
   complete: boolean;
+  /** production = historial real. test = fixtures. Ausente se trata como production. */
   origin?: "production" | "test";
 }
 
@@ -87,13 +94,16 @@ export function timestampsInvalid(row: HistoryRow): boolean {
   if (row.firstTouchAtMs == null) return false;
   if (!Number.isFinite(row.firstTouchAtMs) || row.firstTouchAtMs <= 0) return true;
   if (!Number.isFinite(ep.openedSlot) || ep.openedSlot <= 0) return true;
+  // firstTouchAtMs = candle.time * 1000. openedSlot = 15M close unix seconds.
+  // Compare candles, not wall-clock openedAtMs (tick is several seconds after the close).
   const touchSlot = Math.floor(row.firstTouchAtMs / 1000);
   return touchSlot < ep.openedSlot;
 }
 
 export function dataInvalid(freeze: EpisodeFreeze | null): boolean {
   if (!freeze) return false;
-  return freeze.dataStatus != null && INVALID_DATA.has(freeze.dataStatus);
+  const st = freeze.dataStatus;
+  return st != null && INVALID_DATA.has(st);
 }
 
 export function outcomePending(outcome: string | null): boolean {
@@ -119,7 +129,11 @@ function durationMs(row: HistoryRow): number | null {
 
 function completePhoto(f: EpisodeFreeze | null): boolean {
   if (!f) return false;
-  return freezeField(f.bias4hLabel) != null && freezeField(f.setupState) != null && f.capturedAtMs > 0;
+  return (
+    freezeField(f.bias4hLabel) != null &&
+    freezeField(f.setupState) != null &&
+    f.capturedAtMs > 0
+  );
 }
 
 export function learningCaseFromHistory(row: HistoryRow): LearningCase {
@@ -172,6 +186,7 @@ export function learningCaseFromHistory(row: HistoryRow): LearningCase {
   };
 }
 
+/** First row per episodeId wins. Duplicates are dropped, not rewritten. */
 export function learningCasesFromHistory(rows: HistoryRow[]): LearningCase[] {
   const seen = new Set<string>();
   const out: LearningCase[] = [];
