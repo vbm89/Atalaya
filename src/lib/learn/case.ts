@@ -27,6 +27,7 @@ export interface LearningCase {
   kind: string;
   timeframe: "15m";
   openedAtMs: number;
+  openedSlot: number;
   closedAtMs: number | null;
   openedState: SetupState;
   currentState: SetupState;
@@ -94,8 +95,6 @@ export function timestampsInvalid(row: HistoryRow): boolean {
   if (row.firstTouchAtMs == null) return false;
   if (!Number.isFinite(row.firstTouchAtMs) || row.firstTouchAtMs <= 0) return true;
   if (!Number.isFinite(ep.openedSlot) || ep.openedSlot <= 0) return true;
-  // firstTouchAtMs = candle.time * 1000. openedSlot = 15M close unix seconds.
-  // Compare candles, not wall-clock openedAtMs (tick is several seconds after the close).
   const touchSlot = Math.floor(row.firstTouchAtMs / 1000);
   return touchSlot < ep.openedSlot;
 }
@@ -148,6 +147,7 @@ export function learningCaseFromHistory(row: HistoryRow): LearningCase {
     kind: ep.kind,
     timeframe: "15m",
     openedAtMs: ep.openedAtMs,
+    openedSlot: ep.openedSlot,
     closedAtMs: ep.closedAtMs,
     openedState: ep.openedState,
     currentState: ep.currentState,
