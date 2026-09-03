@@ -1,8 +1,9 @@
 import type { LearningCase } from "./case";
 
 /**
- * Decision-time fields only. Outcome/post-mortem fields are deliberately
- * absent from this type so candidate generation cannot read them.
+ * Decision-time fields only for feature generation. Outcome/post-mortem fields
+ * are not consumed by candidate generation; closedAtMs is retained solely as
+ * replay-resolution metadata and is never passed into toShadowFeatures output.
  */
 export type ShadowCaseInput = Pick<
   LearningCase,
@@ -13,6 +14,7 @@ export type ShadowCaseInput = Pick<
   | "openedAtMs"
   | "openedState"
   | "currentState"
+  | "closedAtMs"
   | "bias4hLabel"
   | "qualityPhase"
   | "volumeRatio15"
