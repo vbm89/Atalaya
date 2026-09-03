@@ -1,8 +1,8 @@
 import type { LearningCase } from "./case";
 
 /**
- * Only fields known at the decision point. Outcome/post-mortem fields are
- * deliberately absent from this type so candidate generation cannot read them.
+ * Decision-time fields only. Outcome/post-mortem fields are deliberately
+ * absent from this type so candidate generation cannot read them.
  */
 export type ShadowCaseInput = Pick<
   LearningCase,
@@ -13,7 +13,6 @@ export type ShadowCaseInput = Pick<
   | "openedAtMs"
   | "openedState"
   | "currentState"
-  | "closedAtMs"
   | "bias4hLabel"
   | "qualityPhase"
   | "volumeRatio15"
@@ -32,9 +31,9 @@ export type ShadowCaseInput = Pick<
   | "invalidation"
   | "riskReward"
   | "quality"
-  | "slWide"
 > & {
   openedSlot: number;
+  slWide: boolean | null;
 };
 
 export interface ShadowFeatureVector {
