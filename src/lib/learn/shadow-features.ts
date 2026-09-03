@@ -1,16 +1,42 @@
-import type { AssetId } from "../trading/types";
 import type { LearningCase } from "./case";
 
 /**
- * Research-only feature vector for the future Shadow V2 replay.
- * Never imported by the live V1 watch path.
- * Candidate features are outcome-blind: outcome is deliberately excluded.
+ * Only fields known at the decision point. Outcome/post-mortem fields are
+ * deliberately absent from this type so candidate generation cannot read them.
  */
+export type ShadowCaseInput = Pick<
+  LearningCase,
+  | "episodeId"
+  | "assetId"
+  | "direction"
+  | "kind"
+  | "openedAtMs"
+  | "currentState"
+  | "bias4hLabel"
+  | "qualityPhase"
+  | "volumeRatio15"
+  | "volumeAvailable15"
+  | "volumeRatio4h"
+  | "volumeAvailable4h"
+  | "highImpact"
+  | "underlyingClosed"
+  | "dataStatus"
+  | "zoneLow"
+  | "zoneHigh"
+  | "entry"
+  | "sl"
+  | "tp1"
+  | "tp2"
+  | "riskReward"
+  | "quality"
+  | "slWide"
+>;
+
 export interface ShadowFeatureVector {
-  assetId: AssetId;
-  direction: LearningCase["direction"];
-  kind: LearningCase["kind"];
-  quality: LearningCase["quality"];
+  assetId: ShadowCaseInput["assetId"];
+  direction: ShadowCaseInput["direction"];
+  kind: ShadowCaseInput["kind"];
+  quality: ShadowCaseInput["quality"];
   plannedRr: number | null;
   highImpact: boolean | null;
   session: "00-08" | "08-16" | "16-24";
@@ -21,10 +47,10 @@ export interface ShadowFeatureVector {
   dataStatus: string | null;
   underlyingClosed: boolean | null;
   bias4h: string | null;
-  setupState: string | null;
+  setupState: ShadowCaseInput["currentState"];
   qualityPhase: string | null;
   slWide: boolean | null;
-  zoneWidth: number | null;
+  zoneWidth: number;
   riskDistance: number | null;
   rewardDistance1: number | null;
   rewardDistance2: number | null;
@@ -51,7 +77,7 @@ function madridSession(ms: number): ShadowFeatureVector["session"] {
 }
 
 function directionalDistance(
-  direction: LearningCase["direction"],
+  direction: ShadowCaseInput["direction"],
   from: number,
   to: number,
 ): number | null {
@@ -60,9 +86,9 @@ function directionalDistance(
   return distance > 0 ? distance : null;
 }
 
-/** Derives research features from the frozen V1 case only. */
-export function toShadowFeatures(c: LearningCase): ShadowFeatureVector {
-  const zoneWidth = positiveFinite(c.zoneHigh - c.zoneLow);
+/** Derives research features from decision-time fields only. */
+export function toShadowFeatures(c: ShadowCaseInput): ShadowFeatureVector {
+  const zoneWidth = positiveFinite(c.zoneHigh - c.zoneLow) ?? 0;
   const riskDistance = directionalDistance(c.direction, c.entry, c.sl);
   const rewardDistance1 = directionalDistance(c.direction, c.entry, c.tp1);
   const rewardDistance2 = c.tp2 == null ? null : directionalDistance(c.direction, c.entry, c.tp2);
