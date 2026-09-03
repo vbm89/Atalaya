@@ -1,6 +1,6 @@
 import type { AssetId } from "../trading/types";
 import type { LearningCase } from "./case";
-import { detectFindings, type PatternReport } from "./patterns";
+import { detectFindings, productionCases, type PatternReport } from "./patterns";
 import {
   evidenceLevel,
   formatMadridDate,
@@ -8,7 +8,7 @@ import {
   type BucketStats,
   type EvidenceLevel,
 } from "./stats";
-import { runValidation, type ValidationReport } from "./validate";
+import { MIN_TEST_N, runValidation, splitTemporal, type ValidationReport } from "./validate";
 
 /** Matches getWatchHistory() window. Not a learning target. */
 export const LEARN_HISTORY_WINDOW = 80;
@@ -212,20 +212,27 @@ function assetSlice(
 function cumulativeSeries(cases: LearningCase[]): EvolutionDay[] {
   if (!cases.length) return [];
   const sorted = [...cases].sort((a, b) => a.openedAtMs - b.openedAtMs);
+  const dayOf: { key: string; label: string; openedAtMs: number }[] = [];
   const days: { key: string; label: string; openedAtMs: number }[] = [];
   const seen = new Set<string>();
   for (const c of sorted) {
-    if (!Number.isFinite(c.openedAtMs) || c.openedAtMs <= 0) continue;
     const d = madridDayKey(c.openedAtMs);
+    dayOf.push(d);
+    if (!Number.isFinite(c.openedAtMs) || c.openedAtMs <= 0) continue;
     if (seen.has(d.key)) continue;
     seen.add(d.key);
     days.push(d);
   }
+
+  let end = 0;
   return days.map((d) => {
-    const prefix = sorted.filter((c) => madridDayKey(c.openedAtMs).key <= d.key);
+    while (end < sorted.length && dayOf[end]!.key <= d.key) end++;
+    const prefix = sorted.slice(0, end);
     const train = prefix.filter((c) => c.trainable);
     const patterns = detectFindings(prefix);
-    const validation = runValidation(prefix, d.openedAtMs);
+    const testN = splitTemporal(productionCases(prefix)).test.length;
+    const validated =
+      testN < MIN_TEST_N ? 0 : runValidation(prefix, d.openedAtMs).validated;
     return {
       day: d.key,
       label: d.label,
@@ -233,7 +240,7 @@ function cumulativeSeries(cases: LearningCase[]): EvolutionDay[] {
       observed: prefix.length,
       trainable: train.length,
       detected: patterns.highlighted.length,
-      validated: validation.validated,
+      validated,
     };
   });
 }
