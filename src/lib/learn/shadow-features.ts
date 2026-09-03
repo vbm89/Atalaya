@@ -11,7 +11,6 @@ export type ShadowCaseInput = Pick<
   | "direction"
   | "kind"
   | "openedAtMs"
-  | "openedSlot"
   | "openedState"
   | "currentState"
   | "closedAtMs"
@@ -34,7 +33,9 @@ export type ShadowCaseInput = Pick<
   | "riskReward"
   | "quality"
   | "slWide"
->;
+> & {
+  openedSlot: number;
+};
 
 export interface ShadowFeatureVector {
   assetId: ShadowCaseInput["assetId"];
