@@ -4,12 +4,6 @@ import { freezeField, type EpisodeFreeze } from "../watch/freeze";
 import type { HistoryRow } from "../watch/store";
 import { entryPrice } from "../watch/history-view";
 
-/**
- * P5.2 persistence: DERIVE from signal_episodes + episode_freeze + outcomes.
- * Freeze JSON on the episode is the photograph (enriched at capture).
- * No learning_cases table — avoids a second source of truth that could drift.
- */
-
 export type ExclusionReason =
   | "OUTCOME_PENDING"
   | "DATA_INVALID"
@@ -27,7 +21,6 @@ export interface LearningCase {
   kind: string;
   timeframe: "15m";
   openedAtMs: number;
-  openedSlot: number;
   closedAtMs: number | null;
   openedState: SetupState;
   currentState: SetupState;
@@ -62,7 +55,6 @@ export interface LearningCase {
   trainable: boolean;
   exclusionReason: ExclusionReason | null;
   complete: boolean;
-  /** production = historial real. test = fixtures. Ausente se trata como production. */
   origin?: "production" | "test";
 }
 
@@ -101,8 +93,7 @@ export function timestampsInvalid(row: HistoryRow): boolean {
 
 export function dataInvalid(freeze: EpisodeFreeze | null): boolean {
   if (!freeze) return false;
-  const st = freeze.dataStatus;
-  return st != null && INVALID_DATA.has(st);
+  return freeze.dataStatus != null && INVALID_DATA.has(freeze.dataStatus);
 }
 
 export function outcomePending(outcome: string | null): boolean {
@@ -128,11 +119,7 @@ function durationMs(row: HistoryRow): number | null {
 
 function completePhoto(f: EpisodeFreeze | null): boolean {
   if (!f) return false;
-  return (
-    freezeField(f.bias4hLabel) != null &&
-    freezeField(f.setupState) != null &&
-    f.capturedAtMs > 0
-  );
+  return freezeField(f.bias4hLabel) != null && freezeField(f.setupState) != null && f.capturedAtMs > 0;
 }
 
 export function learningCaseFromHistory(row: HistoryRow): LearningCase {
@@ -147,7 +134,6 @@ export function learningCaseFromHistory(row: HistoryRow): LearningCase {
     kind: ep.kind,
     timeframe: "15m",
     openedAtMs: ep.openedAtMs,
-    openedSlot: ep.openedSlot,
     closedAtMs: ep.closedAtMs,
     openedState: ep.openedState,
     currentState: ep.currentState,
@@ -186,7 +172,6 @@ export function learningCaseFromHistory(row: HistoryRow): LearningCase {
   };
 }
 
-/** First row per episodeId wins. Duplicates are dropped, not rewritten. */
 export function learningCasesFromHistory(rows: HistoryRow[]): LearningCase[] {
   const seen = new Set<string>();
   const out: LearningCase[] = [];
