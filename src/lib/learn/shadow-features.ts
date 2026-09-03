@@ -11,6 +11,7 @@ export type ShadowCaseInput = Pick<
   | "direction"
   | "kind"
   | "openedAtMs"
+  | "openedSlot"
   | "openedState"
   | "currentState"
   | "closedAtMs"
