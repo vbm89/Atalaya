@@ -437,3 +437,51 @@
   }
 }
 
+.atalaya-history-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--color-elevated);
+  box-shadow: var(--shadow-border);
+}
+
+.atalaya-history-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  background: var(--history-rail, var(--color-muted));
+}
+
+.atalaya-history-card[data-direction="buy"] {
+  --history-rail: var(--color-buy);
+}
+
+.atalaya-history-card[data-direction="sell"] {
+  --history-rail: var(--color-sell);
+}
+
+.atalaya-history-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+}
+
+.atalaya-history-action {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-muted);
+}
+
+.atalaya-history-action + .atalaya-history-action {
+  border-left: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+}
+
+.atalaya-history-action.is-active {
+  color: var(--color-buy);
+  background: var(--color-buy-dim);
+}
+
