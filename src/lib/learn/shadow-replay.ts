@@ -256,7 +256,7 @@ function baselineSlot(ep: ShadowEpisode): number | null {
 function candidateForVariant(ep: ShadowEpisode, variant: ShadowCandidateReason): ShadowCandidate | null {
   const c = ep.case;
   const features = toShadowFeatures(c);
-  const bars15 = ep.bars.filter((b) => b.tf === "15m" && b.t > c.openedSlot).sort((a, b) => a.t - b.t);
+  const bars15 = ep.bars.filter((b) => b.tf === "15m" && b.t >= c.openedSlot).sort((a, b) => a.t - b.t);
   if (!bars15.length) return null;
 
   if (variant === "BASELINE_V1") {
@@ -318,7 +318,7 @@ function candidateForVariant(ep: ShadowEpisode, variant: ShadowCandidateReason):
 function resolveShadowOutcome(candidate: ShadowCandidate, ep: ShadowEpisode): ShadowCandidateResult {
   const c = ep.case;
   const bars = ep.bars
-    .filter((b) => b.tf === "15m" && b.t > candidate.decisionSlot)
+    .filter((b) => b.tf === "15m" && b.t >= candidate.decisionSlot)
     .sort((a, b) => a.t - b.t);
   const entry = c.entry;
   const risk = Math.abs(entry - c.sl);
