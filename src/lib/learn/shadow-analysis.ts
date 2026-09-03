@@ -106,17 +106,17 @@ export function analyzeShadowReplay(episodes: readonly ShadowEpisode[]): ShadowA
     const delta = pctDelta(success(vr), baselineAll);
     const testDelta = pctDelta(testSuccess, baselineTest);
     const sufficient =
-      variantReport.test.decided >= MIN_TEST_N &&
+      variantReport.test.success.n >= MIN_TEST_N &&
       testDelta != null &&
       testDelta >= -MATERIAL_WORSENING_PP &&
       variantReport.additionalOpportunities > 0;
-    const insufficient = variantReport.test.decided < MIN_TEST_N || testDelta == null;
+    const insufficient = variantReport.test.success.n < MIN_TEST_N || testDelta == null;
     return {
       variant: variantReport.variant,
       deltaVsBaselinePp: delta,
       testDeltaVsBaselinePp: testDelta,
       additionalOpportunities: variantReport.additionalOpportunities,
-      testN: variantReport.test.decided,
+      testN: variantReport.test.success.n,
       assetCoverage: asset.coverage,
       assetSuccessRangePp: asset.range,
       walkForwardTestRangePp: wfRange,
