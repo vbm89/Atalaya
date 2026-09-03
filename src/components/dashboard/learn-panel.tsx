@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getWatchHistory } from "@/lib/watch/watch.fn";
 import { learningCasesFromHistory } from "@/lib/learn/case";
@@ -30,13 +31,31 @@ export function LearnPanel() {
     staleTime: 20_000,
     retry: 0,
   });
-  const cases = q.data ? learningCasesFromHistory(q.data) : [];
-  const report = q.data ? summarize(cases) : null;
-  const patterns = q.data ? detectFindings(cases) : null;
-  const proposals = q.data ? actionableProposals(proposalsFromCases(cases, Date.now())) : null;
-  const validation = q.data ? runValidation(cases, 0) : null;
-  const evolution =
-    q.data && patterns && validation ? buildEvolution(cases, patterns, validation) : null;
+  const history = q.data;
+  const cases = useMemo(
+    () => (history ? learningCasesFromHistory(history) : []),
+    [history],
+  );
+  const report = useMemo(
+    () => (history ? summarize(cases) : null),
+    [history, cases],
+  );
+  const patterns = useMemo(
+    () => (history ? detectFindings(cases) : null),
+    [history, cases],
+  );
+  const proposals = useMemo(
+    () => (history ? actionableProposals(proposalsFromCases(cases, Date.now())) : null),
+    [history, cases],
+  );
+  const validation = useMemo(
+    () => (history ? runValidation(cases, 0) : null),
+    [history, cases],
+  );
+  const evolution = useMemo(
+    () => (history && patterns && validation ? buildEvolution(cases, patterns, validation) : null),
+    [history, cases, patterns, validation],
+  );
 
   return (
     <div className="mt-4 space-y-5" data-learn-panel>
