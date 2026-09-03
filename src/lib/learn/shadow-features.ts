@@ -13,6 +13,7 @@ export type ShadowCaseInput = Pick<
   | "openedAtMs"
   | "openedState"
   | "currentState"
+  | "closedAtMs"
   | "bias4hLabel"
   | "qualityPhase"
   | "volumeRatio15"
