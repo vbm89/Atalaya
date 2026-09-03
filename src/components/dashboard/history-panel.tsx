@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { CircleHelp, ChartCandlestick, UserRound } from "lucide-react";
 import { getWatchHistory, getWatchEpisode } from "@/lib/watch/watch.fn";
 import { historyCardModel } from "@/lib/watch/history-view";
 import type { AssetId } from "@/lib/trading/types";
@@ -14,6 +16,7 @@ export function HistoryPanel({
   onViewChart: (episodeId: string, assetId: AssetId) => void;
   onWhy?: (row: HistoryRow) => void;
 }) {
+  const [journalEpisodeId, setJournalEpisodeId] = useState<string | null>(null);
   const q = useQuery({
     queryKey: ["watch-history"],
     queryFn: () => getWatchHistory(),
@@ -45,6 +48,7 @@ export function HistoryPanel({
     <ul className="mt-4 space-y-2" data-history-list>
       {rows.map((row) => {
         const card = historyCardModel(row);
+        const journalOpen = journalEpisodeId === card.episodeId;
         return (
           <li key={card.episodeId}>
             <article
@@ -84,24 +88,50 @@ export function HistoryPanel({
                   {card.disclaimer}
                 </p>
               </button>
-              {onWhy ? (
+
+              <div className="mt-2 grid grid-cols-3 gap-1" role="group" aria-label={`Acciones de ${card.assetId}`}>
+                {onWhy ? (
+                  <button
+                    type="button"
+                    data-explain-why={card.episodeId}
+                    aria-label="Ver por qué"
+                    title="Por qué"
+                    className="flex min-h-11 items-center justify-center rounded-[var(--radius-md)] bg-surface text-muted"
+                    onClick={() => onWhy(row)}
+                  >
+                    <CircleHelp className="size-4" />
+                  </button>
+                ) : (
+                  <span />
+                )}
                 <button
                   type="button"
-                  data-explain-why={card.episodeId}
-                  className="mt-2 min-h-11 w-full rounded-[var(--radius-md)] bg-surface text-sm font-medium"
-                  onClick={() => onWhy(row)}
+                  data-history-chart={card.episodeId}
+                  aria-label="Ver gráfico"
+                  title="Gráfico"
+                  className="flex min-h-11 items-center justify-center rounded-[var(--radius-md)] bg-surface text-muted"
+                  onClick={() => onViewChart(card.episodeId, card.assetId)}
                 >
-                  ¿Por qué?
+                  <ChartCandlestick className="size-4" />
                 </button>
-              ) : null}
-              <button
-                type="button"
-                className="mt-2 min-h-11 w-full rounded-[var(--radius-md)] bg-surface text-sm font-medium"
-                onClick={() => onViewChart(card.episodeId, card.assetId)}
-              >
-                VER GRÁFICO
-              </button>
-              <EpisodeMemory episodeId={card.episodeId} />
+                <button
+                  type="button"
+                  data-history-journal={card.episodeId}
+                  aria-label={journalOpen ? "Ocultar diario humano" : "Abrir diario humano"}
+                  title="Diario humano"
+                  aria-expanded={journalOpen}
+                  className={
+                    journalOpen
+                      ? "flex min-h-11 items-center justify-center rounded-[var(--radius-md)] bg-buy-dim text-buy"
+                      : "flex min-h-11 items-center justify-center rounded-[var(--radius-md)] bg-surface text-muted"
+                  }
+                  onClick={() => setJournalEpisodeId((prev) => (prev === card.episodeId ? null : card.episodeId))}
+                >
+                  <UserRound className="size-4" />
+                </button>
+              </div>
+
+              {journalOpen ? <EpisodeMemory episodeId={card.episodeId} /> : null}
             </article>
           </li>
         );
