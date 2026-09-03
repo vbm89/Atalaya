@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ShadowCaseInput } from "./shadow-features";
+import { toShadowFeatures, type ShadowCaseInput } from "./shadow-features";
 import {
   buildShadowReplayReport,
   shadowCandidateForTest,
@@ -61,6 +61,14 @@ function episode(id: string, triggerBar: ShadowTapeBar, outcomeBar: ShadowTapeBa
   };
 }
 
+test("shadow-features derives only decision-time fields", () => {
+  const features = toShadowFeatures(baseCase());
+  assert.equal(features.assetId, "XAUUSD");
+  assert.equal(features.rewardRisk1, 20 / 15);
+  assert.equal("outcome" in features, false);
+  assert.equal("firstTouch" in features, false);
+});
+
 test("candidate generation is outcome-blind", () => {
   const id = "XAUUSD-1000-blind";
   const trigger = bar(id, 2800, 108, 109, 100, 108, null);
@@ -75,14 +83,12 @@ test("volume-relaxed accepts a trigger with unavailable volume while baseline do
   const id = "XAUUSD-1000-volume";
   const trigger = bar(id, 2800, 106, 110, 100, 102, null);
   const e = episode(id, trigger, bar(id, 3700, 102, 103, 79, 80));
-  const events: ShadowEpisode["events"] = [];
   const baseline = shadowCandidateForTest(e, "BASELINE_V1");
   const relaxed = shadowCandidateForTest(e, "VOLUME_RELAXED");
   assert.equal(baseline, null);
   assert.equal(relaxed?.trigger, "reject");
   assert.equal(relaxed?.triggerVolumeAvailable, false);
   assert.equal(relaxed?.decisionSlot, 3700);
-  assert.equal(events.length, 0);
 });
 
 test("trigger-relaxed accepts a retest that is not fail-accept/reject", () => {
