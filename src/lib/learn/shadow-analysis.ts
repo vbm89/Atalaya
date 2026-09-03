@@ -1,5 +1,4 @@
 import type {
-  ShadowBreakdown,
   ShadowCandidateReason,
   ShadowCandidateResult,
   ShadowEpisode,
@@ -76,7 +75,6 @@ function makeWalkForward(episodes: readonly ShadowEpisode[], rows: readonly Shad
       const vr = rows.filter((r) => r.variant === variant);
       const train = vr.filter((r) => r.decisionSlot * 1000 >= trainFromMs && r.decisionSlot * 1000 <= trainToMs);
       const test = vr.filter((r) => r.decisionSlot * 1000 >= testFromMs && r.decisionSlot * 1000 <= testToMs);
-      const decided = test.filter((r) => r.outcome !== "expired" && r.outcome !== "pending");
       return { variant, trainN: train.length, testN: test.length, testSuccessPct: success(test) };
     });
     windows.push({ index, trainFromMs, trainToMs, testFromMs, testToMs, variants });
@@ -88,20 +86,30 @@ function makeWalkForward(episodes: readonly ShadowEpisode[], rows: readonly Shad
 export function analyzeShadowReplay(episodes: readonly ShadowEpisode[]): ShadowAnalysisReport {
   const replay = buildShadowReplayReport(episodes);
   const rows = replayCandidates(episodes);
+  const ordered = [...episodes].sort((a, b) => a.case.openedAtMs - b.case.openedAtMs);
+  const cutMs = ordered[Math.floor(ordered.length * 0.7) - 1]?.case.openedAtMs ?? Number.POSITIVE_INFINITY;
   const baseline = rows.filter((r) => r.variant === "BASELINE_V1");
   const baselineAll = success(baseline);
-  const baselineTest = success(baseline.filter((r) => r.decisionSlot * 1000 > (replay.variants[0]?.test.train?.n ?? Number.NEGATIVE_INFINITY)));
+  const baselineTest = success(baseline.filter((r) => r.decisionSlot * 1000 > cutMs));
   const walkForward = makeWalkForward(episodes, rows);
   const comparisons = replay.variants.map((variantReport) => {
     const vr = rows.filter((r) => r.variant === variantReport.variant);
-    const test = variantReport.variant === "BASELINE_V1" ? baseline : vr.filter((r) => r.decisionSlot * 1000 > (episodes.length ? [...episodes].sort((a, b) => a.case.openedAtMs - b.case.openedAtMs)[Math.floor(episodes.length * 0.7) - 1]?.case.openedAtMs ?? Infinity : Infinity));
+    const test = vr.filter((r) => r.decisionSlot * 1000 > cutMs);
     const testSuccess = success(test);
     const asset = assetSuccessRange(rows, variantReport.variant);
-    const wfPcts = walkForward.flatMap((w) => w.variants.filter((v) => v.variant === variantReport.variant && v.testSuccessPct != null).map((v) => v.testSuccessPct!));
+    const wfPcts = walkForward.flatMap((w) =>
+      w.variants
+        .filter((v) => v.variant === variantReport.variant && v.testSuccessPct != null)
+        .map((v) => v.testSuccessPct!),
+    );
     const wfRange = wfPcts.length >= 2 ? Math.max(...wfPcts) - Math.min(...wfPcts) : null;
     const delta = pctDelta(success(vr), baselineAll);
     const testDelta = pctDelta(testSuccess, baselineTest);
-    const sufficient = variantReport.test.decided >= MIN_TEST_N && testDelta != null && testDelta >= -MATERIAL_WORSENING_PP && variantReport.additionalOpportunities > 0;
+    const sufficient =
+      variantReport.test.decided >= MIN_TEST_N &&
+      testDelta != null &&
+      testDelta >= -MATERIAL_WORSENING_PP &&
+      variantReport.additionalOpportunities > 0;
     const insufficient = variantReport.test.decided < MIN_TEST_N || testDelta == null;
     return {
       variant: variantReport.variant,
