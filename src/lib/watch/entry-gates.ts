@@ -36,8 +36,12 @@ function missingParts(raw: string | null | undefined): string[] {
     .filter(Boolean);
 }
 
-function passed(parts: string[], snippet: string): boolean {
-  return !parts.some((p) => p.includes(snippet));
+function failed(parts: string[], snippet: string): boolean {
+  return parts.some((p) => p.includes(snippet));
+}
+
+function passedAlwaysEvaluated(parts: string[], snippet: string): boolean {
+  return !failed(parts, snippet);
 }
 
 const UNEVALUATED: EntryGates = {
@@ -62,7 +66,7 @@ const ALL_PASSED: EntryGates = {
   underlyingClosed: true,
 };
 
-/** MAP: only armed is known (false). PENDING: missing[] is the full V1 list. ENTRY: all passed. */
+/** MAP: only armed is known (false). PENDING: missing[] for always-evaluated gates; volume4h null unless listed. ENTRY: V1 returned entry (t2 && missing.length===0). */
 export function captureEntryGates(
   state: SetupState | null | undefined,
   missingForEntry: string | null | undefined,
@@ -85,12 +89,13 @@ export function captureEntryGates(
   const parts = missingParts(missingForEntry);
   return {
     armed: true,
-    t2: passed(parts, SNIPPETS.t2),
-    volume15: passed(parts, SNIPPETS.volume15),
-    volume4h: passed(parts, SNIPPETS.volume4h),
-    bias4h: passed(parts, SNIPPETS.bias4h),
-    news: passed(parts, SNIPPETS.news),
-    late: passed(parts, SNIPPETS.late),
-    underlyingClosed: passed(parts, SNIPPETS.underlyingClosed),
+    t2: passedAlwaysEvaluated(parts, SNIPPETS.t2),
+    volume15: passedAlwaysEvaluated(parts, SNIPPETS.volume15),
+    // V1 only pushes 4H when vol4h != null. Absence ≠ evaluated-and-passed.
+    volume4h: failed(parts, SNIPPETS.volume4h) ? false : null,
+    bias4h: passedAlwaysEvaluated(parts, SNIPPETS.bias4h),
+    news: passedAlwaysEvaluated(parts, SNIPPETS.news),
+    late: passedAlwaysEvaluated(parts, SNIPPETS.late),
+    underlyingClosed: passedAlwaysEvaluated(parts, SNIPPETS.underlyingClosed),
   };
 }

@@ -29,9 +29,32 @@ describe("captureEntryGates", () => {
     assert.equal(g?.armed, true);
     assert.equal(g?.t2, false);
     assert.equal(g?.volume15, false);
-    assert.equal(g?.volume4h, true);
+    assert.equal(g?.volume4h, null);
     assert.equal(g?.news, true);
     assert.equal(g?.late, true);
+    assert.equal(g?.bias4h, true);
+    assert.equal(g?.underlyingClosed, true);
+  });
+
+  it("PENDING: volume4h false only when V1 listed it; otherwise null not true", () => {
+    const dead = captureEntryGates("pending", "Falta: volumen 4H muerto.");
+    assert.equal(dead?.volume4h, false);
+    assert.equal(dead?.t2, true);
+    const silent = captureEntryGates("pending", "Falta: cierre 15M de fallo de aceptación o rechazo.");
+    assert.equal(silent?.volume4h, null);
+    assert.equal(silent?.t2, false);
+  });
+
+  it("does not use volume ratios; only missingForEntry text", () => {
+    const g = captureEntryGates("pending", "Falta: cierre 15M de fallo de aceptación o rechazo.");
+    assert.equal(g?.volume15, true);
+    assert.equal(g?.volume4h, null);
+  });
+
+  it("does not use bias4hLabel; only the missing snippet", () => {
+    const g = captureEntryGates("pending", "Falta: sesgo 4H intacto.");
+    assert.equal(g?.bias4h, false);
+    assert.equal(g?.t2, true);
   });
 
   it("PENDING without missing text does not invent gate booleans", () => {
