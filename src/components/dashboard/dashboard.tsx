@@ -132,6 +132,21 @@ function overlayAsset(asset: AssetAnalysis, focus: WatchEpisodeView | null): Ass
   };
 }
 
+function studyClocksEqual(
+  a: Partial<Record<AssetId, StudyClock>>,
+  b: Partial<Record<AssetId, StudyClock>>,
+): boolean {
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const k of keys) {
+    const id = k as AssetId;
+    const x = a[id];
+    const y = b[id];
+    if (!x || !y || x.openedAtMs !== y.openedAtMs || x.closedAtMs !== y.closedAtMs) return false;
+  }
+  return true;
+}
+
 function overlayWatch(
   asset: AssetAnalysis,
   local: AssetWatch | null | undefined,
@@ -173,6 +188,7 @@ export function Dashboard() {
   const [episodeFocus, setEpisodeFocus] = useState<WatchEpisodeView | null>(null);
   const [explainView, setExplainView] = useState<ExplainView | null>(null);
   const snapshotRef = useRef<AnalysisSnapshot | undefined>(undefined);
+  const studyClockRef = useRef<Partial<Record<AssetId, StudyClock>>>({});
 
   useEffect(() => {
     const cached = readCache();
@@ -219,6 +235,8 @@ export function Dashboard() {
       void qc.invalidateQueries({ queryKey: ["watch-inbox"] });
     },
   });
+  const refreshMutateRef = useRef(refresh.mutate);
+  refreshMutateRef.current = refresh.mutate;
 
   const serverStale = health.data?.stale ?? true;
   const serverSnaps = snaps.data;
@@ -252,6 +270,45 @@ export function Dashboard() {
     busy,
     onEval: runEval,
   });
+
+  const onChartBack = useCallback(() => {
+    setTab("markets");
+    setChartIntent(null);
+  }, []);
+  const onChartRefresh = useCallback(() => {
+    refreshMutateRef.current();
+  }, []);
+
+  const chartSnapshot = useMemo((): AnalysisSnapshot | undefined => {
+    if (!snapshot) return undefined;
+    if (!episodeFocus) return snapshot;
+    let changed = false;
+    const assets = snapshot.assets.map((a) => {
+      const next = overlayAsset(a, episodeFocus);
+      if (next !== a) changed = true;
+      return next;
+    });
+    return changed ? { ...snapshot, assets } : snapshot;
+  }, [snapshot, episodeFocus]);
+
+  const studyClockByAsset = useMemo((): Partial<Record<AssetId, StudyClock>> => {
+    const out: Partial<Record<AssetId, StudyClock>> = {};
+    for (const s of snaps.data ?? []) {
+      if (s.openedAtMs != null && Number.isFinite(s.openedAtMs) && s.openedAtMs > 0) {
+        out[s.assetId] = { openedAtMs: s.openedAtMs, closedAtMs: s.closedAtMs ?? null };
+      }
+    }
+    if (episodeFocus && episodeFocus.openedAtMs > 0) {
+      out[episodeFocus.assetId] = {
+        openedAtMs: episodeFocus.openedAtMs,
+        closedAtMs: episodeFocus.closedAtMs,
+      };
+    }
+    const prev = studyClockRef.current;
+    if (studyClocksEqual(prev, out)) return prev;
+    studyClockRef.current = out;
+    return out;
+  }, [snaps.data, episodeFocus]);
 
   useEffect(() => {
     if (!snapshot) return;
@@ -397,35 +454,11 @@ export function Dashboard() {
         {tab === "charts" ? (
           <ChartsScreen
             key={chartIntent ? `i-${chartIntent.nonce}` : `l-${chartBrowse}`}
-            snapshot={
-              snapshot && episodeFocus
-                ? {
-                    ...snapshot,
-                    assets: snapshot.assets.map((a) => overlayAsset(a, episodeFocus)),
-                  }
-                : snapshot
-            }
+            snapshot={chartSnapshot}
             intent={chartIntent}
-            studyClockByAsset={(() => {
-              const out: Partial<Record<AssetId, StudyClock>> = {};
-              for (const s of snaps.data ?? []) {
-                if (s.openedAtMs != null && Number.isFinite(s.openedAtMs) && s.openedAtMs > 0) {
-                  out[s.assetId] = { openedAtMs: s.openedAtMs, closedAtMs: s.closedAtMs ?? null };
-                }
-              }
-              if (episodeFocus && episodeFocus.openedAtMs > 0) {
-                out[episodeFocus.assetId] = {
-                  openedAtMs: episodeFocus.openedAtMs,
-                  closedAtMs: episodeFocus.closedAtMs,
-                };
-              }
-              return out;
-            })()}
-            onBack={() => {
-              setTab("markets");
-              setChartIntent(null);
-            }}
-            onRefresh={() => refresh.mutate()}
+            studyClockByAsset={studyClockByAsset}
+            onBack={onChartBack}
+            onRefresh={onChartRefresh}
           />
         ) : (
           <PullRefresh
