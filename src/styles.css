@@ -94,7 +94,10 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Shell: named areas so the dock stays BOTTOM even when the header is unmounted. */
+/* Fill the layout viewport of THIS browsing context (PWA, Safari, or embed).
+   100% of html follows the visual viewport on iOS PWA, which already excludes
+   the home indicator — stacking dock env() padding on top of that doubles the
+   floor. Fixed inset tracks the layout viewport once; dock keeps full safe-area. */
 .atalaya-shell {
   --dock-row: 1.75rem;
   display: grid;
@@ -104,14 +107,15 @@
     "header"
     "stage"
     "dock";
-  position: relative;
-  height: 100%;
-  max-height: 100%;
-  overflow: hidden;
-  background: var(--color-bg);
+  position: fixed;
+  inset: 0;
   width: 100%;
   max-width: 32rem;
   margin-inline: auto;
+  height: auto;
+  max-height: none;
+  overflow: hidden;
+  background: var(--color-bg);
 }
 
 .atalaya-shell[data-chrome="chart"] {
