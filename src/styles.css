@@ -94,10 +94,9 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Fill the layout viewport of THIS browsing context (PWA, Safari, or embed).
-   100% of html follows the visual viewport on iOS PWA, which already excludes
-   the home indicator — stacking dock env() padding on top of that doubles the
-   floor. Fixed inset tracks the layout viewport once; dock keeps full safe-area. */
+/* In-flow shell sized to the large/dynamic viewport so the box can reach the
+   physical screen edge under viewport-fit=cover. Safe-area is applied once,
+   on the dock — not via position:fixed (iOS visual-viewport double inset). */
 .atalaya-shell {
   --dock-row: 1.75rem;
   display: grid;
@@ -107,15 +106,14 @@
     "header"
     "stage"
     "dock";
-  position: fixed;
-  inset: 0;
+  position: relative;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+  background: var(--color-bg);
   width: 100%;
   max-width: 32rem;
   margin-inline: auto;
-  height: auto;
-  max-height: none;
-  overflow: hidden;
-  background: var(--color-bg);
 }
 
 .atalaya-shell[data-chrome="chart"] {
