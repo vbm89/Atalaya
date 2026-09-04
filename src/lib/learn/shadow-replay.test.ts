@@ -4,9 +4,12 @@ import { toShadowFeatures, type ShadowCaseInput } from "./shadow-features";
 import { analyzeShadowReplay } from "./shadow-analysis";
 import {
   buildShadowReplayReport,
+  isExtraVsV1,
   shadowCandidateForTest,
   shadowOutcomeForTest,
   slotToMs,
+  v1EntryByEpisode,
+  v1EntrySlot,
   type ShadowEpisode,
   type ShadowTapeBar,
 } from "./shadow-replay";
@@ -222,5 +225,92 @@ test("small TEST samples are marked INSUFFICIENT, not evidence of improvement", 
   const e = episode(id, bar(id, 2800, 106, 110, 100, 102, 2), bar(id, 3700, 102, 103, 79, 80));
   const analysis = analyzeShadowReplay([e]);
   assert.ok(analysis.comparisons.every((c) => c.recommendation === "INSUFFICIENT"));
-  assert.ok(analysis.comparisons.every((c) => c.testN < 30));
+  assert.ok(analysis.comparisons.every((c) => c.extraTestN < 30));
+});
+
+test("V1 ENTRY on an episode is overlap, never extra", () => {
+  const id = "XAUUSD-overlap";
+  const e = episode(id, bar(id, 2800, 106, 110, 100, 102, 2), bar(id, 3700, 102, 103, 102, 102), [
+    { episodeId: id, fromState: "pending", toState: "entry", atMs: 4_600_000, slot: 4600 },
+  ]);
+  e.case = { ...e.case, openedState: "pending" };
+  const v1 = v1EntryByEpisode([e]);
+  assert.equal(v1EntrySlot(e), 4600);
+  assert.equal(isExtraVsV1(id, v1), false);
+  const report = buildShadowReplayReport([e]);
+  const volume = report.variants.find((v) => v.variant === "VOLUME_RELAXED");
+  const baseline = report.variants.find((v) => v.variant === "BASELINE_V1");
+  assert.ok(volume && baseline);
+  assert.equal(baseline.extra.candidates, 0);
+  assert.equal(volume.overlap.candidates, 1);
+  assert.equal(volume.extra.candidates, 0);
+  assert.equal(volume.overlap.candidates + volume.extra.candidates, volume.total.candidates);
+  assert.equal(volume.earlierThanBaseline, 1);
+  assert.equal(volume.extra.earlierThanBaseline, 0);
+});
+
+test("Shadow without V1 ENTRY is extra and cannot also be overlap", () => {
+  const extraId = "WTI-extra";
+  const extraEp = episode(
+    extraId,
+    bar(extraId, 2800, 106, 110, 100, 102, 2),
+    bar(extraId, 3700, 108, 116, 79, 80),
+  );
+  extraEp.case = { ...extraEp.case, assetId: "WTI", openedState: "pending" };
+  const v1Id = "XAUUSD-v1";
+  const v1Ep = episode(v1Id, bar(v1Id, 3700, 106, 110, 100, 102, 2), bar(v1Id, 4600, 102, 103, 102, 102), [
+    { episodeId: v1Id, fromState: "pending", toState: "entry", atMs: 4_600_000, slot: 4600 },
+  ]);
+  v1Ep.case = { ...v1Ep.case, openedState: "pending" };
+  const report = buildShadowReplayReport([v1Ep, extraEp]);
+  const volume = report.variants.find((v) => v.variant === "VOLUME_RELAXED");
+  assert.ok(volume);
+  assert.equal(volume.overlap.candidates + volume.extra.candidates, volume.total.candidates);
+  assert.equal(volume.extra.candidates, 1);
+  assert.equal(volume.overlap.candidates, 1);
+  assert.equal(volume.additionalOpportunities, 1);
+  assert.equal(volume.extra.sl, 1);
+  assert.equal(volume.extra.tp1, 0);
+  assert.equal(volume.extra.decided, 1);
+  assert.equal(volume.extra.success.n, 1);
+  assert.equal(volume.extra.success.pct, 0);
+  assert.equal(volume.extra.expectancyR, -1);
+  assert.equal(volume.overlap.sl, 0);
+  const extraIds = new Set(["WTI-extra"]);
+  assert.equal(isExtraVsV1("WTI-extra", v1EntryByEpisode([v1Ep, extraEp])), true);
+  assert.equal(isExtraVsV1("XAUUSD-v1", v1EntryByEpisode([v1Ep, extraEp])), false);
+  assert.ok(!extraIds.has("XAUUSD-v1"));
+});
+
+test("V1 ENTRY without a reconstructable baseline bar still blocks extra", () => {
+  const id = "XAUUSD-entry-no-bar";
+  const e = episode(id, bar(id, 2800, 106, 110, 100, 102, 2), bar(id, 3700, 102, 103, 79, 80), [
+    { episodeId: id, fromState: "pending", toState: "entry", atMs: 9_999_000, slot: 9999 },
+  ]);
+  e.case = { ...e.case, openedState: "pending" };
+  const report = buildShadowReplayReport([e]);
+  const baseline = report.variants.find((v) => v.variant === "BASELINE_V1");
+  const volume = report.variants.find((v) => v.variant === "VOLUME_RELAXED");
+  assert.equal(baseline?.candidates, 0);
+  assert.equal(volume?.extra.candidates, 0);
+  assert.equal(volume?.overlap.candidates, 1);
+});
+
+test("baseline closed without SL/TP after the entry slot is expired, not a fake win", () => {
+  const id = "XAUUSD-expired";
+  const e = episode(id, bar(id, 3700, 106, 110, 100, 102, 2), bar(id, 4600, 102, 104, 98, 101), [
+    { episodeId: id, fromState: "pending", toState: "entry", atMs: 4_600_000, slot: 4600 },
+  ]);
+  e.case = { ...e.case, openedState: "pending", closedAtMs: 7_000_000 };
+  const baseline = shadowCandidateForTest(e, "BASELINE_V1");
+  assert.equal(baseline?.decisionSlot, 4600);
+  const result = shadowOutcomeForTest(baseline!, e);
+  assert.equal(result.outcome, "expired");
+  assert.equal(result.rrAtOutcome, 0);
+  const report = buildShadowReplayReport([e]);
+  const row = report.variants.find((v) => v.variant === "BASELINE_V1");
+  assert.equal(row?.candidates, 1);
+  assert.equal(row?.decided, 0);
+  assert.equal(row?.expired, 1);
+  assert.equal(row?.extra.candidates, 0);
 });

@@ -12,6 +12,9 @@ export interface ShadowComparison {
   testDeltaVsBaselinePp: number | null;
   additionalOpportunities: number;
   earlierThanBaseline: number;
+  extraDecided: number;
+  extraSuccessPct: number | null;
+  extraTestN: number;
   testN: number;
   assetCoverage: number;
   assetSuccessRangePp: number | null;
@@ -106,18 +109,23 @@ export function analyzeShadowReplay(episodes: readonly ShadowEpisode[]): ShadowA
     const wfRange = wfPcts.length >= 2 ? Math.max(...wfPcts) - Math.min(...wfPcts) : null;
     const delta = pctDelta(success(vr), baselineAll);
     const testDelta = pctDelta(testSuccess, baselineTest);
+    const extraTestN = variantReport.extra.test.success.n;
+    const extraSuccessPct = variantReport.extra.success.pct == null ? null : variantReport.extra.success.pct * 100;
     const sufficient =
-      variantReport.test.success.n >= MIN_TEST_N &&
+      extraTestN >= MIN_TEST_N &&
       testDelta != null &&
       testDelta >= -MATERIAL_WORSENING_PP &&
-      variantReport.additionalOpportunities > 0;
-    const insufficient = variantReport.test.success.n < MIN_TEST_N || testDelta == null;
+      variantReport.extra.candidates > 0;
+    const insufficient = extraTestN < MIN_TEST_N || testDelta == null;
     return {
       variant: variantReport.variant,
       deltaVsBaselinePp: delta,
       testDeltaVsBaselinePp: testDelta,
-      additionalOpportunities: variantReport.additionalOpportunities,
-      earlierThanBaseline: variantReport.earlierThanBaseline,
+      additionalOpportunities: variantReport.extra.candidates,
+      earlierThanBaseline: variantReport.overlap.earlierThanBaseline,
+      extraDecided: variantReport.extra.decided,
+      extraSuccessPct,
+      extraTestN,
       testN: variantReport.test.success.n,
       assetCoverage: asset.coverage,
       assetSuccessRangePp: asset.range,

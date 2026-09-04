@@ -81,6 +81,29 @@ export interface ShadowBreakdown {
   falsePositives: number;
 }
 
+/**
+ * Match rule: same V1 map = same episodeId with an observed ENTRY event.
+ * EXTRA = Shadow candidate on an episode V1 never entered.
+ * OVERLAP = Shadow candidate on an episode V1 did enter (even if decisionSlot differs).
+ * A row is never both. earlierThanBaseline only exists on OVERLAP.
+ */
+export interface ShadowCohort {
+  label: "total" | "overlap" | "extra";
+  candidates: number;
+  entries: number;
+  tp1: number;
+  tp2: number;
+  sl: number;
+  expired: number;
+  decided: number;
+  success: RateSummary;
+  meanPlannedRr: number | null;
+  expectancyR: number | null;
+  earlierThanBaseline: number;
+  train: ShadowBreakdown;
+  test: ShadowBreakdown;
+}
+
 export interface ShadowVariantReport {
   variant: ShadowCandidateReason;
   candidates: number;
@@ -107,6 +130,9 @@ export interface ShadowVariantReport {
   train: ShadowBreakdown;
   test: ShadowBreakdown;
   storedOutcomeAgreement: number | null;
+  total: ShadowCohort;
+  overlap: ShadowCohort;
+  extra: ShadowCohort;
 }
 
 export interface ShadowReplayReport {
@@ -290,8 +316,27 @@ function triggerKind(
 }
 
 function baselineSlot(ep: ShadowEpisode): number | null {
+  return v1EntrySlot(ep);
+}
+
+/** First observed V1 transition to ENTRADA. Unix seconds. Null if V1 never entered. */
+export function v1EntrySlot(ep: ShadowEpisode): number | null {
   const entries = ep.events.filter((e) => e.toState === "entry").sort((a, b) => a.slot - b.slot);
   return entries[0]?.slot ?? null;
+}
+
+export function v1EntryByEpisode(episodes: readonly ShadowEpisode[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const ep of episodes) {
+    const slot = v1EntrySlot(ep);
+    if (slot != null) out.set(ep.case.episodeId, slot);
+  }
+  return out;
+}
+
+/** EXTRA = no V1 ENTRY on that episode. OVERLAP = V1 did enter that map. */
+export function isExtraVsV1(episodeId: string, v1Entries: ReadonlyMap<string, number>): boolean {
+  return !v1Entries.has(episodeId);
 }
 
 function bars15FromOpen(ep: ShadowEpisode): ShadowTapeBar[] {
@@ -436,48 +481,71 @@ function triggerBucket(r: ShadowCandidateResult): string {
   return r.trigger === "retest" ? "retest-only" : r.trigger;
 }
 
+function cohortOf(
+  label: ShadowCohort["label"],
+  rows: readonly ShadowCandidateResult[],
+  v1Entries: ReadonlyMap<string, number>,
+  trainCutMs: number,
+): ShadowCohort {
+  const tp1 = rows.filter((r) => r.outcome === "tp1").length;
+  const tp2 = rows.filter((r) => r.outcome === "tp2").length;
+  const sl = rows.filter((r) => r.outcome === "sl").length;
+  const expired = rows.filter((r) => r.outcome === "expired").length;
+  const decidedRows = rows.filter((r) => r.outcome === "tp1" || r.outcome === "tp2" || r.outcome === "sl");
+  const earlier = rows.filter((r) => {
+    const base = v1Entries.get(r.episodeId);
+    return base != null && r.decisionSlot < base;
+  }).length;
+  return {
+    label,
+    candidates: rows.length,
+    entries: rows.length,
+    tp1,
+    tp2,
+    sl,
+    expired,
+    decided: tp1 + tp2 + sl,
+    success: wilson(tp1 + tp2, tp1 + tp2 + sl),
+    meanPlannedRr: mean(rows.map((r) => r.features.plannedRr).filter(finite)),
+    expectancyR: mean(decidedRows.map((r) => r.rrAtOutcome).filter(finite)),
+    earlierThanBaseline: label === "extra" ? 0 : earlier,
+    train: breakdown("TRAIN", rows.filter((r) => slotToMs(r.decisionSlot) <= trainCutMs)),
+    test: breakdown("TEST", rows.filter((r) => slotToMs(r.decisionSlot) > trainCutMs)),
+  };
+}
+
 function variantReport(
   variant: ShadowCandidateReason,
   rows: readonly ShadowCandidateResult[],
   episodes: readonly ShadowEpisode[],
-  baselineByEpisode: ReadonlyMap<string, number>,
+  v1Entries: ReadonlyMap<string, number>,
   trainCutMs: number,
 ): ShadowVariantReport {
   const vr = rows.filter((r) => r.variant === variant);
-  const tp1 = vr.filter((r) => r.outcome === "tp1").length;
-  const tp2 = vr.filter((r) => r.outcome === "tp2").length;
-  const sl = vr.filter((r) => r.outcome === "sl").length;
-  const expired = vr.filter((r) => r.outcome === "expired").length;
-  const decided = tp1 + tp2 + sl;
-  const rr = vr.map((r) => r.features.plannedRr).filter(finite);
-  const decidedRows = vr.filter((r) => r.outcome === "tp1" || r.outcome === "tp2" || r.outcome === "sl");
-  const outcomeRr = decidedRows.map((r) => r.rrAtOutcome).filter(finite);
-  const train = breakdown("TRAIN", vr.filter((r) => slotToMs(r.decisionSlot) <= trainCutMs));
-  const test = breakdown("TEST", vr.filter((r) => slotToMs(r.decisionSlot) > trainCutMs));
-  const additional = vr.filter((r) => !baselineByEpisode.has(r.episodeId)).length;
-  const earlier = vr.filter((r) => {
-    const base = baselineByEpisode.get(r.episodeId);
-    return base != null && r.decisionSlot < base;
-  }).length;
+  const extraRows = variant === "BASELINE_V1" ? [] : vr.filter((r) => isExtraVsV1(r.episodeId, v1Entries));
+  const overlapRows = variant === "BASELINE_V1" ? vr : vr.filter((r) => !isExtraVsV1(r.episodeId, v1Entries));
+  const total = cohortOf("total", vr, v1Entries, trainCutMs);
+  const overlap = cohortOf("overlap", overlapRows, v1Entries, trainCutMs);
+  const extra = cohortOf("extra", extraRows, v1Entries, trainCutMs);
   const observed = new Map(episodes.map((e) => [e.case.episodeId, e.observedOutcome ?? null]));
   const comparable = vr.filter((r) => observed.get(r.episodeId) != null);
   const agreements = comparable.filter((r) => observed.get(r.episodeId) === r.outcome);
   return {
     variant,
-    candidates: vr.length,
-    entries: vr.length,
-    additionalOpportunities: variant === "BASELINE_V1" ? 0 : additional,
-    earlierThanBaseline: variant === "BASELINE_V1" ? 0 : earlier,
-    tp1,
-    tp2,
-    sl,
-    expired,
-    decided,
-    success: wilson(tp1 + tp2, decided),
-    meanPlannedRr: mean(rr),
-    meanOutcomeRr: mean(outcomeRr),
-    expectancyR: mean(outcomeRr),
-    falsePositives: sl,
+    candidates: total.candidates,
+    entries: total.entries,
+    additionalOpportunities: extra.candidates,
+    earlierThanBaseline: overlap.earlierThanBaseline,
+    tp1: total.tp1,
+    tp2: total.tp2,
+    sl: total.sl,
+    expired: total.expired,
+    decided: total.decided,
+    success: total.success,
+    meanPlannedRr: total.meanPlannedRr,
+    meanOutcomeRr: total.expectancyR,
+    expectancyR: total.expectancyR,
+    falsePositives: total.sl,
     byAsset: by(vr, (r) => r.features.assetId),
     byDirection: by(vr, (r) => r.features.direction),
     bySession: by(vr, (r) => r.features.session),
@@ -485,9 +553,12 @@ function variantReport(
     byKind: by(vr, (r) => r.features.kind),
     byVolume: by(vr, volumeBucket),
     byTrigger: by(vr, triggerBucket),
-    train,
-    test,
+    train: total.train,
+    test: total.test,
     storedOutcomeAgreement: comparable.length ? agreements.length / comparable.length : null,
+    total,
+    overlap,
+    extra,
   };
 }
 
@@ -504,9 +575,7 @@ export function buildShadowReplayReport(
   const fraction = Math.min(0.99, Math.max(0.01, config.trainFraction ?? 0.7));
   const cutIndex = Math.floor(ordered.length * fraction);
   const trainCutMs = ordered[Math.max(0, cutIndex - 1)]?.case.openedAtMs ?? Number.NEGATIVE_INFINITY;
-  const baselineByEpisode = new Map(
-    results.filter((r) => r.variant === "BASELINE_V1").map((r) => [r.episodeId, r.decisionSlot]),
-  );
+  const v1Entries = v1EntryByEpisode(episodes);
   const limitations: string[] = [];
   if (!episodes.length) limitations.push("No hay episodios disponibles.");
   if (episodes.some((e) => !e.bars.some((b) => b.tf === "15m"))) {
@@ -519,6 +588,7 @@ export function buildShadowReplayReport(
   limitations.push("Noticias y mercado cerrado se usan desde la fotografía histórica almacenada; eventos externos no persistidos no pueden reconstruirse.");
   limitations.push("Las hipótesis son reglas fijas: TRAIN no selecciona umbrales y TEST nunca alimenta la generación de candidatos.");
   limitations.push("BASELINE_V1 es la primera transición observada a ENTRADA, no una reconstrucción de los umbrales internos de V1.");
+  limitations.push("EXTRA es un candidato Shadow en un episodio sin evento V1 ENTRY. OVERLAP comparte episodeId con una ENTRADA V1; no se cuenta como extra.");
   return {
     episodesAnalyzed: episodes.length,
     episodesWith15mTape: episodes.filter((e) => e.bars.some((b) => b.tf === "15m")).length,
@@ -531,7 +601,7 @@ export function buildShadowReplayReport(
         return sorted.some((t, i) => i > 0 && t - sorted[i - 1]! > step);
       });
     }).length,
-    variants: SHADOW_VARIANTS.map((v) => variantReport(v, results, episodes, baselineByEpisode, trainCutMs)),
+    variants: SHADOW_VARIANTS.map((v) => variantReport(v, results, episodes, v1Entries, trainCutMs)),
     limitations,
   };
 }
