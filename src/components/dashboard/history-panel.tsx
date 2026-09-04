@@ -9,19 +9,6 @@ import type { HistoryRow } from "@/lib/watch/store";
 import { EpisodeMemory } from "./episode-memory";
 import { AssetMark } from "./marks";
 
-type DirectionFilter = "all" | "buy" | "sell";
-type OutcomeFilter = "all" | "tp1" | "tp2" | "sl" | "expired" | "pending";
-
-
-const OUTCOME_FILTERS: { id: OutcomeFilter; label: string }[] = [
-  { id: "all", label: "Todos" },
-  { id: "tp1", label: "TP1" },
-  { id: "tp2", label: "TP2" },
-  { id: "sl", label: "SL" },
-  { id: "expired", label: "Expirada" },
-  { id: "pending", label: "Pendiente" },
-];
-
 function ChartMixIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden>
@@ -168,8 +155,6 @@ export function HistoryPanel({
 }) {
   const [journalEpisodeId, setJournalEpisodeId] = useState<string | null>(null);
   const [assetFilter, setAssetFilter] = useState<AssetId | "all">("all");
-  const [directionFilter, setDirectionFilter] = useState<DirectionFilter>("all");
-  const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>("all");
 
   const q = useQuery({
     queryKey: ["watch-history"],
@@ -181,11 +166,9 @@ export function HistoryPanel({
   const filtered = useMemo(() => {
     return rows.filter((row) => {
       if (assetFilter !== "all" && row.episode.assetId !== assetFilter) return false;
-      if (directionFilter !== "all" && row.episode.direction !== directionFilter) return false;
-      if (outcomeFilter !== "all" && row.outcome !== outcomeFilter) return false;
       return true;
     });
-  }, [rows, assetFilter, directionFilter, outcomeFilter]);
+  }, [rows, assetFilter]);
 
   if (q.isLoading) {
     return <p className="mt-4 text-sm text-subtle">Cargando historial…</p>;
@@ -217,13 +200,6 @@ export function HistoryPanel({
         {ASSETS.map((a) => (
           <FilterChip key={a.id} active={assetFilter === a.id} onClick={() => setAssetFilter(a.id)}>
             {a.id}
-          </FilterChip>
-        ))}
-      </div>
-      <div className="atalaya-chip-row mt-2">
-        {OUTCOME_FILTERS.map((f) => (
-          <FilterChip key={f.id} active={outcomeFilter === f.id} onClick={() => setOutcomeFilter(f.id)}>
-            {f.label}
           </FilterChip>
         ))}
       </div>

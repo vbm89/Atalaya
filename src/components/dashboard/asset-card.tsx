@@ -307,7 +307,7 @@ export function MarketTile({
             snapshotSpot={asset.priceSpot}
             showSpotLabel={false}
             align="left"
-            size="md"
+            size="lg"
           />
         </div>
         <div className="mt-1 flex items-end justify-between gap-2">
@@ -321,7 +321,7 @@ export function MarketTile({
           >
             {chg == null ? "—" : compactPct(chg)}
           </p>
-          <div className="h-7 w-[4.6rem] shrink-0">
+          <div className="h-9 w-[5.2rem] shrink-0">
             <Sparkline values={asset.sparkline} positive={up} />
           </div>
         </div>

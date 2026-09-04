@@ -47,6 +47,7 @@ export function BestOpportunityCard({
       data-best-opportunity={snapshot.bestOpportunityId ?? "none"}
     >
       <p className="text-base font-semibold tracking-tight">Oportunidades</p>
+      <p className="mt-0.5 text-xs text-subtle">Señales de alta calidad detectadas por Atalaya</p>
       {!isEntry || !setup || !asset ? (
         <div className="atalaya-empty mt-3">
           <p className="text-sm font-medium">Sin entradas activas</p>

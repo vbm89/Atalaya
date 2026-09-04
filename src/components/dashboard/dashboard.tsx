@@ -551,6 +551,8 @@ export function Dashboard() {
             onBack={onChartBack}
             onRefresh={onChartRefresh}
             onMode={setChartMode}
+            statusOk={systemHint(snapshot, health.data ?? null) === "Todo funcionando"}
+            statusLabel={systemHint(snapshot, health.data ?? null) === "Todo funcionando" ? "Operativo" : systemHint(snapshot, health.data ?? null)}
           />
         ) : (
           <PullRefresh
@@ -626,7 +628,6 @@ export function Dashboard() {
                     void applyWatchLink(`?asset=${assetId}&episode=${episodeId}`);
                   }}
                 />
-                <AlertsPanel />
               </div>
             ) : tab === "learn" ? (
               <LearnPanel />
@@ -638,6 +639,7 @@ export function Dashboard() {
                   costs={costs}
                   onCostsChange={setCosts}
                 />
+                <AlertsPanel />
               </div>
             ) : tab === "info" ? (
               <InfoPanel disclaimer={snapshot?.disclaimer} source={snapshot?.source} />

@@ -108,6 +108,8 @@ export const ChartsScreen = memo(function ChartsScreen({
   onRefresh,
   studyClockByAsset,
   onMode,
+  statusOk,
+  statusLabel,
 }: {
   snapshot: AnalysisSnapshot | undefined;
   intent: ChartIntent | null;
@@ -115,6 +117,8 @@ export const ChartsScreen = memo(function ChartsScreen({
   onRefresh?: () => void;
   studyClockByAsset?: Partial<Record<AssetId, StudyClock>>;
   onMode?: (mode: "list" | "workspace") => void;
+  statusOk?: boolean;
+  statusLabel?: string;
 }) {
   const [assetId, setAssetId] = useState<AssetId | null>(intent?.assetId ?? null);
   const [tf, setTf] = useState<ChartTf>(intent?.tf ?? SETUP_CHART_TF);
@@ -182,6 +186,8 @@ export const ChartsScreen = memo(function ChartsScreen({
       studyClock={assetId != null ? studyClockByAsset?.[assetId] ?? null : null}
       chartRef={chartRef}
       hudEl={hudEl}
+      statusOk={statusOk}
+      statusLabel={statusLabel}
       onBackToList={() => {
         if (intent && intent.assetId === assetId) {
           onBack();
@@ -294,6 +300,8 @@ function ChartWorkspace({
   studyClock,
   chartRef,
   hudEl,
+  statusOk,
+  statusLabel,
   onBackToList,
   onAsset,
   onTf,
@@ -313,6 +321,8 @@ function ChartWorkspace({
   studyClock?: StudyClock | null;
   chartRef: RefObject<CandleChartHandle | null>;
   hudEl: RefObject<HTMLSpanElement | null>;
+  statusOk?: boolean;
+  statusLabel?: string;
   onBackToList: () => void;
   onAsset: (id: AssetId) => void;
   onTf: (tf: ChartTf) => void;
@@ -379,7 +389,7 @@ function ChartWorkspace({
             <button
               type="button"
               onClick={onBackToList}
-              className="flex size-11 items-center justify-center rounded-[var(--radius-md)] text-muted"
+              className="flex size-9 items-center justify-center rounded-[var(--radius-md)] text-muted"
               aria-label="Volver"
             >
               <ChevronLeft className="size-5" />
@@ -388,13 +398,13 @@ function ChartWorkspace({
             <p className="atalaya-charts-title text-[13px] font-semibold tracking-[0.16em] uppercase">Atalaya</p>
           </div>
           <div className="flex items-center gap-1">
-            <span className="atalaya-pill is-ok">
+            <span className={statusOk === false ? "atalaya-pill is-warn" : "atalaya-pill is-ok"}>
               <span className="atalaya-status-dot" />
-              Operativo
+              {statusLabel ?? "Operativo"}
             </span>
             <button
               type="button"
-              className="flex size-11 items-center justify-center rounded-[var(--radius-md)] text-muted"
+              className="flex size-9 items-center justify-center rounded-[var(--radius-md)] text-muted"
               aria-label={starred ? "Quitar de favoritos" : "Añadir a favoritos"}
               onClick={() =>
                 onFavs((prev) =>
