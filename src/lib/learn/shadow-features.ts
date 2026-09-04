@@ -97,7 +97,7 @@ function directionalDistance(
 /** Derives research features from decision-time fields only. */
 export function toShadowFeatures(c: ShadowCaseInput): ShadowFeatureVector {
   const zoneWidth = positiveFinite(c.zoneHigh - c.zoneLow) ?? 0;
-  const riskDistance = directionalDistance(c.direction, c.entry, c.sl);
+  const riskDistance = positiveFinite(Math.abs(c.entry - c.sl));
   const rewardDistance1 = directionalDistance(c.direction, c.entry, c.tp1);
   const rewardDistance2 = c.tp2 == null ? null : directionalDistance(c.direction, c.entry, c.tp2);
 
