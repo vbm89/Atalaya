@@ -27,11 +27,15 @@ import { SETUP_CHART_TF, hasChartableSetup, setupStateCaption, activeStudyOverla
 import { CHART_ASSET_BLURB, displayEntryPrice } from "@/lib/chart/labels";
 import { ASSETS } from "@/lib/trading/assets";
 import type { AnalysisSnapshot, AssetId } from "@/lib/trading/types";
-import { formatPrice } from "@/lib/utils";
+import { cn, formatPrice } from "@/lib/utils";
 import { xauSpotIsFresh } from "@/lib/chart/quote-view";
 import { CandleChart, type CandleChartHandle } from "./candle-chart";
 import { LiveQuoteReadout } from "@/components/dashboard/live-quote-readout";
 import { PullRefresh } from "@/components/dashboard/pull-refresh";
+import { AssetMark, ASSET_SUBTITLE, AtalayaMark } from "@/components/dashboard/marks";
+import { MarketDock } from "@/components/dashboard/market-dock";
+import { Sparkline } from "@/components/dashboard/sparkline";
+
 
 export type { ChartIntent };
 
@@ -104,12 +108,14 @@ export const ChartsScreen = memo(function ChartsScreen({
   onBack,
   onRefresh,
   studyClockByAsset,
+  onMode,
 }: {
   snapshot: AnalysisSnapshot | undefined;
   intent: ChartIntent | null;
   onBack: () => void;
   onRefresh?: () => void;
   studyClockByAsset?: Partial<Record<AssetId, StudyClock>>;
+  onMode?: (mode: "list" | "workspace") => void;
 }) {
   const [assetId, setAssetId] = useState<AssetId | null>(intent?.assetId ?? null);
   const [tf, setTf] = useState<ChartTf>(intent?.tf ?? SETUP_CHART_TF);
@@ -140,6 +146,10 @@ export const ChartsScreen = memo(function ChartsScreen({
       /* ignore */
     }
   }, [favs]);
+
+  useEffect(() => {
+    onMode?.(assetId == null ? "list" : "workspace");
+  }, [assetId, onMode]);
 
   if (assetId == null) {
     return (
@@ -213,101 +223,63 @@ function ChartMarketList({
   onPick: (id: AssetId) => void;
   onRefresh?: () => void;
 }) {
-  const rest = ASSETS.filter((a) => !favs.includes(a.id));
-  const favAssets = ASSETS.filter((a) => favs.includes(a.id));
-
   return (
     <PullRefresh className="atalaya-charts-list" data-chart-list="1" onRefresh={onRefresh ?? (() => {})} enabled={Boolean(onRefresh)}>
       <div className="atalaya-charts-list-head">
-        <p className="text-xs tracking-wider text-muted uppercase">Gráficos</p>
         <h1 className="text-xl font-semibold tracking-tight">Mercados</h1>
+        <p className="mt-0.5 text-sm text-subtle">Vista rápida de los 4 activos vigilados</p>
       </div>
-      {favAssets.length ? (
-        <section>
-          <p className="px-1 text-xs font-medium tracking-wider text-muted uppercase">Favoritos</p>
-          <ul className="mt-2 space-y-1">
-            {favAssets.map((a) => {
-              const snap = snapshot?.assets.find((x) => x.id === a.id);
-              return (
-              <SymbolRow
-                key={a.id}
-                id={a.id}
-                starred
-                snapshotPrice={snap?.price}
-                snapshotSpot={snap?.priceSpot}
-                digits={a.digits}
-                onPick={() => onPick(a.id)}
-                onFav={() => onFav(a.id)}
-              />
-              );
-            })}
-          </ul>
-        </section>
-      ) : null}
-      <section className="mt-5">
-        <p className="px-1 text-xs font-medium tracking-wider text-muted uppercase">
-          Todos los mercados
-        </p>
-        <ul className="mt-2 space-y-1">
-          {(favAssets.length ? rest : ASSETS).map((a) => {
-              const snap = snapshot?.assets.find((x) => x.id === a.id);
-              return (
-            <SymbolRow
-              key={a.id}
-              id={a.id}
-              starred={favs.includes(a.id)}
-              snapshotPrice={snap?.price}
-              snapshotSpot={snap?.priceSpot}
-              digits={a.digits}
-              onPick={() => onPick(a.id)}
-              onFav={() => onFav(a.id)}
-            />
-              );
-            })}
-        </ul>
-      </section>
+      <ul className="space-y-2">
+        {ASSETS.map((a) => {
+          const snap = snapshot?.assets.find((x) => x.id === a.id);
+          const chg = snap?.dayChangePct;
+          const up = chg == null ? null : chg >= 0;
+          const state = snap?.setupState ?? "wait";
+          return (
+            <li key={a.id}>
+              <div className="atalaya-market-row">
+                <button type="button" onClick={() => onPick(a.id)} className="flex min-w-0 flex-1 items-center gap-3 py-1 text-left">
+                  <AssetMark id={a.id} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold">{a.label}</p>
+                    <p className="truncate text-[11px] text-subtle">{ASSET_SUBTITLE[a.id]}</p>
+                    <div className="mt-1 flex items-center gap-2">
+                      {state === "entry" ? <span className="atalaya-badge atalaya-badge-entry">ENTRY</span> : null}
+                      {state === "pending" ? <span className="atalaya-badge atalaya-badge-wait">PENDING</span> : null}
+                      {state === "map" ? <span className="atalaya-badge atalaya-badge-map">MAPA</span> : null}
+                      {state === "wait" ? <span className="atalaya-badge atalaya-badge-muted">Vigilando</span> : null}
+                    </div>
+                  </div>
+                  <div className="w-16 shrink-0">
+                    <Sparkline values={snap?.sparkline ?? []} positive={up} />
+                  </div>
+                  <div className="text-right">
+                    <LiveQuoteReadout
+                      id={a.id}
+                      digits={a.digits}
+                      snapshotPrice={snap?.price}
+                      snapshotSpot={snap?.priceSpot}
+                      showSpotLabel={false}
+                    />
+                    <p className={cn("mt-0.5 font-mono text-[11px] tabular", up == null && "text-muted", up === true && "text-buy", up === false && "text-sell")}>
+                      {chg == null ? "—" : `${new Intl.NumberFormat("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero" }).format(chg)}%`}
+                    </p>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  className="flex size-11 items-center justify-center text-muted"
+                  aria-label={favs.includes(a.id) ? "Quitar de favoritos" : "Añadir a favoritos"}
+                  onClick={() => onFav(a.id)}
+                >
+                  <Star className={favs.includes(a.id) ? "size-4 fill-wait text-wait" : "size-4"} />
+                </button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </PullRefresh>
-  );
-}
-
-function SymbolRow({
-  id,
-  starred,
-  snapshotPrice,
-  snapshotSpot,
-  digits,
-  onPick,
-  onFav,
-}: {
-  id: AssetId;
-  starred: boolean;
-  snapshotPrice: number | null | undefined;
-  snapshotSpot: number | null | undefined;
-  digits: number;
-  onPick: () => void;
-  onFav: () => void;
-}) {
-  return (
-    <li className="flex items-center gap-1 rounded-[var(--radius-lg)] bg-elevated px-2 shadow-[var(--shadow-border)]">
-      <button type="button" onClick={onPick} className="min-h-14 flex-1 px-2 py-3 text-left">
-        <p className="text-sm font-medium">{id}</p>
-      </button>
-      <LiveQuoteReadout
-        id={id}
-        digits={digits}
-        snapshotPrice={snapshotPrice}
-        snapshotSpot={snapshotSpot}
-        showSpotLabel={false}
-      />
-      <button
-        type="button"
-        className="flex size-11 items-center justify-center text-muted"
-        aria-label={starred ? "Quitar de favoritos" : "Añadir a favoritos"}
-        onClick={onFav}
-      >
-        <Star className={starred ? "size-4 fill-wait text-wait" : "size-4"} />
-      </button>
-    </li>
   );
 }
 
@@ -391,72 +363,78 @@ function ChartWorkspace({
     ? [series.instrumentKind === "proxy" ? "PROXY" : "NATIVO", series.source].filter(Boolean).join(" · ")
     : "";
 
+  const chg = analysis?.dayChangePct ?? null;
+  const up = chg == null ? null : chg >= 0;
+  const absChange =
+    analysis && analysis.price != null && chg != null && chg !== -100
+      ? analysis.price - analysis.price / (1 + chg / 100)
+      : null;
+  const MAIN_TFS: ChartTf[] = ["15m", "1h", "4h"];
+  const tfPill = (id: ChartTf) => (id === "15m" ? "M15" : id === "1h" ? "1H" : id === "4h" ? "4H" : chartTfLabel(id));
+
   return (
     <div className="atalaya-charts relative flex h-full min-h-0 flex-col" data-chart-workspace="1">
       <div className="atalaya-charts-toolbar">
-        <div className="atalaya-charts-head flex items-center gap-1">
-          <button
-            type="button"
-            onClick={onBackToList}
-            className="flex size-11 items-center justify-center rounded-[var(--radius-md)] text-muted"
-            aria-label="Volver"
-          >
-            <ChevronLeft className="size-5" />
-          </button>
-          <p className="atalaya-charts-title flex-1 text-sm font-medium tracking-wide">GRÁFICO</p>
-          <button
-            type="button"
-            className="flex size-11 items-center justify-center rounded-[var(--radius-md)] text-muted"
-            aria-label={starred ? "Quitar de favoritos" : "Añadir a favoritos"}
-            onClick={() =>
-              onFavs((prev) =>
-                prev.includes(assetId) ? prev.filter((id) => id !== assetId) : [...prev, assetId],
-              )
-            }
-          >
-            <Star className={starred ? "size-4 fill-wait text-wait" : "size-4"} />
-          </button>
+        <div className="atalaya-charts-head flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={onBackToList}
+              className="flex size-11 items-center justify-center rounded-[var(--radius-md)] text-muted"
+              aria-label="Volver"
+            >
+              <ChevronLeft className="size-5" />
+            </button>
+            <AtalayaMark className="size-6 text-cyan" />
+            <p className="atalaya-charts-title text-[13px] font-semibold tracking-[0.16em] uppercase">Atalaya</p>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="atalaya-pill is-ok">
+              <span className="atalaya-status-dot" />
+              Operativo
+            </span>
+            <button
+              type="button"
+              className="flex size-11 items-center justify-center rounded-[var(--radius-md)] text-muted"
+              aria-label={starred ? "Quitar de favoritos" : "Añadir a favoritos"}
+              onClick={() =>
+                onFavs((prev) =>
+                  prev.includes(assetId) ? prev.filter((id) => id !== assetId) : [...prev, assetId],
+                )
+              }
+            >
+              <Star className={starred ? "size-4 fill-wait text-wait" : "size-4"} />
+            </button>
+          </div>
         </div>
 
-        <div className="atalaya-charts-pickers mt-1 flex items-center gap-1.5">
-          <Picker
-            open={menu === "asset"}
-            label={assetId}
-            menuWidth="asset"
-            onToggle={() => onMenu(menu === "asset" ? null : "asset")}
-            onClose={() => onMenu(null)}
-          >
-            {ASSETS.map((a) => (
-              <PickerItem
-                key={a.id}
-                active={a.id === assetId}
-                title={a.label}
-                detail={CHART_ASSET_BLURB[a.id]}
-                onClick={() => onAsset(a.id)}
-              />
-            ))}
-          </Picker>
-          <Picker
-            open={menu === "tf"}
-            label={chartTfLabel(tf)}
-            onToggle={() => onMenu(menu === "tf" ? null : "tf")}
-            onClose={() => onMenu(null)}
-          >
-            {CHART_TFS.map((t) => (
-              <PickerItem key={t.id} active={t.id === tf} title={t.label} onClick={() => onTf(t.id)} />
-            ))}
-          </Picker>
-          {series ? (
-            <LivePrice
-              assetId={assetId}
-              digits={series.digits}
-              seed={seedClose}
-              seedSpot={analysis?.priceSpot ?? null}
-              subscribe={live.subscribe}
-            />
-          ) : (
-            <span className="flex-1" />
-          )}
+        <div className="mt-2 flex items-start gap-3 px-1">
+          <AssetMark id={assetId} size="lg" />
+          <div className="min-w-0 flex-1">
+            <p className="text-lg font-semibold tracking-tight">{assetId}</p>
+            <p className="text-xs text-subtle">{ASSET_SUBTITLE[assetId]}</p>
+            <div className="mt-1 flex flex-wrap items-end gap-2">
+              {series ? (
+                <LivePrice
+                  assetId={assetId}
+                  digits={series.digits}
+                  seed={seedClose}
+                  seedSpot={analysis?.priceSpot ?? null}
+                  subscribe={live.subscribe}
+                  hero
+                />
+              ) : (
+                <span className="font-mono text-2xl tabular">—</span>
+              )}
+              {chg != null ? (
+                <p className={cn("font-mono text-xs tabular", up ? "text-buy" : "text-sell")}>
+                  {absChange != null
+                    ? `${new Intl.NumberFormat("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero" }).format(absChange)} (${new Intl.NumberFormat("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero" }).format(chg)}%)`
+                    : `${new Intl.NumberFormat("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero" }).format(chg)}%`}
+                </p>
+              ) : null}
+            </div>
+          </div>
           <button
             type="button"
             className="flex size-11 shrink-0 items-center justify-center rounded-[var(--radius-md)] text-muted"
@@ -471,9 +449,49 @@ function ChartWorkspace({
           </button>
         </div>
 
+        <div className="atalaya-tf-tabs mt-3">
+          {MAIN_TFS.map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={cn("atalaya-tf-tab", tf === t && "is-active")}
+              onClick={() => onTf(t)}
+            >
+              {tfPill(t)}
+            </button>
+          ))}
+          <Picker
+            open={menu === "tf"}
+            label={MAIN_TFS.includes(tf) ? "Más" : tfPill(tf)}
+            onToggle={() => onMenu(menu === "tf" ? null : "tf")}
+            onClose={() => onMenu(null)}
+          >
+            {CHART_TFS.map((t) => (
+              <PickerItem key={t.id} active={t.id === tf} title={t.label} onClick={() => onTf(t.id)} />
+            ))}
+          </Picker>
+          <Picker
+            open={menu === "asset"}
+            label="Activo"
+            menuWidth="asset"
+            onToggle={() => onMenu(menu === "asset" ? null : "asset")}
+            onClose={() => onMenu(null)}
+          >
+            {ASSETS.map((a) => (
+              <PickerItem
+                key={a.id}
+                active={a.id === assetId}
+                title={a.label}
+                detail={CHART_ASSET_BLURB[a.id]}
+                onClick={() => onAsset(a.id)}
+              />
+            ))}
+          </Picker>
+        </div>
+
         <p
           data-chart-live-status={liveStatus}
-          className="atalaya-charts-status mt-0.5 flex items-center gap-1.5 truncate font-mono text-[11px] tabular text-subtle"
+          className="atalaya-charts-status mt-1 flex items-center gap-1.5 truncate font-mono text-[11px] tabular text-subtle"
           title={series?.proxyNote ?? sourceBits}
         >
           <span className={`size-1.5 shrink-0 rounded-full ${LIVE_DOT[liveStatus]}`} />
@@ -493,9 +511,6 @@ function ChartWorkspace({
           ) : (
             <span className={`shrink-0 ${LIVE_CLASS[liveStatus]}`}>{LIVE_LABEL[liveStatus]}</span>
           )}
-          {series?.instrumentKind === "proxy" ? (
-            <span className="shrink-0 text-wait">{CHART_ASSET_BLURB[assetId]}</span>
-          ) : null}
         </p>
       </div>
 
@@ -577,6 +592,13 @@ function ChartWorkspace({
         </IconTool>
       </div>
 
+      <MarketDock
+        assetId={assetId}
+        asset={analysis}
+        freeze={freezeForAsset}
+        episodeId={freezeForAsset?.episodeId ?? null}
+      />
+
       {menu === "indicators" ? (
         <Panel title="Indicadores" onClose={() => onMenu(null)}>
           <p className="mb-3 text-xs text-subtle">Solo visuales. No cambian T1–T8, calidad ni riesgo.</p>
@@ -630,12 +652,14 @@ function LivePrice({
   seed,
   seedSpot,
   subscribe,
+  hero,
 }: {
   assetId: AssetId;
   digits: number;
   seed: number | null;
   seedSpot: number | null;
   subscribe: (fn: TickHandler) => () => void;
+  hero?: boolean;
 }) {
   const proxyRef = useRef<HTMLSpanElement>(null);
   const spotRef = useRef<HTMLSpanElement>(null);
@@ -681,19 +705,26 @@ function LivePrice({
 
   if (isXau) {
     return (
-      <div className="min-w-0 flex-1 truncate text-right font-mono tabular leading-tight">
-        <p className="text-sm font-medium">
+      <div className={hero ? "min-w-0" : "min-w-0 flex-1 truncate text-right font-mono tabular leading-tight"}>
+        <p className={hero ? "font-mono text-2xl font-semibold tabular leading-none" : "text-sm font-medium"}>
           <span ref={spotRef} data-chart-spot>
             {spot0 != null ? formatPrice(spot0, digits) : "—"}
           </span>
-          <span className="ml-1 text-[10px] font-medium tracking-wide text-subtle">SPOT</span>
+          {hero ? null : <span className="ml-1 text-[10px] font-medium tracking-wide text-subtle">SPOT</span>}
         </p>
-        <p className="text-[10px] text-wait">
-          <span ref={proxyRef} data-chart-price data-chart-live={q0 != null ? "1" : "0"}>
+        {hero ? null : (
+          <p className="text-[10px] text-wait">
+            <span ref={proxyRef} data-chart-price data-chart-live={q0 != null ? "1" : "0"}>
+              {shown != null ? formatPrice(shown, digits) : ""}
+            </span>
+            <span className="ml-1 font-medium tracking-wide">PROXY</span>
+          </p>
+        )}
+        {hero ? (
+          <span ref={proxyRef} data-chart-price data-chart-live={q0 != null ? "1" : "0"} className="sr-only">
             {shown != null ? formatPrice(shown, digits) : ""}
           </span>
-          <span className="ml-1 font-medium tracking-wide">PROXY</span>
-        </p>
+        ) : null}
         <span ref={delayRef} hidden={!delayed0} className="block text-[10px] font-medium tracking-wide text-wait">
           RETRASADO
         </span>
@@ -705,7 +736,7 @@ function LivePrice({
     <p
       data-chart-price
       data-chart-live={q0 != null ? "1" : "0"}
-      className="min-w-0 flex-1 truncate text-right font-mono text-sm tabular"
+      className={hero ? "font-mono text-2xl font-semibold tabular leading-none" : "min-w-0 flex-1 truncate text-right font-mono text-sm tabular"}
     >
       <span ref={proxyRef}>{shown != null ? formatPrice(shown, digits) : ""}</span>
     </p>
