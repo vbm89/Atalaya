@@ -77,6 +77,32 @@ describe("bandeja de avisos", () => {
     assert.equal(inboxItemKey(inbox[0]!), `${inbox[0]!.episodeId}|100|wait|entry`);
   });
 
+  it("listHistory marks hadV1Entry only from to_state=entry", async () => {
+    const store = createMemoryStore();
+    const entered = foldEpisode(
+      null,
+      { id: "BTCUSD", setupState: "entry", setup, waitReason: null, digits: 2 },
+      100,
+      1_000,
+    );
+    await store.upsertEpisode(entered.episode!);
+    for (const ev of entered.events) await store.insertEvent(ev);
+    const mapSetup = { ...setup, state: "map" as const, missingForEntry: "Falta: salida 15M de la zona a favor." };
+    const mapped = foldEpisode(
+      null,
+      { id: "XAUUSD", setupState: "map", setup: mapSetup, waitReason: null, digits: 2 },
+      200,
+      2_000,
+    );
+    await store.upsertEpisode(mapped.episode!);
+    for (const ev of mapped.events) await store.insertEvent(ev);
+    const history = await store.listHistory(10);
+    const btc = history.find((r) => r.episode.assetId === "BTCUSD");
+    const xau = history.find((r) => r.episode.assetId === "XAUUSD");
+    assert.equal(btc?.hadV1Entry, true);
+    assert.equal(xau?.hadV1Entry, false);
+  });
+
   it("does not duplicate the same transition", async () => {
     const store = createMemoryStore();
     const f = foldEpisode(

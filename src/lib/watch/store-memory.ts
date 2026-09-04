@@ -253,6 +253,9 @@ export function createMemoryStore(): WatchStore {
             firstTouchAtMs: o?.firstTouchAtMs ?? null,
             mfe: o?.mfe ?? null,
             mae: o?.mae ?? null,
+            hadV1Entry: [...events.values()].some(
+              (ev) => ev.episodeId === episode.episodeId && ev.toState === "entry",
+            ),
           };
         });
       return rows;

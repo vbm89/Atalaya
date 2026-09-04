@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getWatchHistory } from "@/lib/watch/watch.fn";
-import { learningCasesFromHistory } from "@/lib/learn/case";
+import { learningCasesFromHistory, v1EntryCases, SETUPS_VS_ENTRIES_NOTE, ENTRY_OUTCOME_NOTE } from "@/lib/learn/case";
 import {
   LEARN_HISTORY_WINDOW,
   buildEvolution,
@@ -40,6 +40,8 @@ export function LearnPanel() {
     () => (history ? summarize(cases) : null),
     [history, cases],
   );
+  const entryCases = useMemo(() => v1EntryCases(cases), [cases]);
+  const entryReport = useMemo(() => summarize(entryCases), [entryCases]);
   const patterns = useMemo(
     () => (history ? detectFindings(cases) : null),
     [history, cases],
@@ -83,7 +85,7 @@ export function LearnPanel() {
         {q.isError ? (
           <p className="text-sm text-sell">No se ha podido leer el historial. No se inventan estadísticas.</p>
         ) : null}
-        {report ? <MemoryView report={report} /> : null}
+        {report ? <MemoryView report={report} entries={entryReport} /> : null}
       </section>
 
       <section className="space-y-3" data-learn-findings>
@@ -401,13 +403,29 @@ function FindingCard({ finding: f }: { finding: Finding }) {
   );
 }
 
-function MemoryView({ report }: { report: ReturnType<typeof summarize> }) {
+function MemoryView({
+  report,
+  entries,
+}: {
+  report: ReturnType<typeof summarize>;
+  entries: ReturnType<typeof summarize>;
+}) {
   return (
     <div className="space-y-3">
       <p className="text-xs leading-relaxed text-wait">{report.mixWarning}</p>
+      <p className="text-xs leading-relaxed text-subtle">{SETUPS_VS_ENTRIES_NOTE}</p>
+
+      <h3 className="text-xs font-medium tracking-wider text-muted uppercase">Setups V1</h3>
       {report.byAsset.map((b) => (
-        <AssetMemory key={b.key} bucket={b} />
+        <AssetMemory key={b.key} bucket={b} kind="setups" />
       ))}
+
+      <h3 className="text-xs font-medium tracking-wider text-muted uppercase">Entradas V1</h3>
+      <p className="text-[11px] leading-snug text-subtle">{ENTRY_OUTCOME_NOTE}</p>
+      {entries.byAsset.map((b) => (
+        <AssetMemory key={`entry-${b.key}`} bucket={b} kind="entries" />
+      ))}
+
       <details className="rounded-[var(--radius-md)] bg-elevated px-3 py-2">
         <summary className="cursor-pointer text-sm font-medium">Combinado (todos los activos)</summary>
         <div className="mt-2">
@@ -446,11 +464,15 @@ function MemoryView({ report }: { report: ReturnType<typeof summarize> }) {
   );
 }
 
-function AssetMemory({ bucket }: { bucket: BucketStats }) {
+function AssetMemory({ bucket, kind }: { bucket: BucketStats; kind: "setups" | "entries" }) {
   return (
-    <article className="rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]" data-stats-asset={bucket.key}>
+    <article
+      className="rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]"
+      data-stats-asset={bucket.key}
+      data-learn-kind={kind}
+    >
       <p className="text-sm font-medium">{bucket.label}</p>
-      <BucketBody bucket={bucket} />
+      <BucketBody bucket={bucket} kind={kind} />
     </article>
   );
 }
@@ -466,18 +488,23 @@ function MiniBucket({ bucket }: { bucket: BucketStats }) {
   );
 }
 
-function BucketBody({ bucket }: { bucket: BucketStats }) {
+function BucketBody({ bucket, kind }: { bucket: BucketStats; kind?: "setups" | "entries" }) {
   const period = periodLabel(bucket.periodFromMs, bucket.periodToMs);
+  const decided = bucket.success.n;
+  const insufficient = kind === "entries" && decided < 20;
   return (
     <div className="mt-1 space-y-1.5 text-sm">
       <p className="text-muted">
-        Casos: {bucket.total} · trainable {bucket.trainable} · excluidos {bucket.excluded}
+        {kind === "entries" ? "Entradas" : "Casos"}: {bucket.total} · trainable {bucket.trainable} · excluidos {bucket.excluded}
       </p>
       <p>
         TP1: {bucket.tp1} · TP2: {bucket.tp2} · SL: {bucket.sl} · EXPIRADA: {bucket.expired}
         {bucket.pending ? ` · PENDIENTE: ${bucket.pending}` : ""}
       </p>
-      <p>Éxito (TP1 o TP2, una operación): {formatPct(bucket.success)}</p>
+      <p>
+        WR (TP1+TP2) / (TP1+TP2+SL): {formatPct(bucket.success)}
+        {insufficient ? ` · INSUFICIENTE (n = ${decided})` : ""}
+      </p>
       <p className="text-muted">SL: {formatPct(bucket.fail)} · TP2 (dentro del decidido): {formatPct(bucket.tp2Share)}</p>
       {bucket.success.n >= 20 && bucket.success.wilsonLow != null && bucket.success.wilsonHigh != null ? (
         <p className="text-xs text-subtle">

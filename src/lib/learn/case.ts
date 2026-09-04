@@ -61,6 +61,8 @@ export interface LearningCase {
   trainable: boolean;
   exclusionReason: ExclusionReason | null;
   complete: boolean;
+  /** True only from signal_events.to_state === 'entry'. Never inferred from SL/TP. Absent = false. */
+  hadV1Entry?: boolean;
   /** production = historial real. test = fixtures. Ausente se trata como production. */
   origin?: "production" | "test";
 }
@@ -182,6 +184,7 @@ export function learningCaseFromHistory(row: HistoryRow): LearningCase {
     trainable: exclusion == null,
     exclusionReason: exclusion,
     complete: completePhoto(f),
+    hadV1Entry: row.hadV1Entry === true,
     origin: "production",
   };
 }
@@ -197,4 +200,20 @@ export function learningCasesFromHistory(rows: HistoryRow[]): LearningCase[] {
     out.push(learningCaseFromHistory(row));
   }
   return out;
+}
+
+export const SETUPS_VS_ENTRIES_NOTE =
+  "SETUPS incluye MAP/PENDING. ENTRADAS incluye únicamente episodios con ENTRY real de V1.";
+
+export const ENTRY_OUTCOME_NOTE =
+  "Outcome actual del episodio; no equivale necesariamente al resultado de una operación ejecutada.";
+
+/** Real V1 ENTRY = signal_events.to_state === 'entry'. Never inferred from outcome/SL/TP. */
+export function hadV1EntryEvent(row: Pick<HistoryRow, "hadV1Entry">): boolean {
+  return row.hadV1Entry === true;
+}
+
+/** Subset for the ENTRADAS V1 block. Does not alter P5 TRAIN/TEST/findings. */
+export function v1EntryCases(cases: LearningCase[]): LearningCase[] {
+  return cases.filter((c) => c.hadV1Entry === true);
 }

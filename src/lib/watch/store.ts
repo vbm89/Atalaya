@@ -12,6 +12,8 @@ export interface HistoryRow {
   firstTouchAtMs: number | null;
   mfe: number | null;
   mae: number | null;
+  /** True only when signal_events has to_state = 'entry'. Never inferred from outcome. */
+  hadV1Entry?: boolean;
 }
 
 export type EvalStatus = "pending" | "ok" | "failed" | "lag";
@@ -532,7 +534,11 @@ export function createPgStore(sql: SqlQuery): WatchStore {
 
     async listHistory(limit) {
       const rows = await sql.query<Record<string, unknown>>(
-        `select e.*, o.outcome, o.first_touch, o.first_touch_at, o.mfe, o.mae
+        `select e.*, o.outcome, o.first_touch, o.first_touch_at, o.mfe, o.mae,
+                exists (
+                  select 1 from signal_events ev
+                  where ev.episode_id = e.episode_id and ev.to_state = 'entry'
+                ) as had_v1_entry
          from signal_episodes e
          left join signal_outcomes o on o.episode_id = e.episode_id
          order by e.opened_at desc
@@ -546,6 +552,7 @@ export function createPgStore(sql: SqlQuery): WatchStore {
         firstTouchAtMs: r.first_touch_at == null ? null : ms(r.first_touch_at),
         mfe: r.mfe == null ? null : num(r.mfe),
         mae: r.mae == null ? null : num(r.mae),
+        hadV1Entry: r.had_v1_entry === true,
       }));
     },
 
