@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getWatchHistory } from "@/lib/watch/watch.fn";
 import { learningCasesFromHistory, v1EntryCases, SETUPS_VS_ENTRIES_NOTE, ENTRY_OUTCOME_NOTE } from "@/lib/learn/case";
@@ -12,6 +12,13 @@ import {
 import { detectFindings, type Finding } from "@/lib/learn/patterns";
 import { actionableProposals, proposalsFromCases, type Proposal } from "@/lib/learn/proposals";
 import { runValidation, type ValidationRecord } from "@/lib/learn/validate";
+import {
+  NON_ENTRY_GATES,
+  explainNonEntries,
+  exampleChecks,
+  type NonEntryGateId,
+  type NonEntryReport,
+} from "@/lib/learn/non-entry";
 import {
   evidenceLabel,
   formatMadridDate,
@@ -42,6 +49,7 @@ export function LearnPanel() {
   );
   const entryCases = useMemo(() => v1EntryCases(cases), [cases]);
   const entryReport = useMemo(() => summarize(entryCases), [entryCases]);
+  const nonEntry = useMemo(() => explainNonEntries(cases), [cases]);
   const patterns = useMemo(
     () => (history ? detectFindings(cases) : null),
     [history, cases],
@@ -85,7 +93,7 @@ export function LearnPanel() {
         {q.isError ? (
           <p className="text-sm text-sell">No se ha podido leer el historial. No se inventan estadísticas.</p>
         ) : null}
-        {report ? <MemoryView report={report} entries={entryReport} /> : null}
+        {report ? <MemoryView report={report} entries={entryReport} nonEntry={nonEntry} /> : null}
       </section>
 
       <section className="space-y-3" data-learn-findings>
@@ -403,12 +411,97 @@ function FindingCard({ finding: f }: { finding: Finding }) {
   );
 }
 
+function NonEntryView({ report }: { report: NonEntryReport }) {
+  const [gate, setGate] = useState<NonEntryGateId | "multiple" | "unknown" | null>(null);
+  const sample =
+    gate === "unknown"
+      ? report.rows.filter((r) => r.unknown).slice(0, 3)
+      : gate === "multiple"
+        ? report.rows.filter((r) => !r.unknown && r.gates.length > 1).slice(0, 3)
+        : gate
+          ? report.rows.filter((r) => r.gates.includes(gate)).slice(0, 3)
+          : report.rows.slice(0, 1);
+
+  return (
+    <article className="rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]" data-learn-non-entry>
+      <h3 className="text-xs font-medium tracking-wider text-muted uppercase">¿Por qué no entró V1?</h3>
+      <p className="mt-1 text-sm">
+        {report.total} setups sin ENTRY
+      </p>
+      <p className="mt-1 text-[11px] leading-snug text-subtle">{report.notice}</p>
+      <ul className="mt-3 space-y-1">
+        {NON_ENTRY_GATES.map((g) => (
+          <li key={g.id}>
+            <button
+              type="button"
+              onClick={() => setGate((cur) => (cur === g.id ? null : g.id))}
+              className="flex w-full items-center justify-between gap-3 py-1 text-left text-sm"
+            >
+              <span className={gate === g.id ? "text-fg" : "text-muted"}>{g.label}</span>
+              <span className="tabular">{report.gateHits[g.id]}</span>
+            </button>
+          </li>
+        ))}
+        <li>
+          <button
+            type="button"
+            onClick={() => setGate((cur) => (cur === "multiple" ? null : "multiple"))}
+            className="flex w-full items-center justify-between gap-3 py-1 text-left text-sm"
+          >
+            <span className={gate === "multiple" ? "text-fg" : "text-muted"}>Múltiples filtros (setups)</span>
+            <span className="tabular">{report.exclusiveMultiple}</span>
+          </button>
+        </li>
+        <li>
+          <button
+            type="button"
+            onClick={() => setGate((cur) => (cur === "unknown" ? null : "unknown"))}
+            className="flex w-full items-center justify-between gap-3 py-1 text-left text-sm"
+          >
+            <span className={gate === "unknown" ? "text-fg" : "text-muted"}>Sin reconstruir</span>
+            <span className="tabular">{report.unknown}</span>
+          </button>
+        </li>
+      </ul>
+      <p className="mt-2 text-[11px] leading-snug text-subtle">{report.hitsNote}</p>
+      <p className="text-[11px] text-subtle">
+        Setups exclusivos: 1 filtro {report.exclusiveSingle} · varios {report.exclusiveMultiple} · desconocido {report.unknown}
+      </p>
+      {sample.length ? (
+        <ul className="mt-3 space-y-3 border-t border-border pt-3">
+          {sample.map((row) => {
+            const checks = exampleChecks(row);
+            return (
+              <li key={row.episodeId} className="text-sm">
+                <p className="font-medium">
+                  {row.assetId} · {row.direction === "buy" ? "BUY" : "SELL"} · {row.openedState.toUpperCase()}
+                </p>
+                {row.unknown ? (
+                  <p className="mt-1 text-xs text-wait">Motivo no reconstruible con el freeze.</p>
+                ) : (
+                  <ul className="mt-1 space-y-0.5 text-xs text-muted">
+                    {checks.filter((c) => c.missing).map((c) => (
+                      <li key={c.id}>Faltaba {c.label}</li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </article>
+  );
+}
+
 function MemoryView({
   report,
   entries,
+  nonEntry,
 }: {
   report: ReturnType<typeof summarize>;
   entries: ReturnType<typeof summarize>;
+  nonEntry: NonEntryReport;
 }) {
   return (
     <div className="space-y-3">
@@ -425,6 +518,8 @@ function MemoryView({
       {entries.byAsset.map((b) => (
         <AssetMemory key={`entry-${b.key}`} bucket={b} kind="entries" />
       ))}
+
+      <NonEntryView report={nonEntry} />
 
       <details className="rounded-[var(--radius-md)] bg-elevated px-3 py-2">
         <summary className="cursor-pointer text-sm font-medium">Combinado (todos los activos)</summary>
