@@ -1,15 +1,17 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CircleHelp, ListFilter, UserRound } from "lucide-react";
+import { CircleHelp, UserRound } from "lucide-react";
 import { getWatchHistory, getWatchEpisode } from "@/lib/watch/watch.fn";
 import { historyCardModel } from "@/lib/watch/history-view";
 import { ASSETS } from "@/lib/trading/assets";
 import type { AssetId } from "@/lib/trading/types";
 import type { HistoryRow } from "@/lib/watch/store";
 import { EpisodeMemory } from "./episode-memory";
+import { AssetMark } from "./marks";
 
 type DirectionFilter = "all" | "buy" | "sell";
 type OutcomeFilter = "all" | "tp1" | "tp2" | "sl" | "expired" | "pending";
+
 
 const OUTCOME_FILTERS: { id: OutcomeFilter; label: string }[] = [
   { id: "all", label: "Todos" },
@@ -41,11 +43,19 @@ function ChartMixIcon({ className }: { className?: string }) {
 }
 
 function outcomeBadgeClass(cls: string): string {
-  if (cls.includes("buy")) return "bg-buy-dim text-buy";
-  if (cls.includes("sell")) return "bg-sell-dim text-sell";
-  if (cls.includes("wait")) return "bg-wait-dim text-wait";
-  return "bg-surface text-muted";
+  if (cls.includes("buy")) return "atalaya-badge atalaya-badge-entry";
+  if (cls.includes("sell")) return "atalaya-badge atalaya-badge-sell";
+  if (cls.includes("wait")) return "atalaya-badge atalaya-badge-wait";
+  return "atalaya-badge atalaya-badge-muted";
 }
+
+function resultR(row: HistoryRow, rr: string | null): string | null {
+  if (row.outcome === "sl") return "−1,00R";
+  if (row.outcome === "expired") return "0,00R";
+  if ((row.outcome === "tp1" || row.outcome === "tp2") && rr) return `+${rr}R`;
+  return null;
+}
+
 
 function HistoryRowCard({
   row,
@@ -65,13 +75,8 @@ function HistoryRowCard({
   const card = historyCardModel(row);
   const buy = row.episode.direction === "buy";
   const side = buy ? "BUY" : "SELL";
-  const meta = [
-    `Abrió como ${card.signalOpened}`,
-    card.quality ? `calidad ${card.quality}` : null,
-    card.rr ? `R:R ${card.rr}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const rLabel = resultR(row, card.rr);
+  const date = card.openedStamp.replace(/,?\s+\d{2}:\d{2}:\d{2}$/, "");
 
   return (
     <li>
@@ -83,46 +88,25 @@ function HistoryRowCard({
       >
         <button
           type="button"
-          className="w-full px-3.5 pt-3 pb-2.5 text-left"
+          className="flex w-full items-center gap-3 px-3.5 pt-3 pb-2.5 text-left"
           onClick={() => onOpenEpisode(card.episodeId, card.assetId)}
         >
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-sm font-medium tracking-wide">
-              {card.assetId}
-              <span className="text-subtle"> · </span>
-              <span className={buy ? "text-buy" : "text-sell"}>{side}</span>
-              <span className="text-subtle"> · </span>
-              <span className="text-muted">{card.timeframe}</span>
+          <AssetMark id={card.assetId} size="sm" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold tracking-wide">{card.assetId}</p>
+            <p className="mt-0.5 font-mono text-[11px] tabular text-subtle">{date}</p>
+          </div>
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex items-center gap-1.5">
+              <span className={buy ? "text-xs font-semibold text-buy" : "text-xs font-semibold text-sell"}>{side}</span>
+              <span className={outcomeBadgeClass(card.outcomeCls)}>{card.outcome}</span>
+            </div>
+            <p className="font-mono text-[11px] tabular text-subtle">
+              {card.rr ? `R:R ${card.rr}` : ""}
+              {rLabel ? `  ${rLabel}` : ""}
             </p>
-            <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium tracking-wide ${outcomeBadgeClass(card.outcomeCls)}`}
-            >
-              {card.outcome}
-            </span>
           </div>
-          <p className="mt-1 text-xs leading-snug text-muted">{meta}</p>
-          <p className="mt-0.5 font-mono text-[11px] tabular text-subtle">
-            {card.openedStamp}
-            {card.closedStamp ? ` → ${card.closedStamp}` : ""}
-          </p>
-          <div className="mt-2.5 grid grid-cols-3 gap-2">
-            <div>
-              <p className="text-[10px] font-medium tracking-[0.14em] text-muted uppercase">Entrada</p>
-              <p className="mt-0.5 font-mono text-sm tabular text-fg">{card.entry}</p>
-            </div>
-            <div>
-              <p className="text-[10px] font-medium tracking-[0.14em] text-sell uppercase">SL</p>
-              <p className="mt-0.5 font-mono text-sm tabular text-sell">{card.sl}</p>
-            </div>
-            <div>
-              <p className="text-[10px] font-medium tracking-[0.14em] text-buy uppercase">TP1</p>
-              <p className="mt-0.5 font-mono text-sm tabular text-buy">{card.tp1}</p>
-            </div>
-          </div>
-          {card.tp2 ? (
-            <p className="mt-1 font-mono text-[11px] tabular text-buy">TP2 {card.tp2}</p>
-          ) : null}
-          <p className="mt-2 text-[11px] leading-snug text-subtle">{card.wick}</p>
+          <span className="text-subtle">›</span>
         </button>
 
         <div
@@ -183,7 +167,6 @@ export function HistoryPanel({
   onWhy?: (row: HistoryRow) => void;
 }) {
   const [journalEpisodeId, setJournalEpisodeId] = useState<string | null>(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [assetFilter, setAssetFilter] = useState<AssetId | "all">("all");
   const [directionFilter, setDirectionFilter] = useState<DirectionFilter>("all");
   const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>("all");
@@ -203,10 +186,6 @@ export function HistoryPanel({
       return true;
     });
   }, [rows, assetFilter, directionFilter, outcomeFilter]);
-  const activeFilters =
-    (assetFilter !== "all" ? 1 : 0) +
-    (directionFilter !== "all" ? 1 : 0) +
-    (outcomeFilter !== "all" ? 1 : 0);
 
   if (q.isLoading) {
     return <p className="mt-4 text-sm text-subtle">Cargando historial…</p>;
@@ -228,80 +207,31 @@ export function HistoryPanel({
   }
 
   return (
-    <div className="mt-4" data-history-list>
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs tabular text-subtle">
-          {filtered.length === rows.length
-            ? `${rows.length} episodios`
-            : `${filtered.length} de ${rows.length}`}
-        </p>
-        <button
-          type="button"
-          data-history-filter
-          aria-expanded={filtersOpen}
-          aria-label="Filtrar historial"
-          className={
-            filtersOpen || activeFilters
-              ? "inline-flex min-h-11 items-center gap-1.5 rounded-[var(--radius-md)] bg-buy-dim px-3 text-xs font-medium text-buy"
-              : "inline-flex min-h-11 items-center gap-1.5 rounded-[var(--radius-md)] bg-elevated px-3 text-xs font-medium text-muted shadow-[var(--shadow-border)]"
-          }
-          onClick={() => setFiltersOpen((v) => !v)}
-        >
-          <ListFilter className="size-3.5" />
-          Filtrar
-          {activeFilters ? <span className="tabular">{activeFilters}</span> : null}
-        </button>
+    <div className="mt-2" data-history-list>
+      <h2 className="text-xl font-semibold tracking-tight">Historial</h2>
+      <p className="mt-0.5 text-sm text-subtle">Todas las señales de Atalaya</p>
+      <div className="atalaya-chip-row mt-3">
+        <FilterChip active={assetFilter === "all"} onClick={() => setAssetFilter("all")}>
+          Todas
+        </FilterChip>
+        {ASSETS.map((a) => (
+          <FilterChip key={a.id} active={assetFilter === a.id} onClick={() => setAssetFilter(a.id)}>
+            {a.id}
+          </FilterChip>
+        ))}
       </div>
-
-      {filtersOpen ? (
-        <div className="mt-3 space-y-3 rounded-[var(--radius-lg)] bg-elevated px-3 py-3 shadow-[var(--shadow-border)]">
-          <div>
-            <p className="text-[10px] font-medium tracking-[0.14em] text-subtle uppercase">Activo</p>
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              <FilterChip active={assetFilter === "all"} onClick={() => setAssetFilter("all")}>
-                Todos
-              </FilterChip>
-              {ASSETS.map((a) => (
-                <FilterChip
-                  key={a.id}
-                  active={assetFilter === a.id}
-                  onClick={() => setAssetFilter(a.id)}
-                >
-                  {a.id}
-                </FilterChip>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="text-[10px] font-medium tracking-[0.14em] text-subtle uppercase">Dirección</p>
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              <FilterChip active={directionFilter === "all"} onClick={() => setDirectionFilter("all")}>
-                Todas
-              </FilterChip>
-              <FilterChip active={directionFilter === "buy"} onClick={() => setDirectionFilter("buy")}>
-                BUY
-              </FilterChip>
-              <FilterChip active={directionFilter === "sell"} onClick={() => setDirectionFilter("sell")}>
-                SELL
-              </FilterChip>
-            </div>
-          </div>
-          <div>
-            <p className="text-[10px] font-medium tracking-[0.14em] text-subtle uppercase">Resultado</p>
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {OUTCOME_FILTERS.map((f) => (
-                <FilterChip
-                  key={f.id}
-                  active={outcomeFilter === f.id}
-                  onClick={() => setOutcomeFilter(f.id)}
-                >
-                  {f.label}
-                </FilterChip>
-              ))}
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <div className="atalaya-chip-row mt-2">
+        {OUTCOME_FILTERS.map((f) => (
+          <FilterChip key={f.id} active={outcomeFilter === f.id} onClick={() => setOutcomeFilter(f.id)}>
+            {f.label}
+          </FilterChip>
+        ))}
+      </div>
+      <p className="mt-2 text-xs tabular text-subtle">
+        {filtered.length === rows.length
+          ? `${rows.length} episodios`
+          : `${filtered.length} de ${rows.length}`}
+      </p>
 
       {filtered.length ? (
         <ul className="mt-3 space-y-2.5">
@@ -339,8 +269,8 @@ function FilterChip({
       aria-pressed={active}
       className={
         active
-          ? "min-h-8 rounded-full bg-buy-dim px-2.5 text-[11px] font-medium text-buy"
-          : "min-h-8 rounded-full bg-surface px-2.5 text-[11px] font-medium text-muted"
+          ? "atalaya-chip is-active"
+          : "atalaya-chip"
       }
       onClick={onClick}
     >

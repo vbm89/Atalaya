@@ -1,12 +1,28 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Bell } from "lucide-react";
-import { getWatchInbox } from "@/lib/watch/watch.fn";
+import { getWatchInbox, getWatchHistory } from "@/lib/watch/watch.fn";
 import { formatMadridClock } from "@/lib/watch/clock";
 import { inboxItemKey, inboxPushLabel, inboxStateLabel, type InboxItem } from "@/lib/watch/inbox";
 import { loadReadKeys, markInboxRead } from "@/lib/watch/inbox-read";
 import type { AssetId } from "@/lib/trading/types";
 import { cn } from "@/lib/utils";
+
+type Filter = "all" | "entry" | "result" | "system";
+
+function timeAgo(atMs: number, now: number): string {
+  const d = Math.max(0, now - atMs);
+  if (d < 45_000) return "Hace un momento";
+  if (d < 3600_000) return `Hace ${Math.max(1, Math.round(d / 60_000))} min`;
+  if (d < 86400_000) return `Hace ${Math.max(1, Math.round(d / 3600_000))} h`;
+  return formatMadridClock(atMs);
+}
+
+function toneForInbox(row: InboxItem): string {
+  if (row.toState === "entry") return "bg-buy";
+  if (row.toState === "pending") return "bg-cyan";
+  if (row.toState === "map") return "bg-map";
+  return "bg-muted";
+}
 
 export function InboxPanel({
   onOpen,
@@ -20,31 +36,88 @@ export function InboxPanel({
     refetchInterval: 30_000,
     retry: 0,
   });
+  const hist = useQuery({
+    queryKey: ["watch-history"],
+    queryFn: () => getWatchHistory(),
+    staleTime: 20_000,
+    retry: 0,
+  });
   const [read, setRead] = useState<Set<string>>(() => loadReadKeys());
+  const [filter, setFilter] = useState<Filter>("all");
   const rows: InboxItem[] = q.data ?? [];
   const unread = rows.filter((r) => !read.has(inboxItemKey(r))).length;
+  const now = Date.now();
+
+  const results = useMemo(() => {
+    return (hist.data ?? [])
+      .filter((r) => r.outcome === "tp1" || r.outcome === "tp2" || r.outcome === "sl")
+      .map((r) => ({
+        id: `res-${r.episode.episodeId}`,
+        episodeId: r.episode.episodeId,
+        assetId: r.episode.assetId,
+        direction: r.episode.direction,
+        title: (r.outcome ?? "").toUpperCase(),
+        atMs: r.firstTouchAtMs ?? r.episode.closedAtMs ?? r.episode.openedAtMs,
+        tone: r.outcome === "sl" ? "bg-sell" : "bg-buy",
+      }));
+  }, [hist.data]);
+
+  const visibleInbox = rows.filter((r) => {
+    if (filter === "entry") return r.toState === "entry";
+    if (filter === "result") return false;
+    if (filter === "system") return r.toState === "wait" || r.toState === "map";
+    return true;
+  });
 
   return (
-    <section className="rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]" data-inbox>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-medium tracking-wider text-muted uppercase">Bandeja</p>
-          <p className="mt-0.5 text-sm text-subtle">
-            Últimos 20 eventos. Independiente del Push de iOS
-            {unread ? ` · ${unread} sin leer` : ""}.
-          </p>
-        </div>
-        <Bell className="mt-0.5 size-4 text-muted" />
+    <section className="space-y-3" data-inbox>
+      <div>
+        <h2 className="text-xl font-semibold tracking-tight">Alertas</h2>
+        <p className="mt-0.5 text-sm text-subtle">
+          Notificaciones y eventos del sistema
+          {unread ? ` · ${unread} sin leer` : ""}
+        </p>
+      </div>
+      <div className="atalaya-chip-row">
+        <Chip active={filter === "all"} onClick={() => setFilter("all")}>Todas</Chip>
+        <Chip active={filter === "entry"} onClick={() => setFilter("entry")}>Entradas</Chip>
+        <Chip active={filter === "result"} onClick={() => setFilter("result")}>Resultados</Chip>
+        <Chip active={filter === "system"} onClick={() => setFilter("system")}>Sistema</Chip>
       </div>
       {q.isLoading ? (
-        <p className="mt-3 text-sm text-subtle">Cargando avisos…</p>
-      ) : !rows.length ? (
-        <p className="mt-3 text-sm text-subtle">
+        <p className="text-sm text-subtle">Cargando avisos…</p>
+      ) : filter === "result" ? (
+        results.length ? (
+          <ul className="space-y-1">
+            {results.map((row) => (
+              <li key={row.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpen(row.episodeId, row.assetId)}
+                  className="atalaya-alert-row"
+                >
+                  <span className={cn("atalaya-alert-dot", row.tone)} />
+                  <span className="min-w-0 flex-1 text-left">
+                    <span className="block text-sm font-semibold">{row.title}</span>
+                    <span className="block text-xs text-subtle">
+                      {row.assetId} · {row.direction === "buy" ? "BUY" : "SELL"}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-xs text-subtle">{timeAgo(row.atMs, now)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-subtle">Sin resultados registrados todavía.</p>
+        )
+      ) : !visibleInbox.length ? (
+        <p className="text-sm text-subtle">
           Todavía no hay avisos. Si el Push falla, el evento aparece aquí igual.
         </p>
       ) : (
-        <ul className="mt-3 space-y-1">
-          {rows.map((row) => {
+        <ul className="space-y-1">
+          {visibleInbox.map((row) => {
             const key = inboxItemKey(row);
             const isRead = read.has(key);
             return (
@@ -55,25 +128,22 @@ export function InboxPanel({
                     setRead(markInboxRead(row, read));
                     onOpen(row.episodeId, row.assetId);
                   }}
-                  className="flex min-h-11 w-full items-start justify-between gap-3 rounded-[var(--radius-md)] bg-surface px-3 py-2 text-left"
+                  className="atalaya-alert-row"
                   data-inbox-item={row.episodeId}
                   data-inbox-read={isRead ? "1" : "0"}
                 >
-                  <span>
+                  <span className={cn("atalaya-alert-dot", toneForInbox(row))} />
+                  <span className="min-w-0 flex-1 text-left">
                     <span className={cn("block text-sm", isRead ? "font-medium" : "font-semibold")}>
-                      {row.assetId} · {inboxStateLabel(row.toState)}
+                      {inboxStateLabel(row.toState)}
                     </span>
                     <span className="mt-0.5 block text-xs text-subtle">
-                      {row.direction === "buy" ? "COMPRA" : "VENTA"} ·{" "}
-                      {row.live ? "vigente" : "caducado"}
-                      {" · "}
-                      {inboxPushLabel(row)}
+                      {row.assetId} · {row.direction === "buy" ? "BUY" : "SELL"}
                       {isRead ? "" : " · no leído"}
                     </span>
+                    <span className="sr-only">{inboxPushLabel(row)}</span>
                   </span>
-                  <span className="shrink-0 font-mono text-xs tabular text-muted">
-                    {formatMadridClock(row.atMs)}
-                  </span>
+                  <span className="shrink-0 text-xs text-subtle">{timeAgo(row.atMs, now)}</span>
                 </button>
               </li>
             );
@@ -81,5 +151,17 @@ export function InboxPanel({
         </ul>
       )}
     </section>
+  );
+}
+
+function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={active ? "atalaya-chip is-active" : "atalaya-chip"}
+    >
+      {children}
+    </button>
   );
 }
