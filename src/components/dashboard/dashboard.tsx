@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, House, BarChart3, CalendarDays, BookOpen, GraduationCap, Ellipsis, Settings, Download } from "lucide-react";
+import { RefreshCw, House, BarChart3, CalendarDays, BookOpen, GraduationCap, Ellipsis, Settings, Download, Info } from "lucide-react";
 import { getMarketAnalysis } from "@/lib/market/analysis.fn";
 import { getWatchHealth, getWatchEpisode, getWatchSnapshots, type WatchEpisodeView } from "@/lib/watch/watch.fn";
 import type { AnalysisSnapshot, AssetAnalysis, AssetId } from "@/lib/trading/types";
@@ -34,6 +34,7 @@ import { LearnPanel } from "./learn-panel";
 import { explainFromAnalysis, explainFromHistory, type ExplainView } from "@/lib/learn/explain";
 import type { HistoryRow } from "@/lib/watch/store";
 import { InboxPanel } from "./inbox-panel";
+import { InfoPanel } from "./info-panel";
 import { sheetJournalEpisodeId } from "@/lib/memory/journal";
 
 const CACHE_KEY = "atalaya:last-analysis:v5";
@@ -177,7 +178,7 @@ function overlayWatch(
 
 export function Dashboard() {
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"markets" | "calendar" | "charts" | "history" | "learn" | "settings">("markets");
+  const [tab, setTab] = useState<"markets" | "calendar" | "charts" | "history" | "learn" | "settings" | "info">("markets");
   const [moreOpen, setMoreOpen] = useState(false);
   const [openId, setOpenId] = useState<AssetId | null>(null);
   const [chartIntent, setChartIntent] = useState<ChartIntent | null>(null);
@@ -544,6 +545,8 @@ export function Dashboard() {
                   onCostsChange={setCosts}
                 />
               </div>
+            ) : tab === "info" ? (
+              <InfoPanel disclaimer={snapshot?.disclaimer} source={snapshot?.source} />
             ) : tab === "history" ? (
               <HistoryPanel
                 onOpenEpisode={(episodeId, assetId) => {
@@ -576,14 +579,9 @@ export function Dashboard() {
               </div>
             )}
 
-            {snapshot ? (
+            {snapshot?.errors.length ? (
               <p className="mt-6 pb-4 text-center text-xs leading-relaxed text-subtle">
-                {snapshot.disclaimer}
-                <br />
-                Fuentes: {snapshot.source}
-                {snapshot.errors.length
-                  ? ` · Avisos: ${snapshot.errors.join(" · ")}`
-                  : ""}
+                Avisos: {snapshot.errors.join(" · ")}
               </p>
             ) : null}
           </PullRefresh>
@@ -674,7 +672,7 @@ export function Dashboard() {
           <BookOpen className="size-4" />
         </DockBtn>
         <DockBtn
-          active={tab === "learn" || tab === "settings" || moreOpen}
+          active={tab === "learn" || tab === "settings" || tab === "info" || moreOpen}
           label="Más"
           onClick={() => setMoreOpen((v) => !v)}
         >
@@ -709,6 +707,18 @@ export function Dashboard() {
             >
               <Settings className="size-4 text-muted" />
               Ajustes
+            </button>
+            <button
+              type="button"
+              className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-sm"
+              onClick={() => {
+                setTab("info");
+                setChartIntent(null);
+                setMoreOpen(false);
+              }}
+            >
+              <Info className="size-4 text-muted" />
+              Información
             </button>
             <a
               href="/atalaya-source-236.zip"
