@@ -2,6 +2,7 @@ import type { AssetId, CalendarEvent, Candle } from "../trading/types";
 import { foldEpisode, type EpisodeDraft, type FoldInput, type SignalEventDraft } from "./episode";
 import { slotOpenSec, slotSecFromNow } from "./identity";
 import { resolveOutcome } from "./outcome";
+import { computePostEntryMetrics } from "./post-entry";
 import { FEED_GRACE_MS } from "./schedule";
 import type { WatchStore } from "./store";
 
@@ -182,6 +183,13 @@ export async function runWatchTick(args: {
           candles,
         });
         await args.store.upsertOutcome(ep.episodeId, args.nowMs, resolved);
+        const entryEv =
+          folded.events.find((e) => e.episodeId === ep.episodeId && e.toState === "entry") ??
+          (await args.store.findEntryEvent(ep.episodeId));
+        if (entryEv) {
+          const postEntry = computePostEntryMetrics(ep, entryEv, candles);
+          await args.store.patchOutcomeDetails(ep.episodeId, { postEntry });
+        }
       }
       let written = 0;
       for (const ev of folded.events) {

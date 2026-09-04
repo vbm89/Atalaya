@@ -1,5 +1,6 @@
 import type { AssetAnalysis, SetupProposal, SetupState } from "../trading/types";
 import type { FoldInput } from "./episode";
+import { captureEntryGates, type EntryGates } from "./entry-gates";
 
 /**
  * Photograph of what V1 knew at capture time.
@@ -34,6 +35,8 @@ export interface EpisodeFreeze {
   slWide?: boolean | null;
   setupState?: SetupState | null;
   direction?: "buy" | "sell" | null;
+  /** Parsed from V1 setup.state + missingForEntry at capture. Absent on old rows. */
+  entryGates?: EntryGates | null;
 }
 
 function tfVolume(a: AssetAnalysis, tf: "15m" | "4h"): {
@@ -79,6 +82,7 @@ export function freezeFromAnalysis(a: AssetAnalysis, nowMs: number): EpisodeFree
     slWide: setup?.slWide ?? null,
     setupState: a.setupState,
     direction: setup?.direction ?? null,
+    entryGates: captureEntryGates(a.setupState, setup?.missingForEntry ?? null) ?? null,
   };
 }
 

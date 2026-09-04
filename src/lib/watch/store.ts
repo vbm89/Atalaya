@@ -95,6 +95,9 @@ export interface WatchStore {
   getAlertPinHash(): Promise<string | null>;
   setAlertPinHash(hash: string): Promise<boolean>;
   upsertOutcome(episodeId: string, nowMs: number, result: OutcomeResult): Promise<void>;
+  findEntryEvent(episodeId: string): Promise<SignalEventDraft | null>;
+  patchOutcomeDetails(episodeId: string, patch: Record<string, unknown>): Promise<void>;
+  getOutcomeDetails(episodeId: string): Promise<Record<string, unknown> | null>;
   listHistory(limit: number): Promise<HistoryRow[]>;
   listInbox(limit: number): Promise<InboxItem[]>;
   getPushPrefs(): Promise<PushPrefs>;
@@ -530,6 +533,46 @@ export function createPgStore(sql: SqlQuery): WatchStore {
           JSON.stringify({ rule: result.rule }),
         ],
       );
+    },
+
+    async findEntryEvent(episodeId) {
+      const rows = await sql.query<Record<string, unknown>>(
+        `select episode_id, from_state, to_state, at, slot
+         from signal_events
+         where episode_id = $1 and to_state = 'entry'
+         order by at asc, slot asc
+         limit 1`,
+        [episodeId],
+      );
+      const r = rows[0];
+      if (!r) return null;
+      return {
+        episodeId: String(r.episode_id),
+        fromState: r.from_state as SetupState,
+        toState: r.to_state as SetupState,
+        atMs: ms(r.at),
+        slot: num(r.slot),
+        notified: false as const,
+      };
+    },
+
+    async patchOutcomeDetails(episodeId, patch) {
+      await sql.query(
+        `update signal_outcomes
+         set details = coalesce(details, '{}'::jsonb) || $2::jsonb
+         where episode_id = $1`,
+        [episodeId, JSON.stringify(patch)],
+      );
+    },
+
+    async getOutcomeDetails(episodeId) {
+      const rows = await sql.query<{ details: unknown }>(
+        `select details from signal_outcomes where episode_id = $1`,
+        [episodeId],
+      );
+      const raw = rows[0]?.details;
+      if (raw == null || typeof raw !== "object") return null;
+      return raw as Record<string, unknown>;
     },
 
     async listHistory(limit) {
