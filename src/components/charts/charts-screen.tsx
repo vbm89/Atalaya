@@ -291,13 +291,13 @@ function SymbolRow({
     <li className="flex items-center gap-1 rounded-[var(--radius-lg)] bg-elevated px-2 shadow-[var(--shadow-border)]">
       <button type="button" onClick={onPick} className="min-h-14 flex-1 px-2 py-3 text-left">
         <p className="text-sm font-medium">{id}</p>
-        <p className="text-xs text-muted">{CHART_ASSET_BLURB[id]}</p>
       </button>
       <LiveQuoteReadout
         id={id}
         digits={digits}
         snapshotPrice={snapshotPrice}
         snapshotSpot={snapshotSpot}
+        showSpotLabel={false}
       />
       <button
         type="button"

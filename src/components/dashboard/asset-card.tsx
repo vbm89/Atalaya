@@ -1,6 +1,7 @@
-import { ChevronRight, HelpCircle } from "lucide-react";
+import { useState } from "react";
+import { ChevronRight, HelpCircle, Star } from "lucide-react";
 import { cn, formatDateTime, formatPct, formatPrice, decodeEntities } from "@/lib/utils";
-import type { AssetAnalysis, Timeframe } from "@/lib/trading/types";
+import type { AssetAnalysis, AssetId, Timeframe } from "@/lib/trading/types";
 import { hasChartableSetup } from "@/lib/chart/setup-overlay";
 import { displayEntryPrice } from "@/lib/chart/labels";
 import { setupDistance, distanceUnavailableLabel } from "@/lib/chart/zone-distance";
@@ -14,6 +15,25 @@ import { DataLampChip } from "./data-lamp";
 import { LiveQuoteReadout } from "./live-quote-readout";
 
 const TF_ORDER: Timeframe[] = ["5m", "15m", "1h", "4h"];
+const CHART_FAV_KEY = "atalaya:chart-favs:v1";
+
+function readChartFavs(): AssetId[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(CHART_FAV_KEY);
+    return raw ? (JSON.parse(raw) as AssetId[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeChartFavs(ids: AssetId[]) {
+  try {
+    window.localStorage.setItem(CHART_FAV_KEY, JSON.stringify(ids));
+  } catch {
+    /* ignore */
+  }
+}
 
 export function AssetCard({
   asset,
@@ -249,37 +269,40 @@ export function MarketTile({
 }) {
   const chg = asset.dayChangePct;
   const up = chg == null ? null : chg >= 0;
-  const state = setupStateEs(asset.setupState);
-  const stateCls =
-    asset.setupState === "entry"
-      ? "text-buy"
-      : asset.setupState === "pending"
-        ? "text-wait"
-        : asset.setupState === "map"
-          ? "text-map"
-          : "text-muted";
+  const [starred, setStarred] = useState(() => readChartFavs().includes(asset.id));
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
+    <div
       data-watch-asset={asset.id}
-      className="flex min-h-16 w-full items-center gap-3 rounded-[var(--radius-lg)] bg-elevated px-3 py-2.5 text-left shadow-[var(--shadow-border)]"
+      className="flex min-h-16 w-full items-center gap-2 rounded-[var(--radius-lg)] bg-elevated py-2.5 pr-1 pl-3 shadow-[var(--shadow-border)]"
     >
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold tracking-tight">{asset.label}</p>
-        <p className={cn("mt-0.5 text-xs font-medium tracking-wide", stateCls)}>{state}</p>
-      </div>
-      <div className="w-16 shrink-0">
-        <Sparkline values={asset.sparkline} positive={up} />
-      </div>
-      <LiveQuoteReadout
-        id={asset.id}
-        digits={asset.digits}
-        snapshotPrice={asset.price}
-        snapshotSpot={asset.priceSpot}
-      />
-    </button>
+      <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+        <p className="min-w-0 flex-1 text-sm font-semibold tracking-tight">{asset.label}</p>
+        <div className="w-16 shrink-0">
+          <Sparkline values={asset.sparkline} positive={up} />
+        </div>
+        <LiveQuoteReadout
+          id={asset.id}
+          digits={asset.digits}
+          snapshotPrice={asset.price}
+          snapshotSpot={asset.priceSpot}
+          showSpotLabel={false}
+        />
+      </button>
+      <button
+        type="button"
+        className="flex size-11 shrink-0 items-center justify-center text-muted"
+        aria-label={starred ? "Quitar de favoritos" : "Añadir a favoritos"}
+        onClick={() => {
+          const next = readChartFavs();
+          const ids = next.includes(asset.id) ? next.filter((x) => x !== asset.id) : [...next, asset.id];
+          writeChartFavs(ids);
+          setStarred(ids.includes(asset.id));
+        }}
+      >
+        <Star className={starred ? "size-4 fill-wait text-wait" : "size-4"} />
+      </button>
+    </div>
   );
 }
 

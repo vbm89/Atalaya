@@ -17,6 +17,7 @@ export function LiveQuoteReadout({
   snapshotSpot,
   size = "sm",
   align = "right",
+  showSpotLabel = true,
 }: {
   id: AssetId;
   digits: number;
@@ -24,6 +25,7 @@ export function LiveQuoteReadout({
   snapshotSpot: number | null | undefined;
   size?: "sm" | "lg";
   align?: "left" | "right";
+  showSpotLabel?: boolean;
 }) {
   const mainRef = useRef<HTMLSpanElement>(null);
   const delayRef = useRef<HTMLSpanElement>(null);
@@ -76,7 +78,7 @@ export function LiveQuoteReadout({
       data-live-kind={isXau ? "spot" : "last"}
     >
       <span ref={mainRef}>{initial.main == null ? "—" : formatPrice(initial.main, digits)}</span>
-      {isXau ? (
+      {isXau && showSpotLabel ? (
         <span className="mt-1 block text-[10px] font-medium tracking-wide text-subtle uppercase">SPOT</span>
       ) : null}
       <span ref={delayRef} hidden={!delayed0} className="mt-1 block text-[10px] font-medium tracking-wide text-wait">
