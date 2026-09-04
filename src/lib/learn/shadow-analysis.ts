@@ -4,13 +4,14 @@ import type {
   ShadowEpisode,
   ShadowReplayReport,
 } from "./shadow-replay";
-import { SHADOW_VARIANTS, replayCandidates, buildShadowReplayReport } from "./shadow-replay";
+import { SHADOW_VARIANTS, replayCandidates, buildShadowReplayReport, slotToMs } from "./shadow-replay";
 
 export interface ShadowComparison {
   variant: ShadowCandidateReason;
   deltaVsBaselinePp: number | null;
   testDeltaVsBaselinePp: number | null;
   additionalOpportunities: number;
+  earlierThanBaseline: number;
   testN: number;
   assetCoverage: number;
   assetSuccessRangePp: number | null;
@@ -73,8 +74,8 @@ function makeWalkForward(episodes: readonly ShadowEpisode[], rows: readonly Shad
     const testToMs = ordered[Math.min(trainEnd + block - 1, ordered.length - 1)]!.case.openedAtMs;
     const variants = SHADOW_VARIANTS.map((variant) => {
       const vr = rows.filter((r) => r.variant === variant);
-      const train = vr.filter((r) => r.decisionSlot * 1000 >= trainFromMs && r.decisionSlot * 1000 <= trainToMs);
-      const test = vr.filter((r) => r.decisionSlot * 1000 >= testFromMs && r.decisionSlot * 1000 <= testToMs);
+      const train = vr.filter((r) => slotToMs(r.decisionSlot) >= trainFromMs && slotToMs(r.decisionSlot) <= trainToMs);
+      const test = vr.filter((r) => slotToMs(r.decisionSlot) >= testFromMs && slotToMs(r.decisionSlot) <= testToMs);
       return { variant, trainN: train.length, testN: test.length, testSuccessPct: success(test) };
     });
     windows.push({ index, trainFromMs, trainToMs, testFromMs, testToMs, variants });
@@ -90,11 +91,11 @@ export function analyzeShadowReplay(episodes: readonly ShadowEpisode[]): ShadowA
   const cutMs = ordered[Math.floor(ordered.length * 0.7) - 1]?.case.openedAtMs ?? Number.POSITIVE_INFINITY;
   const baseline = rows.filter((r) => r.variant === "BASELINE_V1");
   const baselineAll = success(baseline);
-  const baselineTest = success(baseline.filter((r) => r.decisionSlot * 1000 > cutMs));
+  const baselineTest = success(baseline.filter((r) => slotToMs(r.decisionSlot) > cutMs));
   const walkForward = makeWalkForward(episodes, rows);
   const comparisons = replay.variants.map((variantReport) => {
     const vr = rows.filter((r) => r.variant === variantReport.variant);
-    const test = vr.filter((r) => r.decisionSlot * 1000 > cutMs);
+    const test = vr.filter((r) => slotToMs(r.decisionSlot) > cutMs);
     const testSuccess = success(test);
     const asset = assetSuccessRange(rows, variantReport.variant);
     const wfPcts = walkForward.flatMap((w) =>
@@ -116,6 +117,7 @@ export function analyzeShadowReplay(episodes: readonly ShadowEpisode[]): ShadowA
       deltaVsBaselinePp: delta,
       testDeltaVsBaselinePp: testDelta,
       additionalOpportunities: variantReport.additionalOpportunities,
+      earlierThanBaseline: variantReport.earlierThanBaseline,
       testN: variantReport.test.success.n,
       assetCoverage: asset.coverage,
       assetSuccessRangePp: asset.range,

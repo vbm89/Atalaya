@@ -86,6 +86,7 @@ export interface ShadowVariantReport {
   candidates: number;
   entries: number;
   additionalOpportunities: number;
+  earlierThanBaseline: number;
   tp1: number;
   tp2: number;
   sl: number;
@@ -94,6 +95,7 @@ export interface ShadowVariantReport {
   success: RateSummary;
   meanPlannedRr: number | null;
   meanOutcomeRr: number | null;
+  expectancyR: number | null;
   falsePositives: number;
   byAsset: ShadowBreakdown[];
   byDirection: ShadowBreakdown[];
@@ -146,6 +148,16 @@ function finite(v: number | null | undefined): v is number {
 
 function mean(values: number[]): number | null {
   return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+}
+
+/** Tape `t` and V1 slots are unix seconds; episode `openedAtMs` is milliseconds. */
+export function slotToMs(slotSec: number): number {
+  return slotSec * 1000;
+}
+
+function barCloseSec(b: ShadowTapeBar): number {
+  const step = b.tf === "15m" ? STEP_15M : b.tf === "1h" ? STEP_1H : STEP_4H;
+  return b.t + step;
 }
 
 function priorVolumeRatio(bars: readonly ShadowTapeBar[], index: number): number | null {
@@ -216,12 +228,15 @@ function structureBias(bars: readonly ShadowTapeBar[]): "buy" | "sell" | null {
   return null;
 }
 
-function current4hBias(bars: readonly ShadowTapeBar[], decisionBarTime: number): "buy" | "sell" | null {
-  return structureBias(
-    bars
-      .filter((b) => b.tf === "4h" && b.t <= decisionBarTime)
-      .sort((a, b) => a.t - b.t),
-  );
+/** Only 4H candles whose close is known at `decisionSlot` (unix seconds). */
+function closed4hBars(bars: readonly ShadowTapeBar[], decisionSlot: number): ShadowTapeBar[] {
+  return bars
+    .filter((b) => b.tf === "4h" && barCloseSec(b) <= decisionSlot)
+    .sort((a, b) => a.t - b.t);
+}
+
+function current4hBias(bars: readonly ShadowTapeBar[], decisionSlot: number): "buy" | "sell" | null {
+  return structureBias(closed4hBars(bars, decisionSlot));
 }
 
 function late(c: ShadowCaseInput, bar: ShadowTapeBar): boolean {
@@ -238,9 +253,10 @@ function nonRelaxedGatesPass(ep: ShadowEpisode, bars15: readonly ShadowTapeBar[]
   if (c.highImpact === true || c.underlyingClosed === true) return false;
   if (c.dataStatus === "error" || c.dataStatus === "insufficient") return false;
   if (late(c, b)) return false;
-  const h4 = current4hBias(ep.bars, b.t);
+  const decisionSlot = barCloseSec(b);
+  const h4 = current4hBias(ep.bars, decisionSlot);
   if (h4 != null && h4 !== c.direction) return false;
-  const h4Bars = ep.bars.filter((x) => x.tf === "4h" && x.t <= b.t).sort((a, d) => a.t - d.t);
+  const h4Bars = closed4hBars(ep.bars, decisionSlot);
   if (h4Bars.length) {
     const vr = priorVolumeRatio(h4Bars, h4Bars.length - 1);
     if (vr != null && vr < VOL_4H_DEAD) return false;
@@ -248,21 +264,53 @@ function nonRelaxedGatesPass(ep: ShadowEpisode, bars15: readonly ShadowTapeBar[]
   return true;
 }
 
+function relaxesVolume(variant: ShadowCandidateReason): boolean {
+  return variant === "VOLUME_RELAXED" || variant === "VOLUME_AND_TRIGGER_RELAXED";
+}
+
+function relaxesTrigger(variant: ShadowCandidateReason): boolean {
+  return variant === "TRIGGER_RELAXED" || variant === "VOLUME_AND_TRIGGER_RELAXED";
+}
+
+function volumeGatePass(variant: ShadowCandidateReason, vr: number | null): boolean {
+  if (relaxesVolume(variant)) return true;
+  return vr != null && vr >= VOL_TRIGGER && vr >= VOL_DEAD;
+}
+
+function triggerKind(
+  variant: ShadowCandidateReason,
+  fa: boolean,
+  rj: boolean,
+  rt: boolean,
+): "fail_accept" | "reject" | "retest" | "none" | null {
+  if (fa) return "fail_accept";
+  if (rj) return "reject";
+  if (relaxesTrigger(variant) && rt) return "retest";
+  return null;
+}
+
 function baselineSlot(ep: ShadowEpisode): number | null {
   const entries = ep.events.filter((e) => e.toState === "entry").sort((a, b) => a.slot - b.slot);
   return entries[0]?.slot ?? null;
 }
 
+function bars15FromOpen(ep: ShadowEpisode): ShadowTapeBar[] {
+  const openedSlot = ep.case.openedSlot;
+  return ep.bars
+    .filter((b) => b.tf === "15m" && barCloseSec(b) >= openedSlot)
+    .sort((a, b) => a.t - b.t);
+}
+
 function candidateForVariant(ep: ShadowEpisode, variant: ShadowCandidateReason): ShadowCandidate | null {
   const c = ep.case;
   const features = toShadowFeatures(c);
-  const bars15 = ep.bars.filter((b) => b.tf === "15m" && b.t >= c.openedSlot).sort((a, b) => a.t - b.t);
+  const bars15 = bars15FromOpen(ep);
   if (!bars15.length) return null;
 
   if (variant === "BASELINE_V1") {
     const slot = baselineSlot(ep);
     if (slot == null) return null;
-    const b = bars15.find((x) => x.t + STEP_15M === slot);
+    const b = bars15.find((x) => barCloseSec(x) === slot);
     if (!b) return null;
     const idx = bars15.indexOf(b);
     const vr = priorVolumeRatio(bars15, idx);
@@ -293,20 +341,14 @@ function candidateForVariant(ep: ShadowEpisode, variant: ShadowCandidateReason):
     const rj = reject(b, c);
     const rt = overlaps(b, c.zoneLow, c.zoneHigh);
     const vr = priorVolumeRatio(bars15, i);
-    const exact = fa || rj;
-    const useTrigger =
-      variant === "TRIGGER_RELAXED" || variant === "VOLUME_AND_TRIGGER_RELAXED" ? rt : exact;
-    const useVolume =
-      variant === "VOLUME_RELAXED" || variant === "TRIGGER_RELAXED"
-        ? true
-        : vr != null && vr >= VOL_TRIGGER && vr >= VOL_DEAD;
-    if (!useTrigger || !useVolume || !nonRelaxedGatesPass(ep, bars15, i)) continue;
+    const kind = triggerKind(variant, fa, rj, rt);
+    if (kind == null || !volumeGatePass(variant, vr) || !nonRelaxedGatesPass(ep, bars15, i)) continue;
     return {
       episodeId: c.episodeId,
       variant,
-      decisionSlot: b.t + STEP_15M,
+      decisionSlot: barCloseSec(b),
       decisionBarTime: b.t,
-      trigger: fa ? "fail_accept" : rj ? "reject" : "retest",
+      trigger: kind,
       triggerVolumeRatio: vr,
       triggerVolumeAvailable: vr != null,
       features,
@@ -315,13 +357,19 @@ function candidateForVariant(ep: ShadowEpisode, variant: ShadowCandidateReason):
   return null;
 }
 
+function outcomeRr(first: "sl" | "tp1" | "tp2", c: ShadowCaseInput): number | null {
+  const risk = Math.abs(c.entry - c.sl);
+  if (!(risk > 0)) return null;
+  if (first === "sl") return -1;
+  const reward = first === "tp2" && c.tp2 != null ? Math.abs(c.tp2 - c.entry) : Math.abs(c.tp1 - c.entry);
+  return reward / risk;
+}
+
 function resolveShadowOutcome(candidate: ShadowCandidate, ep: ShadowEpisode): ShadowCandidateResult {
   const c = ep.case;
   const bars = ep.bars
     .filter((b) => b.tf === "15m" && b.t >= candidate.decisionSlot)
     .sort((a, b) => a.t - b.t);
-  const entry = c.entry;
-  const risk = Math.abs(entry - c.sl);
   let first: "sl" | "tp1" | "tp2" | null = null;
   let at: number | null = null;
   for (const b of bars) {
@@ -334,8 +382,7 @@ function resolveShadowOutcome(candidate: ShadowCandidate, ep: ShadowEpisode): Sh
   }
   const complete = bars.length > 0 || c.closedAtMs != null;
   if (first) {
-    const reward = first === "tp2" && c.tp2 != null ? Math.abs(c.tp2 - entry) : Math.abs(c.tp1 - entry);
-    return { ...candidate, outcome: first, firstTouchAtSec: at, rrAtOutcome: risk > 0 ? reward / risk : null, dataComplete: complete };
+    return { ...candidate, outcome: first, firstTouchAtSec: at, rrAtOutcome: outcomeRr(first, c), dataComplete: complete };
   }
   if (c.closedAtMs != null) return { ...candidate, outcome: "expired", firstTouchAtSec: null, rrAtOutcome: 0, dataComplete: complete };
   return { ...candidate, outcome: "pending", firstTouchAtSec: null, rrAtOutcome: null, dataComplete: false };
@@ -393,8 +440,8 @@ function variantReport(
   variant: ShadowCandidateReason,
   rows: readonly ShadowCandidateResult[],
   episodes: readonly ShadowEpisode[],
-  baselineIds: ReadonlySet<string>,
-  trainCut: number,
+  baselineByEpisode: ReadonlyMap<string, number>,
+  trainCutMs: number,
 ): ShadowVariantReport {
   const vr = rows.filter((r) => r.variant === variant);
   const tp1 = vr.filter((r) => r.outcome === "tp1").length;
@@ -403,10 +450,15 @@ function variantReport(
   const expired = vr.filter((r) => r.outcome === "expired").length;
   const decided = tp1 + tp2 + sl;
   const rr = vr.map((r) => r.features.plannedRr).filter(finite);
-  const outcomeRr = vr.map((r) => r.rrAtOutcome).filter(finite);
-  const train = breakdown("TRAIN", vr.filter((r) => r.decisionSlot <= trainCut));
-  const test = breakdown("TEST", vr.filter((r) => r.decisionSlot > trainCut));
-  const additional = vr.filter((r) => !baselineIds.has(r.episodeId)).length;
+  const decidedRows = vr.filter((r) => r.outcome === "tp1" || r.outcome === "tp2" || r.outcome === "sl");
+  const outcomeRr = decidedRows.map((r) => r.rrAtOutcome).filter(finite);
+  const train = breakdown("TRAIN", vr.filter((r) => slotToMs(r.decisionSlot) <= trainCutMs));
+  const test = breakdown("TEST", vr.filter((r) => slotToMs(r.decisionSlot) > trainCutMs));
+  const additional = vr.filter((r) => !baselineByEpisode.has(r.episodeId)).length;
+  const earlier = vr.filter((r) => {
+    const base = baselineByEpisode.get(r.episodeId);
+    return base != null && r.decisionSlot < base;
+  }).length;
   const observed = new Map(episodes.map((e) => [e.case.episodeId, e.observedOutcome ?? null]));
   const comparable = vr.filter((r) => observed.get(r.episodeId) != null);
   const agreements = comparable.filter((r) => observed.get(r.episodeId) === r.outcome);
@@ -415,6 +467,7 @@ function variantReport(
     candidates: vr.length,
     entries: vr.length,
     additionalOpportunities: variant === "BASELINE_V1" ? 0 : additional,
+    earlierThanBaseline: variant === "BASELINE_V1" ? 0 : earlier,
     tp1,
     tp2,
     sl,
@@ -423,6 +476,7 @@ function variantReport(
     success: wilson(tp1 + tp2, decided),
     meanPlannedRr: mean(rr),
     meanOutcomeRr: mean(outcomeRr),
+    expectancyR: mean(outcomeRr),
     falsePositives: sl,
     byAsset: by(vr, (r) => r.features.assetId),
     byDirection: by(vr, (r) => r.features.direction),
@@ -449,8 +503,10 @@ export function buildShadowReplayReport(
   const ordered = [...episodes].sort((a, b) => a.case.openedAtMs - b.case.openedAtMs);
   const fraction = Math.min(0.99, Math.max(0.01, config.trainFraction ?? 0.7));
   const cutIndex = Math.floor(ordered.length * fraction);
-  const trainCut = ordered[Math.max(0, cutIndex - 1)]?.case.openedAtMs ?? Number.NEGATIVE_INFINITY;
-  const baselineIds = new Set(results.filter((r) => r.variant === "BASELINE_V1").map((r) => r.episodeId));
+  const trainCutMs = ordered[Math.max(0, cutIndex - 1)]?.case.openedAtMs ?? Number.NEGATIVE_INFINITY;
+  const baselineByEpisode = new Map(
+    results.filter((r) => r.variant === "BASELINE_V1").map((r) => [r.episodeId, r.decisionSlot]),
+  );
   const limitations: string[] = [];
   if (!episodes.length) limitations.push("No hay episodios disponibles.");
   if (episodes.some((e) => !e.bars.some((b) => b.tf === "15m"))) {
@@ -462,6 +518,7 @@ export function buildShadowReplayReport(
   limitations.push("El universo de Shadow está condicionado a oportunidades V1 persistidas; no inventa mapas que V1 nunca creó.");
   limitations.push("Noticias y mercado cerrado se usan desde la fotografía histórica almacenada; eventos externos no persistidos no pueden reconstruirse.");
   limitations.push("Las hipótesis son reglas fijas: TRAIN no selecciona umbrales y TEST nunca alimenta la generación de candidatos.");
+  limitations.push("BASELINE_V1 es la primera transición observada a ENTRADA, no una reconstrucción de los umbrales internos de V1.");
   return {
     episodesAnalyzed: episodes.length,
     episodesWith15mTape: episodes.filter((e) => e.bars.some((b) => b.tf === "15m")).length,
@@ -474,7 +531,7 @@ export function buildShadowReplayReport(
         return sorted.some((t, i) => i > 0 && t - sorted[i - 1]! > step);
       });
     }).length,
-    variants: SHADOW_VARIANTS.map((v) => variantReport(v, results, episodes, baselineIds, trainCut)),
+    variants: SHADOW_VARIANTS.map((v) => variantReport(v, results, episodes, baselineByEpisode, trainCutMs)),
     limitations,
   };
 }
