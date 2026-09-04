@@ -106,7 +106,7 @@ function ExplainBody({
       )}
 
       <ul className="atalaya-why-list" data-explain-checks>
-        {view.checks.map((c) => (
+        {(compact ? view.checks.filter((c) => c.status !== "na") : view.checks).map((c) => (
           <CheckRow key={c.id} item={c} />
         ))}
       </ul>

@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ChevronDown,
   ChevronLeft,
-  RefreshCw,
   Star,
   Activity,
   Pencil,
@@ -408,48 +407,38 @@ function ChartWorkspace({
           </div>
         </div>
 
-        <div className="mt-2 flex items-start gap-3 px-1">
-          <AssetMark id={assetId} size="lg" />
-          <div className="min-w-0 flex-1">
-            <p className="text-lg font-semibold tracking-tight">{assetId}</p>
-            <p className="text-xs text-subtle">{ASSET_SUBTITLE[assetId]}</p>
-            <div className="mt-1 flex flex-wrap items-end gap-2">
-              {series ? (
-                <LivePrice
-                  assetId={assetId}
-                  digits={series.digits}
-                  seed={seedClose}
-                  seedSpot={analysis?.priceSpot ?? null}
-                  subscribe={live.subscribe}
-                  hero
-                />
-              ) : (
-                <span className="font-mono text-2xl tabular">—</span>
-              )}
-              {chg != null ? (
-                <p className={cn("font-mono text-xs tabular", up ? "text-buy" : "text-sell")}>
-                  {absChange != null
-                    ? `${new Intl.NumberFormat("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero" }).format(absChange)} (${new Intl.NumberFormat("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero" }).format(chg)}%)`
-                    : `${new Intl.NumberFormat("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero" }).format(chg)}%`}
-                </p>
-              ) : null}
+        <div className="mt-1.5 flex items-center justify-between gap-3 px-1">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <AssetMark id={assetId} size="lg" />
+            <div className="min-w-0">
+              <p className="text-lg font-semibold tracking-tight">{assetId}</p>
+              <p className="text-xs text-subtle">{ASSET_SUBTITLE[assetId]}</p>
             </div>
           </div>
-          <button
-            type="button"
-            className="flex size-11 shrink-0 items-center justify-center rounded-[var(--radius-md)] text-muted"
-            aria-label="Actualizar gráfico"
-            disabled={query.isFetching}
-            onClick={() => {
-              void query.refetch();
-              live.reconnect();
-            }}
-          >
-            <RefreshCw className={query.isFetching ? "size-4 animate-spin" : "size-4"} />
-          </button>
+          <div className="text-right">
+            {series ? (
+              <LivePrice
+                assetId={assetId}
+                digits={series.digits}
+                seed={seedClose}
+                seedSpot={analysis?.priceSpot ?? null}
+                subscribe={live.subscribe}
+                hero
+              />
+            ) : (
+              <span className="font-mono text-2xl tabular">—</span>
+            )}
+            {chg != null ? (
+              <p className={cn("mt-1 font-mono text-xs tabular", up ? "text-buy" : "text-sell")}>
+                {absChange != null
+                  ? `${new Intl.NumberFormat("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero" }).format(absChange)} (${new Intl.NumberFormat("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero" }).format(chg)}%)`
+                  : `${new Intl.NumberFormat("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero" }).format(chg)}%`}
+              </p>
+            ) : null}
+          </div>
         </div>
 
-        <div className="atalaya-tf-tabs mt-3">
+        <div className="atalaya-tf-tabs mt-2.5">
           {MAIN_TFS.map((t) => (
             <button
               key={t}
@@ -470,28 +459,11 @@ function ChartWorkspace({
               <PickerItem key={t.id} active={t.id === tf} title={t.label} onClick={() => onTf(t.id)} />
             ))}
           </Picker>
-          <Picker
-            open={menu === "asset"}
-            label="Activo"
-            menuWidth="asset"
-            onToggle={() => onMenu(menu === "asset" ? null : "asset")}
-            onClose={() => onMenu(null)}
-          >
-            {ASSETS.map((a) => (
-              <PickerItem
-                key={a.id}
-                active={a.id === assetId}
-                title={a.label}
-                detail={CHART_ASSET_BLURB[a.id]}
-                onClick={() => onAsset(a.id)}
-              />
-            ))}
-          </Picker>
         </div>
 
         <p
           data-chart-live-status={liveStatus}
-          className="atalaya-charts-status mt-1 flex items-center gap-1.5 truncate font-mono text-[11px] tabular text-subtle"
+          className="sr-only"
           title={series?.proxyNote ?? sourceBits}
         >
           <span className={`size-1.5 shrink-0 rounded-full ${LIVE_DOT[liveStatus]}`} />
@@ -545,7 +517,7 @@ function ChartWorkspace({
         )}
       </div>
 
-      <div className="atalaya-charts-tools">
+      <div className="atalaya-charts-tools hidden" hidden>
         <IconTool
           active={menu === "indicators"}
           label="Indicadores"

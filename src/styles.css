@@ -130,9 +130,9 @@
   isolation: isolate;
   background-color: var(--color-bg);
   border-bottom: 1px solid var(--color-border);
-  padding-top: max(0.75rem, var(--safe-top));
+  padding-top: max(0.5rem, var(--safe-top));
   padding-right: max(1rem, var(--safe-right));
-  padding-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
   padding-left: max(1rem, var(--safe-left));
 }
 
@@ -781,8 +781,9 @@
 }
 
 .atalaya-market-dock {
-  flex: 1 1 38%;
-  min-height: 0;
+  flex: 0 1 36%;
+  min-height: 11rem;
+  max-height: 44%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -973,8 +974,34 @@
 }
 
 .atalaya-chart-pane {
-  flex: 1 1 42%;
-  min-height: 10.5rem;
+  position: relative;
+  flex: 1 1 52%;
+  min-height: 16.5rem;
+  min-width: 0;
+}
+
+.atalaya-charts-tools[hidden] {
+  display: none !important;
+}
+
+.atalaya-tf-tabs .relative > button {
+  height: 1.85rem;
+  min-height: 0;
+  min-width: auto;
+  padding-inline: 0.7rem;
+  font-size: 11px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.atalaya-header > div {
+  flex-wrap: nowrap;
+}
+
+.atalaya-pill {
+  white-space: nowrap;
+  max-width: min(11rem, 46vw);
+  overflow: hidden;
 }
 
 @keyframes atalaya-in {

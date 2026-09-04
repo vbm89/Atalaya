@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, House, BarChart3, BookOpen, Ellipsis, Bell } from "lucide-react";
+import { House, BarChart3, BookOpen, Ellipsis, Bell } from "lucide-react";
 import { getMarketAnalysis } from "@/lib/market/analysis.fn";
 import { getWatchHealth, getWatchEpisode, getWatchSnapshots, type WatchEpisodeView } from "@/lib/watch/watch.fn";
 import type { AnalysisSnapshot, AssetAnalysis, AssetId } from "@/lib/trading/types";
@@ -93,7 +93,7 @@ function OperativoPill({
   return (
     <span className={ok ? "atalaya-pill is-ok" : watch.lamp === "error" || data.lamp === "unavailable" ? "atalaya-pill is-bad" : "atalaya-pill is-warn"}>
       <span className="atalaya-status-dot" />
-      {ok ? "Operativo" : watch.label}
+      <span className="max-w-[9.5rem] truncate">{ok ? "Operativo" : watch.label}</span>
     </span>
   );
 }
@@ -523,31 +523,21 @@ export function Dashboard() {
     <div className="atalaya-shell" data-chrome={tab === "charts" && chartMode === "workspace" ? "chart" : "home"}>
       {tab !== "charts" || chartMode !== "workspace" ? (
       <header className="atalaya-header">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-cyan">
-            <AtalayaMark className="size-7" />
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2 text-cyan">
+            <AtalayaMark className="size-6 shrink-0" />
             <h1 className="atalaya-title text-[15px] font-semibold tracking-[0.18em] uppercase">Atalaya</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <OperativoPill
               snapshot={snapshot}
               server={health.data ?? null}
             />
-            <button
-              type="button"
-              aria-label="Actualizar análisis"
-              title="Actualizar análisis"
-              disabled={loading}
-              onClick={() => refresh.mutate()}
-              className="flex size-11 items-center justify-center rounded-[var(--radius-md)] text-muted disabled:opacity-50"
-            >
-              <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} />
-            </button>
+            <p className="atalaya-header-sub shrink-0 font-mono text-[10px] tabular text-subtle">
+              {health.data?.lastEvalMs ? formatMadridClock(health.data.lastEvalMs) : "—"}
+            </p>
           </div>
         </div>
-        <p className="atalaya-header-sub mt-1 text-[11px] text-subtle">
-          Último tick: {health.data?.lastEvalMs ? formatMadridClock(health.data.lastEvalMs) : "—"}
-        </p>
       </header>
       ) : null}
 
@@ -571,7 +561,7 @@ export function Dashboard() {
             inert={sheetOpen || undefined}
             aria-hidden={sheetOpen}
           >
-            {snapshot ? (
+            {snapshot && tab === "markets" ? (
               <FeedStatus
                 assets={snapshot.assets}
                 lastEvalMs={lastEvalMs}
@@ -579,9 +569,9 @@ export function Dashboard() {
                 watching={!busy && visible}
                 server={health.data ?? null}
               />
-            ) : (
+            ) : tab === "markets" ? (
               <Skeleton className="h-14 rounded-[var(--radius-lg)]" />
-            )}
+            ) : null}
 
             {error ? (
               <p className="mt-3 rounded-[var(--radius-md)] bg-sell-dim px-3 py-2 text-sm text-sell">

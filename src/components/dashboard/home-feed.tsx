@@ -137,10 +137,10 @@ export function FeedStatus({
     <section className="atalaya-markets-span" data-watch-status={watching ? "active" : visible ? "busy" : "background"}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] text-subtle">{greetingFor(now)}</p>
-          <h2 className="mt-0.5 text-xl font-semibold tracking-tight">Mercado en vigilancia</h2>
+          <p className="sr-only">{greetingFor(now)}</p>
+          <h2 className="text-xl font-semibold tracking-tight">Mercado en vigilancia</h2>
           <p className="mt-1 text-sm text-subtle">
-            {assets.length} activos · {entries ? "Oportunidad detectada" : "Buscando oportunidades"}
+            {assets.length} activos · Buscando oportunidades
           </p>
         </div>
         <div className="atalaya-count-chip">
@@ -150,7 +150,7 @@ export function FeedStatus({
           </p>
         </div>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="sr-only" data-watch-lamps>
         <span
           className={cn(
             "atalaya-status-dot",
