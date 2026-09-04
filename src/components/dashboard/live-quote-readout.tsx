@@ -23,7 +23,7 @@ export function LiveQuoteReadout({
   digits: number;
   snapshotPrice: number | null | undefined;
   snapshotSpot: number | null | undefined;
-  size?: "sm" | "lg";
+  size?: "sm" | "md" | "lg";
   align?: "left" | "right";
   showSpotLabel?: boolean;
 }) {
@@ -71,7 +71,7 @@ export function LiveQuoteReadout({
     <p
       className={cn(
         "font-mono font-medium tabular leading-none",
-        size === "lg" ? "text-3xl tracking-tight" : "shrink-0 text-sm",
+        size === "lg" ? "text-3xl tracking-tight" : size === "md" ? "text-lg tracking-tight" : "shrink-0 text-sm",
         align === "right" ? "text-right" : "text-left",
       )}
       data-live-price={id}

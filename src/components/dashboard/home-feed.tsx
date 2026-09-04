@@ -1,19 +1,20 @@
 import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { AnalysisSnapshot, AssetAnalysis, SetupQuality, SetupState } from "@/lib/trading/types";
-import { formatPrice } from "@/lib/utils";
+import type { AnalysisSnapshot, AssetAnalysis, SetupState } from "@/lib/trading/types";
+import { cn, formatPrice } from "@/lib/utils";
 import { displayEntryPrice } from "@/lib/chart/labels";
-import { analysisPriceCaption } from "@/lib/broker/broker-view";
-import { setupStateEs } from "@/lib/watch/memory";
 import { DataLampChip } from "./data-lamp";
 import { formatCountdown, formatMadridClock } from "@/lib/watch/clock";
 import { nextWatchEvalMs } from "@/lib/watch/schedule";
 import { watchLamp, worstDataLamp, watchGlyph, type WatchLampSnap } from "@/lib/watch/feed-lamp";
+import { AssetMark } from "./marks";
 
-function qualityFill(q: SetupQuality): number {
-  if (q === "alta") return 5;
-  if (q === "media") return 3;
-  return 1;
+export function greetingFor(now: Date | null): string {
+  if (!now) return "Hola";
+  const h = now.getHours();
+  if (h < 12) return "Buenos días";
+  if (h < 20) return "Buenas tardes";
+  return "Buenas noches";
 }
 
 function useLocalNow() {
@@ -38,83 +39,55 @@ export function BestOpportunityCard({
 }) {
   const setup = asset?.setup ?? null;
   const state: SetupState = asset?.setupState ?? "wait";
-  const has = snapshot.bestOpportunityId != null && setup != null && state !== "wait";
+  const isEntry = state === "entry" && setup != null;
 
   return (
     <section
-      className="atalaya-best rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]"
+      className="atalaya-best atalaya-markets-span"
       data-best-opportunity={snapshot.bestOpportunityId ?? "none"}
     >
-      <p className="text-xs font-medium tracking-wider text-muted uppercase">Mejor oportunidad ahora</p>
-      {!has || !asset || !setup ? (
-        <p className="mt-2 text-sm leading-snug text-wait">{snapshot.bestOpportunityNote}</p>
-      ) : (
-        <>
-          <div className="mt-2 flex items-baseline justify-between gap-3">
-            <p className="text-xl font-semibold tracking-tight">{asset.label}</p>
-            <p
-              className={
-                state === "entry" ? "text-sm font-medium text-buy" : state === "map" ? "text-sm font-medium text-map" : "text-sm font-medium text-wait"
-              }
-            >
-              {setupStateEs(state)}
-            </p>
-          </div>
-          <p className={setup.direction === "buy" ? "mt-1 text-sm font-medium text-buy" : "mt-1 text-sm font-medium text-sell"}>
-            {setup.direction === "buy" ? "COMPRA" : "VENTA"}
+      <p className="text-base font-semibold tracking-tight">Oportunidades</p>
+      {!isEntry || !setup || !asset ? (
+        <div className="atalaya-empty mt-3">
+          <p className="text-sm font-medium">Sin entradas activas</p>
+          <p className="mt-1 text-sm leading-snug text-subtle">
+            {snapshot.bestOpportunityNote || "Atalaya está vigilando el mercado."}
           </p>
-          <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-2 text-sm">
-            <div className="col-span-3">
-              <dt className="text-xs text-subtle">ENTRADA V1</dt>
-              <dd className="font-mono tabular" data-entry-px>
-                {formatPrice(displayEntryPrice(setup.direction, setup.zone.low, setup.zone.high), asset.digits)}
-              </dd>
-              <p className="mt-1 text-xs text-subtle">{analysisPriceCaption(asset.id, asset)}</p>
+        </div>
+      ) : (
+        <button type="button" onClick={onDetail} className="atalaya-opp-row mt-3">
+          <AssetMark id={asset.id} size="sm" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <p className="text-sm font-semibold">{asset.label}</p>
+              <span className={setup.direction === "buy" ? "text-xs font-semibold text-buy" : "text-xs font-semibold text-sell"}>
+                {setup.direction === "buy" ? "BUY ↗" : "SELL ↘"}
+              </span>
+              <span className="atalaya-badge atalaya-badge-entry">ENTRY</span>
             </div>
-            <div>
-              <dt className="text-xs text-subtle">SL</dt>
-              <dd className="font-mono tabular">{formatPrice(setup.stopLoss, asset.digits)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-subtle">TP1</dt>
-              <dd className="font-mono tabular">{formatPrice(setup.takeProfit1, asset.digits)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-subtle">TP2</dt>
-              <dd className="font-mono tabular">
-                {setup.takeProfit2 != null ? formatPrice(setup.takeProfit2, asset.digits) : "n/d"}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-subtle">R:R</dt>
-              <dd className="font-mono tabular">1:{setup.riskReward.toFixed(1).replace(".", ",")}</dd>
-            </div>
-            <div className="col-span-3">
-              <dt className="text-xs text-subtle">Calidad {setup.quality}</dt>
-              <dd className="mt-1 flex gap-1" aria-label={`calidad ${setup.quality}`}>
-                {Array.from({ length: 5 }, (_, i) => (
-                  <span
-                    key={i}
-                    className={
-                      i < qualityFill(setup.quality)
-                        ? "h-1.5 flex-1 rounded-full bg-buy"
-                        : "h-1.5 flex-1 rounded-full bg-border"
-                    }
-                  />
-                ))}
-              </dd>
-            </div>
-          </dl>
-          <button
-            type="button"
-            onClick={onDetail}
-            className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-1 rounded-[var(--radius-md)] bg-buy px-3 text-sm font-medium text-accent-fg"
-          >
-            VER DETALLE
-            <ChevronRight className="size-4" />
-          </button>
-        </>
+            <dl className="mt-2 grid grid-cols-3 gap-2 text-left">
+              <div>
+                <dt className="text-[10px] tracking-wide text-subtle uppercase">Precio</dt>
+                <dd className="font-mono text-sm tabular" data-entry-px>
+                  {formatPrice(displayEntryPrice(setup.direction, setup.zone.low, setup.zone.high), asset.digits)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[10px] tracking-wide text-subtle uppercase">SL</dt>
+                <dd className="font-mono text-sm tabular text-sell">{formatPrice(setup.stopLoss, asset.digits)}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] tracking-wide text-subtle uppercase">TP1</dt>
+                <dd className="font-mono text-sm tabular text-buy">{formatPrice(setup.takeProfit1, asset.digits)}</dd>
+              </div>
+            </dl>
+          </div>
+          <ChevronRight className="size-4 shrink-0 text-subtle" />
+        </button>
       )}
+      {isEntry ? (
+        <p className="mt-2 text-center text-xs text-subtle">Sin más entradas activas</p>
+      ) : null}
     </section>
   );
 }
@@ -158,14 +131,39 @@ export function FeedStatus({
     nowMs,
   );
   const entries = assets.filter((a) => a.setupState === "entry").length;
+  const operativo = watch.lamp === "ok" && data.lamp === "ok";
 
   return (
-    <section data-watch-status={watching ? "active" : visible ? "busy" : "background"}>
-      <div className="flex flex-wrap items-center gap-2">
+    <section className="atalaya-markets-span" data-watch-status={watching ? "active" : visible ? "busy" : "background"}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] text-subtle">{greetingFor(now)}</p>
+          <h2 className="mt-0.5 text-xl font-semibold tracking-tight">Mercado en vigilancia</h2>
+          <p className="mt-1 text-sm text-subtle">
+            {assets.length} activos · {entries ? "Oportunidad detectada" : "Buscando oportunidades"}
+          </p>
+        </div>
+        <div className="atalaya-count-chip">
+          <p className="text-2xl font-semibold tabular leading-none text-buy">{entries}</p>
+          <p className="mt-1 max-w-[4.8rem] text-[10px] leading-tight tracking-wide text-buy uppercase">
+            {entries === 1 ? "oportunidad activa" : "oportunidades activas"}
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span
+          className={cn(
+            "atalaya-status-dot",
+            !operativo && (watch.lamp === "error" || data.lamp === "unavailable" ? "is-bad" : "is-warn"),
+          )}
+        />
+        <p className="text-[11px] font-medium tracking-wider uppercase">
+          {operativo ? "Sistema operativo" : watch.label}
+        </p>
         <DataLampChip lamp={data.lamp} label={data.label} note={data.note} />
         <DataLampChip lamp={watch.lamp} label={watch.label} />
       </div>
-      <p className="mt-2 font-mono text-xs tabular text-subtle" data-watch-eval>
+      <p className="sr-only" data-watch-eval>
         {visible ? (watching ? "Tiempo real · cierre 15M" : "Evaluando…") : "Segundo plano · no vigila"}
         {entries ? ` · ${entries} ENTRADA` : ""}
         {" · "}
@@ -173,8 +171,8 @@ export function FeedStatus({
         {" · "}
         <span data-countdown>{visible && remain != null ? formatCountdown(remain) : "—"}</span>
       </p>
-      <p className="mt-0.5 font-mono text-xs tabular text-subtle" data-watch-server>
-        Servidor{" "}
+      <p className="sr-only" data-watch-server>
+        Último tick{" "}
         <span data-server-tick>
           {server?.lastEvalMs ? formatMadridClock(server.lastEvalMs) : "sin tick"}
         </span>

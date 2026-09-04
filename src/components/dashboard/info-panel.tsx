@@ -16,11 +16,12 @@ export function InfoPanel({
   const sources = source && source !== "sin fuentes" ? source.split(" · ").filter(Boolean) : [];
 
   return (
-    <section className="mt-4 space-y-5" data-info-panel>
+    <section className="mt-2 space-y-5" data-info-panel>
       <div>
         <p className="text-xs font-medium tracking-wider text-muted uppercase">Información</p>
-        <h2 className="mt-1 text-xl font-semibold tracking-tight">Herramienta de análisis</h2>
+        <h2 className="mt-1 text-xl font-semibold tracking-tight">Atalaya V1</h2>
         <p className="mt-2 text-sm leading-relaxed text-subtle">{DISCLAIMER_LEGAL}</p>
+        <p className="mt-2 text-xs text-muted">Sistema de análisis. No ejecuta órdenes.</p>
       </div>
 
       <div>

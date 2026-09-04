@@ -68,13 +68,16 @@ export function LearnPanel() {
   );
 
   return (
-    <div className="mt-4 space-y-5" data-learn-panel>
-      <p className="text-sm leading-relaxed text-muted">
-        Aprendizaje de Atalaya. Explica las decisiones de V1. No genera señales. No cambia el motor.
-      </p>
-      <p className="text-xs leading-relaxed text-subtle">
-        El aprendizaje es análisis histórico. No modifica las decisiones de V1.
-      </p>
+    <div className="mt-2 space-y-5" data-learn-panel>
+      <div>
+        <h2 className="text-xl font-semibold tracking-tight">Aprendizaje</h2>
+        <p className="mt-1 text-sm leading-relaxed text-muted">
+          Explica las decisiones de V1. No genera señales. No cambia el motor.
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-subtle">
+          Investigación y Shadow están separados de las señales operativas.
+        </p>
+      </div>
 
       <section className="space-y-3" data-learn-evolution>
         <h2 className="text-xs font-medium tracking-wider text-muted uppercase">

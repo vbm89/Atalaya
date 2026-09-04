@@ -1,28 +1,29 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #0b0c0e;
-  --color-surface: #14161a;
-  --color-elevated: #1c1f26;
-  --color-fg: #f1f2f4;
-  --color-muted: #8b909a;
-  --color-subtle: #6b7078;
-  --color-border: #2a2d34;
-  --color-accent: #2ea86a;
-  --color-accent-fg: #06140c;
-  --color-buy: #3d9a6a;
-  --color-sell: #c45c5c;
-  --color-wait: #c4a35a;
-  --color-map: #8fa3b8;
-  --color-buy-dim: #1b2e24;
-  --color-sell-dim: #2d1c1c;
-  --color-wait-dim: #2c2618;
-  --color-map-dim: #1a2228;
-  --color-risk-bajo: #3d9a6a;
-  --color-risk-medio: #c4a35a;
-  --color-risk-alto: #c4894a;
-  --color-risk-muy: #c45c5c;
-  --color-risk-ext: #8f3a3a;
+  --color-bg: #06111a;
+  --color-surface: #0b1a24;
+  --color-elevated: #102230;
+  --color-fg: #e8f1f4;
+  --color-muted: #7a92a0;
+  --color-subtle: #5c7380;
+  --color-border: #1a3340;
+  --color-accent: #2ee6a6;
+  --color-accent-fg: #04140e;
+  --color-cyan: #3db8e8;
+  --color-buy: #2ee6a6;
+  --color-sell: #e85d5d;
+  --color-wait: #e8b84a;
+  --color-map: #7aa3c7;
+  --color-buy-dim: #0d2a22;
+  --color-sell-dim: #2a1418;
+  --color-wait-dim: #2a2414;
+  --color-map-dim: #12202c;
+  --color-risk-bajo: #2ee6a6;
+  --color-risk-medio: #e8b84a;
+  --color-risk-alto: #e89a4a;
+  --color-risk-muy: #e85d5d;
+  --color-risk-ext: #a33a3a;
 
   --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -30,12 +31,12 @@
   --radius-xs: 4px;
   --radius-sm: 8px;
   --radius-md: 12px;
-  --radius-lg: 18px;
-  --radius-xl: 24px;
-  --radius-2xl: 28px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
 
-  --shadow-border: 0 0 0 1px rgba(255, 255, 255, 0.07);
-  --shadow-border-hover: 0 0 0 1px rgba(255, 255, 255, 0.13);
+  --shadow-border: 0 0 0 1px rgba(61, 184, 232, 0.08);
+  --shadow-border-hover: 0 0 0 1px rgba(46, 230, 166, 0.28);
 }
 
 :root {
@@ -329,9 +330,163 @@
 }
 
 .atalaya-markets {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 0.75rem;
+}
+
+.atalaya-markets-span,
+.atalaya-markets-label,
+.atalaya-best {
+  grid-column: 1 / -1;
+}
+
+.atalaya-market-tile {
+  display: flex;
+  min-height: 7.5rem;
+  flex-direction: column;
+  justify-content: space-between;
+  border-radius: var(--radius-lg);
+  background: var(--color-elevated);
+  box-shadow: var(--shadow-border);
+  padding: 0.85rem 0.9rem 0.75rem;
+  text-align: left;
+  transition: box-shadow 160ms ease, transform 160ms ease;
+}
+
+.atalaya-market-tile:active {
+  transform: scale(0.985);
+}
+
+.atalaya-status-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--color-buy);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-buy) 22%, transparent);
+}
+
+.atalaya-status-dot.is-warn {
+  background: var(--color-wait);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-wait) 22%, transparent);
+}
+
+.atalaya-status-dot.is-bad {
+  background: var(--color-sell);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-sell) 22%, transparent);
+}
+
+.atalaya-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.atalaya-badge-entry {
+  background: var(--color-buy);
+  color: var(--color-accent-fg);
+}
+
+.atalaya-badge-buy {
+  background: var(--color-buy-dim);
+  color: var(--color-buy);
+}
+
+.atalaya-badge-sell {
+  background: var(--color-sell-dim);
+  color: var(--color-sell);
+}
+
+.atalaya-badge-wait {
+  background: var(--color-wait-dim);
+  color: var(--color-wait);
+}
+
+.atalaya-badge-map {
+  background: var(--color-map-dim);
+  color: var(--color-map);
+}
+
+.atalaya-badge-muted {
+  background: color-mix(in srgb, var(--color-elevated) 40%, #06111a);
+  color: var(--color-muted);
+}
+
+.atalaya-why-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+}
+
+.atalaya-why-mark {
+  display: flex;
+  width: 1.35rem;
+  height: 1.35rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.atalaya-more-row {
+  display: flex;
+  min-height: 3.25rem;
+  width: 100%;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.35rem 1rem;
+  text-align: left;
+}
+
+@media (min-width: 960px) {
+  .atalaya-shell {
+    max-width: 78rem;
+    grid-template-columns: 13.5rem minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "dock header"
+      "dock stage";
+  }
+
+  .atalaya-shell[data-chrome="chart"] {
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "dock header"
+      "dock stage";
+  }
+
+  .atalaya-dock {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 0.2rem;
+    padding-top: max(1rem, var(--safe-top));
+    padding-right: 0.65rem;
+    padding-bottom: max(1rem, var(--safe-bottom));
+    padding-left: 0.65rem;
+    border-top: 0;
+    border-right: 1px solid var(--color-border);
+  }
+
+  .atalaya-dock button {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 0.65rem;
+    min-height: 2.6rem;
+    padding: 0.45rem 0.7rem;
+    font-size: 13px !important;
+    line-height: 1.2 !important;
+    border-radius: var(--radius-md);
+  }
 }
 
 .atalaya-more {
@@ -495,4 +650,356 @@
   color: var(--color-buy);
   background: var(--color-buy-dim);
 }
+
+.atalaya-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.atalaya-pill.is-ok {
+  background: var(--color-buy-dim);
+  color: var(--color-buy);
+}
+
+.atalaya-pill.is-warn {
+  background: var(--color-wait-dim);
+  color: var(--color-wait);
+}
+
+.atalaya-pill.is-bad {
+  background: var(--color-sell-dim);
+  color: var(--color-sell);
+}
+
+.atalaya-pill .atalaya-status-dot {
+  width: 0.38rem;
+  height: 0.38rem;
+}
+
+.atalaya-count-chip {
+  border-radius: var(--radius-md);
+  background: var(--color-buy-dim);
+  padding: 0.55rem 0.7rem;
+  text-align: right;
+}
+
+.atalaya-asset-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-elevated) 70%, #0a1c28);
+  box-shadow: var(--shadow-border);
+  flex-shrink: 0;
+}
+
+.atalaya-opp-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: var(--radius-lg);
+  background: var(--color-elevated);
+  box-shadow: var(--shadow-border);
+  padding: 0.85rem 0.9rem;
+  text-align: left;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.atalaya-opp-row:active {
+  transform: scale(0.985);
+}
+
+.atalaya-empty {
+  border-radius: var(--radius-lg);
+  background: var(--color-elevated);
+  box-shadow: var(--shadow-border);
+  padding: 1rem 0.9rem;
+  text-align: center;
+}
+
+.atalaya-market-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: var(--radius-lg);
+  background: var(--color-elevated);
+  box-shadow: var(--shadow-border);
+  padding: 0.55rem 0.4rem 0.55rem 0.75rem;
+}
+
+.atalaya-tf-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-inline: 0.25rem;
+}
+
+.atalaya-tf-tab {
+  min-height: 2rem;
+  border-radius: 999px;
+  padding: 0.25rem 0.85rem;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted);
+  background: var(--color-elevated);
+}
+
+.atalaya-tf-tab.is-active {
+  background: var(--color-cyan);
+  color: #041018;
+}
+
+.atalaya-signal-tabs {
+  display: flex;
+  gap: 0.15rem;
+  padding: 0.35rem;
+  border-radius: var(--radius-md);
+  background: var(--color-elevated);
+}
+
+.atalaya-signal-tab {
+  flex: 1;
+  min-height: 2rem;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.atalaya-signal-tab.is-active {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  box-shadow: var(--shadow-border);
+}
+
+.atalaya-market-dock {
+  flex: 1 1 38%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+  padding: 0.55rem 0.75rem 0.35rem;
+}
+
+.atalaya-market-dock-body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding-top: 0.65rem;
+  padding-bottom: 0.5rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.atalaya-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem 1.25rem;
+}
+
+.atalaya-summary-cell dt {
+  font-size: 11px;
+  color: var(--color-subtle);
+}
+
+.atalaya-summary-cell dd {
+  margin-top: 0.15rem;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.atalaya-why-list {
+  border-radius: var(--radius-lg);
+  background: var(--color-elevated);
+  padding: 0.15rem 0.9rem;
+}
+
+.atalaya-why-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+}
+
+.atalaya-why-row:last-child {
+  border-bottom: 0;
+}
+
+.atalaya-why-mark {
+  display: flex;
+  width: 1.35rem;
+  height: 1.35rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: var(--color-elevated);
+  color: var(--color-subtle);
+}
+
+.atalaya-why-mark.is-ok {
+  background: var(--color-buy);
+  color: var(--color-accent-fg);
+}
+
+.atalaya-why-mark.is-fail {
+  background: var(--color-sell-dim);
+  color: var(--color-sell);
+}
+
+.atalaya-why-mark.is-pending {
+  background: var(--color-wait-dim);
+  color: var(--color-wait);
+}
+
+.atalaya-conclusion {
+  border-radius: var(--radius-lg);
+  padding: 0.85rem 0.95rem;
+  background: var(--color-buy-dim);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-buy) 28%, transparent);
+}
+
+.atalaya-conclusion.is-wait,
+.atalaya-conclusion.is-map {
+  background: var(--color-elevated);
+  box-shadow: var(--shadow-border);
+}
+
+.atalaya-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0.25rem 0.15rem;
+}
+
+.atalaya-timeline-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2.6rem 1rem minmax(0, 1fr);
+  column-gap: 0.65rem;
+  min-height: 3.1rem;
+  padding-bottom: 0.85rem;
+}
+
+.atalaya-timeline-time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-subtle);
+  padding-top: 0.1rem;
+}
+
+.atalaya-timeline-dot {
+  position: relative;
+  z-index: 1;
+  width: 0.7rem;
+  height: 0.7rem;
+  margin-top: 0.2rem;
+  border-radius: 999px;
+  background: var(--color-muted);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-muted) 22%, transparent);
+}
+
+.atalaya-timeline-dot.is-buy { background: var(--color-buy); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-buy) 22%, transparent); }
+.atalaya-timeline-dot.is-sell { background: var(--color-sell); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-sell) 22%, transparent); }
+.atalaya-timeline-dot.is-wait { background: var(--color-wait); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-wait) 22%, transparent); }
+.atalaya-timeline-dot.is-map { background: var(--color-map); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-map) 22%, transparent); }
+.atalaya-timeline-dot.is-cyan { background: var(--color-cyan); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-cyan) 22%, transparent); }
+
+.atalaya-timeline-rail {
+  position: absolute;
+  left: calc(2.6rem + 0.28rem);
+  top: 0.95rem;
+  bottom: 0;
+  width: 1px;
+  background: var(--color-border);
+}
+
+.atalaya-chip-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.4rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.atalaya-chip-row::-webkit-scrollbar { display: none; }
+
+.atalaya-chip {
+  flex-shrink: 0;
+  min-height: 2rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.8rem;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted);
+  background: var(--color-elevated);
+}
+
+.atalaya-chip.is-active {
+  background: var(--color-cyan);
+  color: #041018;
+}
+
+.atalaya-alert-row {
+  display: flex;
+  width: 100%;
+  min-height: 3.25rem;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: var(--radius-md);
+  background: var(--color-elevated);
+  padding: 0.65rem 0.8rem;
+  text-align: left;
+}
+
+.atalaya-alert-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.atalaya-chart-pane {
+  flex: 1 1 42%;
+  min-height: 10.5rem;
+}
+
+@keyframes atalaya-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.atalaya-market-tile,
+.atalaya-opp-row,
+.atalaya-best,
+.atalaya-history-card,
+.atalaya-alert-row {
+  animation: atalaya-in 280ms ease both;
+}
+
+.atalaya-market-tile:nth-child(2) { animation-delay: 40ms; }
+.atalaya-market-tile:nth-child(3) { animation-delay: 80ms; }
+.atalaya-market-tile:nth-child(4) { animation-delay: 120ms; }
+.atalaya-market-tile:nth-child(5) { animation-delay: 160ms; }
+
+@media (min-width: 960px) {
+  .atalaya-dock button.is-side,
+  .atalaya-dock button {
+    color: var(--color-muted);
+  }
+}
+
 

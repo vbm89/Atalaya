@@ -13,6 +13,8 @@ import { WatchPhaseBadge } from "./signal-badge";
 import { Sparkline } from "./sparkline";
 import { DataLampChip } from "./data-lamp";
 import { LiveQuoteReadout } from "./live-quote-readout";
+import { AssetMark, ASSET_SUBTITLE } from "./marks";
+
 
 const TF_ORDER: Timeframe[] = ["5m", "15m", "1h", "4h"];
 const CHART_FAV_KEY = "atalaya:chart-favs:v1";
@@ -270,28 +272,15 @@ export function MarketTile({
   const chg = asset.dayChangePct;
   const up = chg == null ? null : chg >= 0;
   const [starred, setStarred] = useState(() => readChartFavs().includes(asset.id));
+  const state = asset.setupState;
+  const setup = asset.setup;
+  const showDir = state !== "wait" && setup != null;
 
   return (
-    <div
-      data-watch-asset={asset.id}
-      className="flex min-h-16 w-full items-center gap-2 rounded-[var(--radius-lg)] bg-elevated py-2.5 pr-1 pl-3 shadow-[var(--shadow-border)]"
-    >
-      <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-        <p className="min-w-0 flex-1 text-sm font-semibold tracking-tight">{asset.label}</p>
-        <div className="w-16 shrink-0">
-          <Sparkline values={asset.sparkline} positive={up} />
-        </div>
-        <LiveQuoteReadout
-          id={asset.id}
-          digits={asset.digits}
-          snapshotPrice={asset.price}
-          snapshotSpot={asset.priceSpot}
-          showSpotLabel={false}
-        />
-      </button>
+    <div data-watch-asset={asset.id} className="atalaya-market-tile relative">
       <button
         type="button"
-        className="flex size-11 shrink-0 items-center justify-center text-muted"
+        className="absolute top-1.5 right-1 z-10 flex size-9 items-center justify-center text-muted"
         aria-label={starred ? "Quitar de favoritos" : "Añadir a favoritos"}
         onClick={() => {
           const next = readChartFavs();
@@ -300,11 +289,67 @@ export function MarketTile({
           setStarred(ids.includes(asset.id));
         }}
       >
-        <Star className={starred ? "size-4 fill-wait text-wait" : "size-4"} />
+        <Star className={starred ? "size-3.5 fill-wait text-wait" : "size-3.5"} />
+      </button>
+      <button type="button" onClick={onOpen} className="flex h-full w-full flex-col text-left">
+        <div className="flex items-center gap-2 pr-7">
+          <AssetMark id={asset.id} size="sm" />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold tracking-tight">{asset.label}</p>
+            <p className="truncate text-[11px] text-subtle">{ASSET_SUBTITLE[asset.id]}</p>
+          </div>
+        </div>
+        <div className="mt-2">
+          <LiveQuoteReadout
+            id={asset.id}
+            digits={asset.digits}
+            snapshotPrice={asset.price}
+            snapshotSpot={asset.priceSpot}
+            showSpotLabel={false}
+            align="left"
+            size="md"
+          />
+        </div>
+        <div className="mt-1 flex items-end justify-between gap-2">
+          <p
+            className={cn(
+              "font-mono text-[11px] tabular",
+              up == null && "text-muted",
+              up === true && "text-buy",
+              up === false && "text-sell",
+            )}
+          >
+            {chg == null ? "—" : compactPct(chg)}
+          </p>
+          <div className="h-7 w-[4.6rem] shrink-0">
+            <Sparkline values={asset.sparkline} positive={up} />
+          </div>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-1">
+          {state === "entry" ? <span className="atalaya-badge atalaya-badge-entry">ENTRY</span> : null}
+          {state === "pending" ? <span className="atalaya-badge atalaya-badge-wait">PENDING</span> : null}
+          {state === "map" ? <span className="atalaya-badge atalaya-badge-map">MAPA</span> : null}
+          {state === "wait" ? <span className="atalaya-badge atalaya-badge-muted">Vigilando</span> : null}
+          {showDir ? (
+            <span className={cn("text-[10px] font-semibold", setup.direction === "buy" ? "text-buy" : "text-sell")}>
+              {setup.direction === "buy" ? "BUY ↗" : "SELL ↘"}
+            </span>
+          ) : null}
+        </div>
       </button>
     </div>
   );
 }
+
+function compactPct(value: number): string {
+  const n = new Intl.NumberFormat("es-ES", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    signDisplay: "exceptZero",
+  }).format(value);
+  return `${n}%`;
+}
+
 
 function SetupLine({
   asset,
