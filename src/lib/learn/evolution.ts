@@ -1,5 +1,6 @@
 import type { AssetId } from "../trading/types";
 import type { LearningCase } from "./case";
+import { v1TradeCases } from "./case";
 import { detectFindings, productionCases, type PatternReport } from "./patterns";
 import {
   evidenceLevel,
@@ -251,11 +252,13 @@ export function buildEvolution(
   validation: ValidationReport,
   window = LEARN_HISTORY_WINDOW,
 ): EvolutionReport {
-  const stats = summarize(cases);
-  const observed = stats.global.total;
-  const trainable = stats.global.trainable;
-  const excluded = stats.global.excluded;
-  const decided = stats.global.success.n;
+  const setupStats = summarize(cases);
+  const tradeStats = summarize(v1TradeCases(cases));
+  const observed = setupStats.global.total;
+  const trainable = setupStats.global.trainable;
+  const excluded = setupStats.global.excluded;
+  const decided = tradeStats.global.success.n;
+  const tradeByAsset = new Map(tradeStats.byAsset.map((b) => [b.key, b]));
   return {
     window,
     truncated: observed >= window,
@@ -269,7 +272,16 @@ export function buildEvolution(
     inconclusive: validation.inconclusive,
     phase: phaseOf(decided),
     gate: evidenceGate(decided),
-    byAsset: stats.byAsset.map((bucket) => assetSlice(bucket, patterns, validation)),
+    byAsset: setupStats.byAsset.map((bucket) =>
+      assetSlice(
+        {
+          ...bucket,
+          success: (tradeByAsset.get(bucket.key) ?? bucket).success,
+        },
+        patterns,
+        validation,
+      ),
+    ),
     series: cumulativeSeries(cases),
     notice: EVOLUTION_NOTICE,
     barNotice: EVIDENCE_BAR_NOTICE,

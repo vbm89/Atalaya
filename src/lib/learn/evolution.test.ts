@@ -56,6 +56,7 @@ function lc(partial: Partial<LearningCase> = {}): LearningCase {
     exclusionReason: null,
     complete: true,
     origin: "production",
+    hadV1Entry: true,
     ...partial,
   };
 }

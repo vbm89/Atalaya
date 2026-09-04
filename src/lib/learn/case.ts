@@ -208,12 +208,29 @@ export const SETUPS_VS_ENTRIES_NOTE =
 export const ENTRY_OUTCOME_NOTE =
   "Outcome actual del episodio; no equivale necesariamente al resultado de una operación ejecutada.";
 
+export const V1_TRADE_UNIVERSE_NOTE =
+  "P5 mide rendimiento de V1 solo sobre episodios con signal_events.to_state='entry'. Un SL/TP técnico de MAP/PENDING no es una operación.";
+
 /** Real V1 ENTRY = signal_events.to_state === 'entry'. Never inferred from outcome/SL/TP. */
 export function hadV1EntryEvent(row: Pick<HistoryRow, "hadV1Entry">): boolean {
   return row.hadV1Entry === true;
 }
 
-/** Subset for the ENTRADAS V1 block. Does not alter P5 TRAIN/TEST/findings. */
+export function isV1Trade(c: Pick<LearningCase, "hadV1Entry">): boolean {
+  return c.hadV1Entry === true;
+}
+
+/** Universe A: operaciones V1 reales. Fuente = signal_events.to_state='entry'. */
+export function v1TradeCases(cases: LearningCase[]): LearningCase[] {
+  return cases.filter(isV1Trade);
+}
+
+/** Universe B: todos los setups (MAP/PENDING/ENTRY). No usar para WR/expectancy de V1. */
+export function setupCases(cases: LearningCase[]): LearningCase[] {
+  return cases;
+}
+
+/** Subset for the ENTRADAS V1 block. Same membership as v1TradeCases. */
 export function v1EntryCases(cases: LearningCase[]): LearningCase[] {
-  return cases.filter((c) => c.hadV1Entry === true);
+  return v1TradeCases(cases);
 }
