@@ -752,8 +752,8 @@ function DockBtn({
       onClick={onClick}
       className={
         active
-          ? "flex flex-1 flex-col items-center justify-center p-0 text-[10px] leading-none font-medium text-buy"
-          : "flex flex-1 flex-col items-center justify-center p-0 text-[10px] leading-none text-muted"
+          ? "flex flex-1 flex-col items-center justify-end p-0 text-[10px] leading-none font-medium text-buy"
+          : "flex flex-1 flex-col items-center justify-end p-0 text-[10px] leading-none text-muted"
       }
     >
       {children}

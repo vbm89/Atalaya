@@ -97,7 +97,7 @@
 
 /* Shell: named areas so the dock stays BOTTOM even when the header is unmounted. */
 .atalaya-shell {
-  --dock-row: 1.9rem;
+  --dock-row: 1.75rem;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
@@ -147,21 +147,27 @@
   grid-area: dock;
   z-index: 40;
   display: flex;
-  align-items: stretch;
+  align-items: flex-end;
   border-top: 1px solid var(--color-border);
   background: var(--color-bg);
-  padding-top: 0.05rem;
-  /* Inset iOS only — no extra floor padding under the labels. */
+  padding-top: 0.1rem;
+  /* Home-indicator only. No extra floor under the labels. */
   padding-bottom: var(--safe-bottom);
 }
 
 .atalaya-dock button {
-  height: var(--dock-row);
+  height: auto;
   min-height: 0;
   margin: 0;
   padding: 0;
-  gap: 0.05rem;
-  line-height: 1.05;
+  gap: 0.1rem;
+  line-height: 1;
+  justify-content: flex-end;
+}
+
+.atalaya-dock button svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 .atalaya-home,
@@ -344,7 +350,7 @@
 .atalaya-more-panel {
   position: absolute;
   right: 0;
-  bottom: calc(var(--dock-row, 1.9rem) + var(--safe-bottom));
+  bottom: calc(var(--dock-row, 1.75rem) + var(--safe-bottom));
   left: 0;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   background: var(--color-elevated);
@@ -418,7 +424,7 @@
   }
 
   .atalaya-dock button {
-    height: 1.9rem;
+    height: auto;
     font-size: 0;
     gap: 0;
   }
