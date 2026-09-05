@@ -6,6 +6,8 @@ import type {
 } from "./shadow-replay";
 import { SHADOW_VARIANTS, replayCandidates, buildShadowReplayReport, slotToMs } from "./shadow-replay";
 
+export type ShadowEvidenceLabel = "INSUFFICIENT" | "DESCRIPTIVE" | "EXPLORATORY" | "CONFIRMATORY";
+
 export interface ShadowComparison {
   variant: ShadowCandidateReason;
   deltaVsBaselinePp: number | null;
@@ -21,6 +23,7 @@ export interface ShadowComparison {
   walkForwardTestRangePp: number | null;
   sufficientEvidence: boolean;
   recommendation: "CONTINUE" | "DISCARD" | "INSUFFICIENT";
+  evidenceLabel: ShadowEvidenceLabel;
 }
 
 export interface WalkForwardWindow {
@@ -41,10 +44,22 @@ export interface ShadowAnalysisReport {
   replay: ShadowReplayReport;
   comparisons: ShadowComparison[];
   walkForward: WalkForwardWindow[];
+  variantsEvaluated: number;
+  confirmatoryAllowed: false;
 }
 
-const MIN_TEST_N = 30;
+export const MIN_TEST_N = 30;
 const MATERIAL_WORSENING_PP = 5;
+
+/** CONFIRMATORY is reserved until documented promotion criteria exist. */
+export function evidenceLabelFor(
+  recommendation: ShadowComparison["recommendation"],
+  extraTestN: number,
+): ShadowEvidenceLabel {
+  if (recommendation === "INSUFFICIENT" || extraTestN < MIN_TEST_N) return "INSUFFICIENT";
+  if (recommendation === "CONTINUE") return "EXPLORATORY";
+  return "DESCRIPTIVE";
+}
 
 function success(rows: readonly ShadowCandidateResult[]): number | null {
   const decided = rows.filter((r) => r.outcome === "tp1" || r.outcome === "tp2" || r.outcome === "sl");
@@ -117,6 +132,11 @@ export function analyzeShadowReplay(episodes: readonly ShadowEpisode[]): ShadowA
       testDelta >= -MATERIAL_WORSENING_PP &&
       variantReport.extra.candidates > 0;
     const insufficient = extraTestN < MIN_TEST_N || testDelta == null;
+    const recommendation: ShadowComparison["recommendation"] = insufficient
+      ? "INSUFFICIENT"
+      : sufficient
+        ? "CONTINUE"
+        : "DISCARD";
     return {
       variant: variantReport.variant,
       deltaVsBaselinePp: delta,
@@ -131,8 +151,15 @@ export function analyzeShadowReplay(episodes: readonly ShadowEpisode[]): ShadowA
       assetSuccessRangePp: asset.range,
       walkForwardTestRangePp: wfRange,
       sufficientEvidence: sufficient,
-      recommendation: insufficient ? "INSUFFICIENT" : sufficient ? "CONTINUE" : "DISCARD",
+      recommendation,
+      evidenceLabel: evidenceLabelFor(recommendation, extraTestN),
     } satisfies ShadowComparison;
   });
-  return { replay, comparisons, walkForward };
+  return {
+    replay,
+    comparisons,
+    walkForward,
+    variantsEvaluated: SHADOW_VARIANTS.length,
+    confirmatoryAllowed: false,
+  };
 }

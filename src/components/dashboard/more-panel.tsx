@@ -4,6 +4,7 @@ import {
   BookOpen,
   CalendarDays,
   ChevronRight,
+  FlaskConical,
   GraduationCap,
   Info,
   Settings,
@@ -20,6 +21,7 @@ export function MorePanel({
   onCalendar,
   onSettings,
   onStatus,
+  onLab,
   statusHint,
 }: {
   onInfo: () => void;
@@ -29,6 +31,7 @@ export function MorePanel({
   onCalendar: () => void;
   onSettings: () => void;
   onStatus: () => void;
+  onLab: () => void;
   statusHint: string;
 }) {
   return (
@@ -41,6 +44,7 @@ export function MorePanel({
         <MoreRow icon={<Info className="size-4 text-cyan" />} title="Información" hint="Sobre Atalaya" onClick={onInfo} />
         <MoreRow icon={<BookOpen className="size-4 text-muted" />} title="Historial" hint="Episodios registrados" onClick={onHistory} />
         <MoreRow icon={<GraduationCap className="size-4 text-muted" />} title="Aprendizaje" hint="Shadow y análisis" onClick={onLearn} />
+        <MoreRow icon={<FlaskConical className="size-4 text-muted" />} title="Estado del laboratorio" hint="Captura e integridad" onClick={onLab} />
         <MoreRow icon={<Bell className="size-4 text-muted" />} title="Alertas" hint="Notificaciones" onClick={onAlerts} />
         <MoreRow icon={<CalendarDays className="size-4 text-muted" />} title="Calendario" hint="Eventos de mercado" onClick={onCalendar} />
         <MoreRow icon={<Settings className="size-4 text-muted" />} title="Configuración" hint="Preferencias" onClick={onSettings} />

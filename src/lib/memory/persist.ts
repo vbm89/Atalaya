@@ -1,6 +1,7 @@
 import type { AssetId, CalendarEvent, Candle } from "../trading/types";
 import type { EpisodeDraft } from "../watch/episode";
 import type { HistoryRow, SqlQuery } from "../watch/store";
+import { diagnoseBornSidecar, logCaptureIssues } from "../watch/capture-issues";
 import { snapshotContext, type EpisodeContext } from "./context";
 import { mergeJournal, type JournalClearField, type JournalEntry } from "./journal";
 import { buildPostMortem, type PostMortem } from "./postmortem";
@@ -340,6 +341,25 @@ export async function rememberAfterTick(sql: SqlQuery, work: MemoryTickWork): Pr
         v1Label: V1_LABEL,
       });
       await persistContextOnce(sql, ctx);
+    });
+  }
+
+  try {
+    const sidecar: Array<{ episodeId: string; tape15mCount: number; hasContext: boolean }> = [];
+    for (const ep of work.born) {
+      const tape = await loadTape(sql, ep.episodeId);
+      const ctx = await loadContext(sql, ep.episodeId);
+      sidecar.push({
+        episodeId: ep.episodeId,
+        tape15mCount: tape.filter((b) => b.tf === "15m").length,
+        hasContext: ctx != null,
+      });
+    }
+    logCaptureIssues(diagnoseBornSidecar(sidecar));
+  } catch (e) {
+    console.info("[capture] diagnose failed", {
+      error: e instanceof Error ? e.message : "error",
+      repair: false,
     });
   }
 }

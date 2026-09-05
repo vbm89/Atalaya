@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { toShadowFeatures, type ShadowCaseInput } from "./shadow-features";
-import { analyzeShadowReplay } from "./shadow-analysis";
+import { analyzeShadowReplay, evidenceLabelFor, MIN_TEST_N } from "./shadow-analysis";
 import {
   buildShadowReplayReport,
   isExtraVsV1,
@@ -226,6 +226,13 @@ test("small TEST samples are marked INSUFFICIENT, not evidence of improvement", 
   const analysis = analyzeShadowReplay([e]);
   assert.ok(analysis.comparisons.every((c) => c.recommendation === "INSUFFICIENT"));
   assert.ok(analysis.comparisons.every((c) => c.extraTestN < 30));
+  assert.ok(analysis.comparisons.every((c) => c.evidenceLabel === "INSUFFICIENT"));
+  assert.equal(analysis.confirmatoryAllowed, false);
+  assert.ok(analysis.variantsEvaluated >= 10);
+  assert.equal(
+    analysis.comparisons.some((c) => c.evidenceLabel === "CONFIRMATORY"),
+    false,
+  );
 });
 
 test("V1 ENTRY on an episode is overlap, never extra", () => {
@@ -313,4 +320,22 @@ test("baseline closed without SL/TP after the entry slot is expired, not a fake 
   assert.equal(row?.decided, 0);
   assert.equal(row?.expired, 1);
   assert.equal(row?.extra.candidates, 0);
+});
+
+test("evidence labels: N<30 is INSUFFICIENT even at 100% WR; CONFIRMATORY is unused", () => {
+  assert.equal(MIN_TEST_N, 30);
+  assert.equal(evidenceLabelFor("INSUFFICIENT", 0), "INSUFFICIENT");
+  assert.equal(evidenceLabelFor("CONTINUE", 29), "INSUFFICIENT");
+  assert.equal(evidenceLabelFor("CONTINUE", 30), "EXPLORATORY");
+  assert.equal(evidenceLabelFor("DISCARD", 40), "DESCRIPTIVE");
+  const perfectSmall = episode(
+    "XAUUSD-perfect-small",
+    bar("XAUUSD-perfect-small", 2800, 106, 110, 100, 102, 2),
+    bar("XAUUSD-perfect-small", 3700, 102, 103, 79, 80),
+  );
+  const analysis = analyzeShadowReplay([perfectSmall]);
+  assert.ok(analysis.comparisons.length > 0);
+  assert.ok(analysis.comparisons.every((c) => c.evidenceLabel === "INSUFFICIENT"));
+  assert.ok(analysis.comparisons.every((c) => c.recommendation !== "CONTINUE" || c.extraTestN < 30));
+  assert.equal(analysis.confirmatoryAllowed, false);
 });

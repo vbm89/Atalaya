@@ -27,13 +27,20 @@ export function timeframeLabel(row: HistoryRow): string {
 }
 
 export function outcomeView(row: HistoryRow): { text: string; cls: string } {
+  const entered = row.hadV1Entry === true;
   switch (row.outcome) {
     case "tp1":
-      return { text: "TP1", cls: "text-buy" };
+      return entered
+        ? { text: "TP1", cls: "text-buy" }
+        : { text: "toque técnico TP1", cls: "text-muted" };
     case "tp2":
-      return { text: "TP2", cls: "text-buy" };
+      return entered
+        ? { text: "TP2", cls: "text-buy" }
+        : { text: "toque técnico TP2", cls: "text-muted" };
     case "sl":
-      return { text: "SL", cls: "text-sell" };
+      return entered
+        ? { text: "SL", cls: "text-sell" }
+        : { text: "toque técnico SL", cls: "text-muted" };
     case "expired":
       return { text: "EXPIRADA", cls: "text-muted" };
     default:
@@ -46,6 +53,24 @@ export function outcomeView(row: HistoryRow): { text: string; cls: string } {
     if (state === "map") return { text: "MAPA", cls: "text-map" };
   }
   return { text: "RESULTADO PENDIENTE", cls: "text-subtle" };
+}
+
+export function setupWithoutEntryLabel(row: HistoryRow): string | null {
+  if (row.hadV1Entry === true) return null;
+  if (row.outcome === "sl") return "Setup sin ENTRADA V1 — toque técnico SL";
+  if (row.outcome === "tp1") return "Setup sin ENTRADA V1 — toque técnico TP1";
+  if (row.outcome === "tp2") return "Setup sin ENTRADA V1 — toque técnico TP2";
+  return "Setup sin ENTRADA V1. MAPA y PENDING no son operaciones.";
+}
+
+export function historyBuckets(rows: readonly HistoryRow[]): {
+  operations: HistoryRow[];
+  setups: HistoryRow[];
+} {
+  return {
+    operations: rows.filter((r) => r.hadV1Entry === true),
+    setups: rows.filter((r) => r.hadV1Entry !== true),
+  };
 }
 
 export function wickNote(row: HistoryRow): string {
@@ -91,6 +116,9 @@ export interface HistoryCardModel {
   disclaimer: string;
   episodeState: string;
   hadV1Entry: boolean;
+  entryV1Label: "SÍ" | "NO";
+  setupCaption: string | null;
+  isTradeOutcome: boolean;
 }
 
 export function historyCardModel(row: HistoryRow): HistoryCardModel {
@@ -125,5 +153,8 @@ export function historyCardModel(row: HistoryRow): HistoryCardModel {
     disclaimer: `${HISTORY_DISCLAIMER} · ${analysisDisclaimer(ep.assetId).replace(/\n/g, " ")}`,
     episodeState: setupBadgeLabel(nowState === "wait" ? opened : nowState),
     hadV1Entry: row.hadV1Entry === true,
+    entryV1Label: row.hadV1Entry === true ? "SÍ" : "NO",
+    setupCaption: setupWithoutEntryLabel(row),
+    isTradeOutcome: row.hadV1Entry === true && (row.outcome === "tp1" || row.outcome === "tp2" || row.outcome === "sl" || row.outcome === "expired"),
   };
 }

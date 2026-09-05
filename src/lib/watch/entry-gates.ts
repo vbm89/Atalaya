@@ -55,24 +55,29 @@ const UNEVALUATED: EntryGates = {
   underlyingClosed: null,
 };
 
-const ALL_PASSED: EntryGates = {
+/**
+ * ENTRY: V1 returned entry (t2 && missing.length===0). Always-evaluated gates
+ * passed. volume4h stays null: V1 only lists 4H when vol4h != null AND dead;
+ * absence of the snippet is not evidence it was evaluated and passed.
+ */
+const ENTRY_PASSED: EntryGates = {
   armed: true,
   t2: true,
   volume15: true,
-  volume4h: true,
+  volume4h: null,
   bias4h: true,
   news: true,
   late: true,
   underlyingClosed: true,
 };
 
-/** MAP: only armed is known (false). PENDING: missing[] for always-evaluated gates; volume4h null unless listed. ENTRY: V1 returned entry (t2 && missing.length===0). */
+/** MAP: only armed is known (false). PENDING: missing[] for always-evaluated gates; volume4h null unless listed. ENTRY: V1 returned entry. */
 export function captureEntryGates(
   state: SetupState | null | undefined,
   missingForEntry: string | null | undefined,
 ): EntryGates | undefined {
   if (state === "map") return { ...UNEVALUATED, armed: false };
-  if (state === "entry") return { ...ALL_PASSED };
+  if (state === "entry") return { ...ENTRY_PASSED };
   if (state !== "pending") return undefined;
   if (missingForEntry == null || missingForEntry.trim() === "") {
     return {

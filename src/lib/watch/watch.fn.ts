@@ -295,6 +295,18 @@ export const getWatchHistory = createServerFn({ method: "POST" }).handler(async 
   return createPgStore(sql).listHistory(80);
 });
 
+export const getLabIntegrity = createServerFn({ method: "POST" }).handler(async () => {
+  const { labUnavailable } = await import("./lab-integrity");
+  try {
+    const { getSql } = await import("@/lib/db");
+    const { readLabIntegrity } = await import("./lab-integrity-read");
+    const sql = await getSql();
+    return await readLabIntegrity(sql, Date.now());
+  } catch {
+    return labUnavailable("error");
+  }
+});
+
 export const getWatchInbox = createServerFn({ method: "POST" }).handler(async () => {
   const { getSql } = await import("@/lib/db");
   const { createPgStore } = await import("./store");

@@ -80,7 +80,10 @@ function gateIssues(freeze: EpisodeFreeze): { issues: string[]; skipped: string[
     if (gates.armed !== true) issues.push("ENTRY debe capturar armed=true");
     if (gates.t2 !== true) issues.push("ENTRY debe capturar t2=true");
     if (gates.volume15 !== true) issues.push("ENTRY debe capturar volume15=true");
-    if (gates.volume4h !== true) issues.push("ENTRY debe capturar volume4h=true como gate no bloqueante");
+    // V1 only lists 4H when vol4h was evaluable and dead. Absence ≠ passed.
+    if (gates.volume4h === true && !missingHas4h(freeze.missingForEntry)) {
+      issues.push("ENTRY volume4h=true sin evidencia de evaluación 4H");
+    }
     if (gates.bias4h !== true) issues.push("ENTRY debe capturar bias4h=true");
     if (gates.news !== true) issues.push("ENTRY debe capturar news=true");
     if (gates.late !== true) issues.push("ENTRY debe capturar late=true");

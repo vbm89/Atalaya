@@ -3,6 +3,7 @@ import { foldEpisode, type EpisodeDraft, type FoldInput, type SignalEventDraft }
 import { slotOpenSec, slotSecFromNow } from "./identity";
 import { resolveOutcome } from "./outcome";
 import { computePostEntryMetrics } from "./post-entry";
+import { diagnoseBornFreeze, logCaptureIssues } from "./capture-issues";
 import { FEED_GRACE_MS } from "./schedule";
 import type { WatchStore } from "./store";
 
@@ -183,6 +184,7 @@ export async function runWatchTick(args: {
           candles,
         });
         await args.store.upsertOutcome(ep.episodeId, args.nowMs, resolved);
+        // postEntry only when a real V1 ENTRY event exists. MAP/PENDING never.
         const entryEv =
           folded.events.find((e) => e.episodeId === ep.episodeId && e.toState === "entry") ??
           (await args.store.findEntryEvent(ep.episodeId));
@@ -236,6 +238,7 @@ export async function runWatchTick(args: {
       born,
       touched,
     });
+    logCaptureIssues(diagnoseBornFreeze(born));
     console.info("[watch] tick", {
       slot,
       status: "ok",

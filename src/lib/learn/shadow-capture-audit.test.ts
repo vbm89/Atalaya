@@ -33,7 +33,7 @@ function freeze(state: "map" | "pending" | "entry" = "pending"): EpisodeFreeze {
           armed: true,
           t2: true,
           volume15: true,
-          volume4h: true,
+          volume4h: null,
           bias4h: true,
           news: true,
           late: true,
@@ -169,6 +169,21 @@ test("PENDING volume4h=true without 4H snippet fails; null is valid", () => {
   const result = auditShadowCapture({ ...ep, freeze: fakeTrue }, []);
   assert.equal(result.ok, false);
   assert.ok(result.issues.includes("PENDING volume4h=true sin evidencia de evaluación 4H"));
+});
+
+test("ENTRY volume4h null is valid; true without 4H evidence fails", () => {
+  const ep = episode("entry-v4h", "entry");
+  const ev = entryEvent(ep.episodeId);
+  assert.equal(ep.freeze?.entryGates?.volume4h ?? null, null);
+  assert.equal(auditShadowCapture(ep, [ev]).ok, true);
+  const fakeTrue: EpisodeFreeze = {
+    ...freeze("entry"),
+    missingForEntry: null,
+    entryGates: { ...freeze("entry").entryGates!, volume4h: true },
+  };
+  const result = auditShadowCapture({ ...ep, freeze: fakeTrue }, [ev]);
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.includes("ENTRY volume4h=true sin evidencia de evaluación 4H"));
 });
 
 test("postEntry without ENTRY event fails", () => {

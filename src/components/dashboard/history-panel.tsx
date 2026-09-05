@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CircleHelp, UserRound } from "lucide-react";
 import { getWatchHistory, getWatchEpisode } from "@/lib/watch/watch.fn";
-import { historyCardModel } from "@/lib/watch/history-view";
+import { historyBuckets, historyCardModel } from "@/lib/watch/history-view";
 import { episodeMarketView } from "@/lib/watch/market-session";
 import { ASSETS } from "@/lib/trading/assets";
 import type { AssetId } from "@/lib/trading/types";
@@ -76,7 +76,7 @@ function HistoryRowCard({
   const date = card.openedStamp.replace(/,?\s+\d{2}:\d{2}:\d{2}$/, "");
   const live =
     row.episode.closedAtMs == null && row.episode.currentState !== "wait";
-  const terminal = card.outcome === "TP1" || card.outcome === "TP2" || card.outcome === "SL" || card.outcome === "EXPIRADA";
+  const showOutcomeBadge = card.isTradeOutcome || (card.outcome.startsWith("toque técnico") || card.outcome === "EXPIRADA");
   const market = live
     ? episodeMarketView({
         id: row.episode.assetId,
@@ -90,6 +90,7 @@ function HistoryRowCard({
         className={cn("atalaya-history-card", market?.closedPending && "is-market-closed")}
         data-history-episode={card.episodeId}
         data-history-outcome={card.outcome}
+        data-history-entry-v1={card.hadV1Entry ? "yes" : "no"}
         data-direction={row.episode.direction}
         data-market-session={market?.session ?? ""}
         data-operable={market ? (market.operable ? "1" : "0") : ""}
@@ -108,7 +109,12 @@ function HistoryRowCard({
             <div className="flex flex-wrap items-center justify-end gap-1.5">
               <span className={buy ? "text-xs font-semibold text-buy" : "text-xs font-semibold text-sell"}>{side}</span>
               <span className={stateBadgeClass(card.episodeState)}>{card.episodeState}</span>
-              {terminal ? <span className={outcomeBadgeClass(card.outcomeCls)}>{card.outcome}</span> : null}
+              <span className="atalaya-badge atalaya-badge-muted">ENTRY V1: {card.entryV1Label}</span>
+              {showOutcomeBadge ? (
+                <span className={card.isTradeOutcome ? outcomeBadgeClass(card.outcomeCls) : "atalaya-badge atalaya-badge-muted"}>
+                  {card.outcome}
+                </span>
+              ) : null}
               {market?.session === "closed" ? <SessionKindBadge kind="closed" compact /> : null}
             </div>
             <p className="font-mono text-[11px] tabular text-subtle">
@@ -119,9 +125,9 @@ function HistoryRowCard({
               <p className="max-w-[12.5rem] text-right text-[10px] leading-snug text-subtle">
                 {market.caption}
               </p>
-            ) : !card.hadV1Entry && terminal && card.outcome !== "EXPIRADA" ? (
+            ) : card.setupCaption && !card.hadV1Entry ? (
               <p className="max-w-[12.5rem] text-right text-[10px] leading-snug text-subtle">
-                Toque de mecha. No es una operación V1.
+                {card.setupCaption}
               </p>
             ) : null}
           </div>
@@ -258,22 +264,85 @@ export function HistoryPanel({
       </p>
 
       {filtered.length ? (
-        <ul className="mt-3 space-y-2.5">
-          {filtered.map((row) => (
-            <HistoryRowCard
-              key={row.episode.episodeId}
-              row={row}
-              journalOpen={journalEpisodeId === row.episode.episodeId}
-              onOpenEpisode={onOpenEpisode}
-              onViewChart={onViewChart}
-              onWhy={onWhy}
-              onToggleJournal={(id) => setJournalEpisodeId((prev) => (prev === id ? null : id))}
-            />
-          ))}
-        </ul>
+        <HistoryBuckets
+          rows={filtered}
+          journalEpisodeId={journalEpisodeId}
+          onOpenEpisode={onOpenEpisode}
+          onViewChart={onViewChart}
+          onWhy={onWhy}
+          onToggleJournal={(id) => setJournalEpisodeId((prev) => (prev === id ? null : id))}
+        />
       ) : (
         <p className="mt-3 text-sm text-subtle">Ningún episodio con este filtro.</p>
       )}
+    </div>
+  );
+}
+
+function HistoryBuckets({
+  rows,
+  journalEpisodeId,
+  onOpenEpisode,
+  onViewChart,
+  onWhy,
+  onToggleJournal,
+}: {
+  rows: HistoryRow[];
+  journalEpisodeId: string | null;
+  onOpenEpisode: (episodeId: string, assetId: AssetId) => void;
+  onViewChart: (episodeId: string, assetId: AssetId) => void;
+  onWhy?: (row: HistoryRow) => void;
+  onToggleJournal: (episodeId: string) => void;
+}) {
+  const { operations, setups } = historyBuckets(rows);
+  return (
+    <div className="mt-3 space-y-5">
+      <section data-history-bucket="operations">
+        <h3 className="text-sm font-semibold tracking-tight">Operaciones V1</h3>
+        <p className="mt-0.5 text-xs text-subtle">
+          Solo episodios con evento <span className="font-mono">to_state=entry</span>. Shadow no aparece aquí.
+        </p>
+        {operations.length ? (
+          <ul className="mt-2 space-y-2.5">
+            {operations.map((row) => (
+              <HistoryRowCard
+                key={row.episode.episodeId}
+                row={row}
+                journalOpen={journalEpisodeId === row.episode.episodeId}
+                onOpenEpisode={onOpenEpisode}
+                onViewChart={onViewChart}
+                onWhy={onWhy}
+                onToggleJournal={onToggleJournal}
+              />
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-sm text-subtle">Ninguna operación V1 en esta ventana.</p>
+        )}
+      </section>
+      <section data-history-bucket="setups">
+        <h3 className="text-sm font-semibold tracking-tight">Setups que no entraron</h3>
+        <p className="mt-0.5 text-xs text-subtle">
+          MAPA y PENDIENTE. Un toque técnico de SL/TP no es una operación ejecutada.
+        </p>
+        {setups.length ? (
+          <ul className="mt-2 space-y-2.5">
+            {setups.map((row) => (
+              <HistoryRowCard
+                key={row.episode.episodeId}
+                row={row}
+                journalOpen={journalEpisodeId === row.episode.episodeId}
+                onOpenEpisode={onOpenEpisode}
+                onViewChart={onViewChart}
+                onWhy={onWhy}
+                onToggleJournal={onToggleJournal}
+              />
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-sm text-subtle">Ningún setup sin entrada en esta ventana.</p>
+        )}
+      </section>
     </div>
   );
 }

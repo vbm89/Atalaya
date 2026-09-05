@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import { captureEntryGates } from "./entry-gates.ts";
 import { freezeField, type EpisodeFreeze } from "./freeze.ts";
@@ -19,6 +22,7 @@ describe("captureEntryGates", () => {
     assert.equal(g?.t2, true);
     assert.equal(g?.volume15, true);
     assert.equal(g?.late, true);
+    assert.equal(g?.volume4h, null);
   });
 
   it("PENDING: false only for snippets V1 listed in missingForEntry", () => {
@@ -88,5 +92,14 @@ describe("captureEntryGates", () => {
     const freeze = JSON.parse(JSON.stringify(raw)) as EpisodeFreeze;
     assert.equal("entryGates" in freeze, false);
     assert.equal(freezeField(freeze.entryGates), null);
+  });
+
+  it("does not import market-session to decide underlyingClosed", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const gates = readFileSync(join(here, "entry-gates.ts"), "utf8");
+    const freezeSrc = readFileSync(join(here, "freeze.ts"), "utf8");
+    assert.doesNotMatch(gates, /market-session/);
+    assert.doesNotMatch(freezeSrc, /market-session/);
+    assert.match(freezeSrc, /a\.dataStatus === "session_closed"/);
   });
 });

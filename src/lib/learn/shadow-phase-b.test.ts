@@ -291,6 +291,7 @@ test("small Phase B TEST samples are INSUFFICIENT, not evidence", () => {
   assert.ok(b.length >= 1);
   assert.ok(b.every((c) => c.recommendation === "INSUFFICIENT"));
   assert.ok(b.every((c) => c.extraTestN < 30));
+  assert.ok(b.every((c) => c.evidenceLabel === "INSUFFICIENT"));
 });
 
 test("Shadow Phase B modules do not import V1 engines or write SQL", async () => {
