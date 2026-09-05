@@ -104,6 +104,27 @@ export function episodeStateLabel(state: SetupState): string {
   return "ESPERAR";
 }
 
+/** Compact chrome badge. Same tokens on Inicio, Historial and Alertas. */
+export function setupBadgeLabel(state: SetupState): string {
+  if (state === "entry") return "ENTRY";
+  if (state === "pending") return "PENDING";
+  if (state === "map") return "MAPA";
+  return "ESPERAR";
+}
+
+export function countOperableEntries<T extends OpportunityCandidate>(assets: T[], now?: number): number {
+  return assets.filter(
+    (a) =>
+      a.setupState === "entry" &&
+      episodeMarketView({
+        id: a.id,
+        setupState: a.setupState,
+        dataStatus: a.dataStatus,
+        now,
+      }).operable,
+  ).length;
+}
+
 export interface EpisodeMarketView {
   session: MarketSessionKind;
   sessionLabel: string;
@@ -263,7 +284,7 @@ export function tileStatusChips(args: {
   return {
     session: {
       kind,
-      label: kind === "unknown" ? marketSessionLabel(kind, false) : marketSessionLabel(kind, true),
+      label: marketSessionLabel(kind, true),
     },
     setups,
     hunting,

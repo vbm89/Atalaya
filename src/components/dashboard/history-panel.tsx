@@ -39,10 +39,17 @@ function outcomeBadgeClass(cls: string): string {
   return "atalaya-badge atalaya-badge-muted";
 }
 
+function stateBadgeClass(state: string): string {
+  if (state === "ENTRY") return "atalaya-badge atalaya-badge-entry";
+  if (state === "PENDING") return "atalaya-badge atalaya-badge-wait";
+  if (state === "MAPA") return "atalaya-badge atalaya-badge-map";
+  return "atalaya-badge atalaya-badge-muted";
+}
+
 function resultR(row: HistoryRow, rr: string | null): string | null {
+  if (row.hadV1Entry !== true) return null;
   if (row.outcome === "sl") return "−1,00R";
-  if (row.outcome === "expired") return "0,00R";
-  if ((row.outcome === "tp1" || row.outcome === "tp2") && rr) return `+${rr}R`;
+  if (row.outcome === "tp1" || row.outcome === "tp2") return rr ? `+${rr}R` : null;
   return null;
 }
 
@@ -69,6 +76,7 @@ function HistoryRowCard({
   const date = card.openedStamp.replace(/,?\s+\d{2}:\d{2}:\d{2}$/, "");
   const live =
     row.episode.closedAtMs == null && row.episode.currentState !== "wait";
+  const terminal = card.outcome === "TP1" || card.outcome === "TP2" || card.outcome === "SL" || card.outcome === "EXPIRADA";
   const market = live
     ? episodeMarketView({
         id: row.episode.assetId,
@@ -99,8 +107,9 @@ function HistoryRowCard({
           <div className="flex flex-col items-end gap-1">
             <div className="flex flex-wrap items-center justify-end gap-1.5">
               <span className={buy ? "text-xs font-semibold text-buy" : "text-xs font-semibold text-sell"}>{side}</span>
-              <span className={outcomeBadgeClass(card.outcomeCls)}>{card.outcome}</span>
-              {market?.session === "closed" ? <SessionKindBadge kind="closed" compact={false} /> : null}
+              <span className={stateBadgeClass(card.episodeState)}>{card.episodeState}</span>
+              {terminal ? <span className={outcomeBadgeClass(card.outcomeCls)}>{card.outcome}</span> : null}
+              {market?.session === "closed" ? <SessionKindBadge kind="closed" compact /> : null}
             </div>
             <p className="font-mono text-[11px] tabular text-subtle">
               {card.rr ? `R:R ${card.rr}` : ""}
@@ -109,6 +118,10 @@ function HistoryRowCard({
             {market?.caption ? (
               <p className="max-w-[12.5rem] text-right text-[10px] leading-snug text-subtle">
                 {market.caption}
+              </p>
+            ) : !card.hadV1Entry && terminal && card.outcome !== "EXPIRADA" ? (
+              <p className="max-w-[12.5rem] text-right text-[10px] leading-snug text-subtle">
+                Toque de mecha. No es una operación V1.
               </p>
             ) : null}
           </div>
@@ -190,28 +203,44 @@ export function HistoryPanel({
   }, [rows, assetFilter]);
 
   if (q.isLoading) {
-    return <p className="mt-4 text-sm text-subtle">Cargando historial…</p>;
+    return (
+      <div className="mt-2">
+        <h2 className="text-xl font-semibold tracking-tight">Historial</h2>
+        <p className="mt-4 text-sm text-subtle">Cargando historial…</p>
+      </div>
+    );
   }
   if (q.isError) {
     return (
-      <p className="mt-4 text-sm text-sell">
-        No se ha podido leer el historial del servidor. No se inventan episodios.
-      </p>
+      <div className="mt-2">
+        <h2 className="text-xl font-semibold tracking-tight">Historial</h2>
+        <p className="mt-4 text-sm text-sell">
+          No se ha podido leer el historial del servidor. No se inventan episodios.
+        </p>
+      </div>
     );
   }
   if (!rows.length) {
     return (
-      <p className="mt-4 text-sm text-subtle">
-        Todavía no hay episodios reales. El historial se llena cuando el servidor evalúa V1
-        (cierre M15). No se simulan señales.
-      </p>
+      <div className="mt-2">
+        <h2 className="text-xl font-semibold tracking-tight">Historial</h2>
+        <p className="mt-0.5 text-sm text-subtle">
+          Episodios registrados. MAPA y PENDING no son operaciones ejecutadas.
+        </p>
+        <p className="mt-4 text-sm text-subtle">
+          Todavía no hay episodios reales. El historial se llena cuando el servidor evalúa V1
+          (cierre M15). No se simulan señales.
+        </p>
+      </div>
     );
   }
 
   return (
     <div className="mt-2" data-history-list>
       <h2 className="text-xl font-semibold tracking-tight">Historial</h2>
-      <p className="mt-0.5 text-sm text-subtle">Todas las señales de Atalaya</p>
+      <p className="mt-0.5 text-sm text-subtle">
+        Episodios registrados. MAPA y PENDING no son operaciones ejecutadas.
+      </p>
       <div className="atalaya-chip-row mt-3">
         <FilterChip active={assetFilter === "all"} onClick={() => setAssetFilter("all")}>
           Todas

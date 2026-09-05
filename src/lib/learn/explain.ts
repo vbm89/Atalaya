@@ -475,7 +475,7 @@ export function explain(input: ExplainInput): ExplainView {
             : "na";
 
   const volFail = failByCheck.has("volumen");
-  const volPassed = state === "entry" || (hasSetup && !volFail);
+  const volPassed = state === "entry" && !volFail;
   const vol = volumeSeeing(input, volPassed && !volFail, volFail);
 
   const rrStatus: CheckStatus =

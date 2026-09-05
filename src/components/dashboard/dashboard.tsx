@@ -39,7 +39,7 @@ import { AtalayaMark } from "./marks";
 import { sheetJournalEpisodeId } from "@/lib/memory/journal";
 import { formatMadridClock } from "@/lib/watch/clock";
 import { watchLamp, worstDataLamp } from "@/lib/watch/feed-lamp";
-import { pickPresentedOpportunity } from "@/lib/watch/market-session";
+import { pickPresentedOpportunity, marketSessionKind, marketSessionLabel } from "@/lib/watch/market-session";
 
 
 const CACHE_KEY = "atalaya:last-analysis:v5";
@@ -81,6 +81,7 @@ function OperativoPill({
       price: a.id === "XAUUSD" ? a.priceSpot : a.price,
     })),
   );
+  const hint = systemHint(snapshot, server);
   const watch = watchLamp(
     {
       lastStatus: server?.lastStatus,
@@ -90,11 +91,12 @@ function OperativoPill({
     },
     Date.now(),
   );
-  const ok = watch.lamp === "ok" && data.lamp === "ok";
+  const ok = hint === "Todo funcionando";
+  const label = ok ? "Operativo" : hint;
   return (
     <span className={ok ? "atalaya-pill is-ok" : watch.lamp === "error" || data.lamp === "unavailable" ? "atalaya-pill is-bad" : "atalaya-pill is-warn"}>
       <span className="atalaya-status-dot" />
-      <span className="max-w-[9.5rem] truncate">{ok ? "Operativo" : watch.label}</span>
+      <span className="max-w-[9.5rem] truncate">{label}</span>
     </span>
   );
 }
@@ -105,6 +107,7 @@ function systemHint(
 ): string {
   if (!server) return "No disponible";
   if (!server.watchSecretConfigured) return "Falta el secreto del servidor";
+  if (server.lastStatus === "failed") return "Vigilancia con error";
   if (server.stale) return "Vigilancia retrasada";
   const data = snapshot
     ? worstDataLamp(
@@ -153,6 +156,22 @@ function SystemStatusPanel({
         <StatusRow label="Motor" value="V1" />
         <StatusRow label="Alertas" value="Solo ENTRADA genera push" />
       </dl>
+      {snapshot ? (
+        <div className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]" data-system-session>
+          <p className="text-xs font-medium tracking-wider text-subtle uppercase">Sesión</p>
+          <ul>
+            {snapshot.assets.map((a) => {
+              const kind = marketSessionKind({ id: a.id, dataStatus: a.dataStatus });
+              return (
+                <li key={a.id} className="flex items-baseline justify-between gap-3 py-1.5 text-sm">
+                  <span className="text-subtle">{a.id}</span>
+                  <span className="font-medium">{marketSessionLabel(kind, true)}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -161,7 +180,7 @@ function StatusRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3 py-2 text-sm">
       <dt className="text-subtle">{label}</dt>
-      <dd className="text-right font-medium">{value}</dd>
+      <dd className="min-w-0 text-right font-medium leading-snug break-words">{value}</dd>
     </div>
   );
 }
@@ -539,7 +558,11 @@ export function Dashboard() {
               server={health.data ?? null}
             />
             <p className="atalaya-header-sub shrink-0 font-mono text-[10px] tabular text-subtle">
-              {health.data?.lastEvalMs ? formatMadridClock(health.data.lastEvalMs) : "—"}
+              {health.data?.lastEvalMs
+                ? formatMadridClock(health.data.lastEvalMs)
+                : lastEvalMs
+                  ? formatMadridClock(lastEvalMs)
+                  : "—"}
             </p>
           </div>
         </div>

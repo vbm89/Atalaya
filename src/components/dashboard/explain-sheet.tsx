@@ -161,16 +161,15 @@ function ExplainBody({
 }
 
 function Conclusion({ view }: { view: ExplainView }) {
-  const ok = view.checks.filter((c) => c.status === "ok").length;
   const fail = view.checks.filter((c) => c.status === "fail").length;
   const title =
     view.state === "entry"
       ? "Condiciones compatibles con ENTRADA."
       : view.state === "pending"
-        ? "Condiciones casi completas. No es una ENTRADA."
+        ? "Configuración pendiente. Faltan condiciones para ENTRADA."
         : view.state === "map"
-          ? "Zona en vigilancia. No es una ENTRADA."
-          : "Atalaya espera. No hay entrada vigente.";
+          ? "Zona en vigilancia."
+          : "Sin setup vigente.";
   return (
     <div
       className={cn(
@@ -179,11 +178,24 @@ function Conclusion({ view }: { view: ExplainView }) {
       )}
       data-explain-conclusion={view.state}
     >
-      <p className="text-sm font-semibold text-buy">Conclusión</p>
+      <p
+        className={cn(
+          "text-sm font-semibold",
+          view.state === "entry"
+            ? "text-buy"
+            : view.state === "pending"
+              ? "text-wait"
+              : view.state === "map"
+                ? "text-map"
+                : "text-muted",
+        )}
+      >
+        Conclusión
+      </p>
       <p className="mt-1 text-sm leading-snug">{title}</p>
       <p className="mt-1 text-xs text-subtle">
-        {ok} condiciones cumplidas
-        {fail ? ` · ${fail} pendientes` : ""}. {view.headline}
+        {fail ? `${fail} condiciones sin completar según V1. ` : ""}
+        {view.headline}
       </p>
     </div>
   );

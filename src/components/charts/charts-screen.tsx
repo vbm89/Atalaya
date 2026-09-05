@@ -257,7 +257,7 @@ function ChartMarketList({
                     <p className="text-sm font-semibold">{a.label}</p>
                     <p className="truncate text-[11px] text-subtle">{ASSET_SUBTITLE[a.id]}</p>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
-                      {session === "closed" ? <SessionKindBadge kind="closed" /> : null}
+                      <SessionKindBadge kind={session} />
                       {state === "entry" ? <span className="atalaya-badge atalaya-badge-entry">ENTRY</span> : null}
                       {state === "pending" ? (
                         <span className={market.operable ? "atalaya-badge atalaya-badge-wait" : "atalaya-badge atalaya-badge-muted"}>
@@ -376,7 +376,7 @@ function ChartWorkspace({
       ? (live.bars.at(-1)?.close ?? series?.candles.at(-1)?.close ?? null)
       : (series?.candles.at(-1)?.close ?? null);
   const liveStatus: LiveStatus = series
-    ? !series.sessionOpen
+    ? market.session === "closed" || !series.sessionOpen
       ? "closed"
       : live.status
     : "connecting";
@@ -469,6 +469,9 @@ function ChartWorkspace({
                   ? `${new Intl.NumberFormat("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero" }).format(absChange)} (${new Intl.NumberFormat("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero" }).format(chg)}%)`
                   : `${new Intl.NumberFormat("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero" }).format(chg)}%`}
               </p>
+            ) : null}
+            {market.session === "closed" ? (
+              <p className="mt-0.5 text-[10px] tracking-wide text-subtle uppercase">Último dato disponible</p>
             ) : null}
           </div>
         </div>

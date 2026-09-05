@@ -7,6 +7,7 @@ import { DataLampChip } from "./data-lamp";
 import { formatCountdown, formatMadridClock } from "@/lib/watch/clock";
 import { nextWatchEvalMs } from "@/lib/watch/schedule";
 import { watchLamp, worstDataLamp, watchGlyph, type WatchLampSnap } from "@/lib/watch/feed-lamp";
+import { countOperableEntries, marketSessionKind } from "@/lib/watch/market-session";
 import { AssetMark } from "./marks";
 
 export function greetingFor(now: Date | null): string {
@@ -51,10 +52,10 @@ export function BestOpportunityCard({
     <section
       className="atalaya-best atalaya-markets-span"
       data-best-opportunity={shownId ?? "none"}
-      data-operable-opportunity={shownId && (state === "entry" || state === "pending" || state === "map") ? shownId : "none"}
+      data-operable-opportunity={shownId && isEntry ? shownId : "none"}
     >
       <p className="text-base font-semibold tracking-tight">Oportunidades</p>
-      <p className="mt-0.5 text-xs text-subtle">Señales de alta calidad detectadas por Atalaya</p>
+      <p className="mt-0.5 text-xs text-subtle">Solo ENTRY con mercado abierto. PENDING y MAPA no son operaciones.</p>
       {!isEntry || !setup || !asset ? (
         <div className="atalaya-empty mt-3">
           <p className="text-sm font-medium">Sin entradas activas</p>
@@ -138,7 +139,8 @@ export function FeedStatus({
     },
     nowMs,
   );
-  const entries = assets.filter((a) => a.setupState === "entry").length;
+  const entries = countOperableEntries(assets);
+  const openMarkets = assets.filter((a) => marketSessionKind({ id: a.id, dataStatus: a.dataStatus }) === "open").length;
   const operativo = watch.lamp === "ok" && data.lamp === "ok";
 
   return (
@@ -148,12 +150,12 @@ export function FeedStatus({
           <p className="sr-only">{greetingFor(now)}</p>
           <h2 className="text-xl font-semibold tracking-tight">Mercado en vigilancia</h2>
           <p className="mt-1 text-sm text-subtle">
-            {assets.length} activos · Buscando oportunidades
+            {assets.length} activos · {openMarkets === 1 ? "1 mercado abierto" : `${openMarkets} mercados abiertos`}
           </p>
         </div>
         <div className="atalaya-count-chip">
-          <p className="text-2xl font-semibold tabular leading-none text-buy">{entries}</p>
-          <p className="mt-1 max-w-[4.8rem] text-[10px] leading-tight tracking-wide text-buy uppercase">
+          <p className={cn("text-2xl font-semibold tabular leading-none", entries ? "text-buy" : "text-muted")}>{entries}</p>
+          <p className={cn("mt-1 max-w-[4.8rem] text-[10px] leading-tight tracking-wide uppercase", entries ? "text-buy" : "text-muted")}>
             {entries === 1 ? "oportunidad activa" : "oportunidades activas"}
           </p>
         </div>

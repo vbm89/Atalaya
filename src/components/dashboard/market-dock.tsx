@@ -51,15 +51,6 @@ export function MarketDock({
 
   return (
     <section className="atalaya-market-dock">
-      {asset && market?.closedPending ? (
-        <div className="px-1 pb-3">
-          <ClosedPendingNotice
-            id={asset.id}
-            setupState={freeze?.state ?? asset.setupState}
-            dataStatus={asset.dataStatus}
-          />
-        </div>
-      ) : null}
       <div className="atalaya-signal-tabs" role="tablist" aria-label="Información de la señal">
         {TABS.map((t) => (
           <button
@@ -75,6 +66,15 @@ export function MarketDock({
         ))}
       </div>
       <div className="atalaya-market-dock-body" role="tabpanel">
+        {asset && market?.closedPending ? (
+          <div className="pb-3">
+            <ClosedPendingNotice
+              id={asset.id}
+              setupState={freeze?.state ?? asset.setupState}
+              dataStatus={asset.dataStatus}
+            />
+          </div>
+        ) : null}
         {tab === "resumen" ? <SignalSummary asset={asset} freeze={freeze} /> : null}
         {tab === "why" ? (
           explain ? (

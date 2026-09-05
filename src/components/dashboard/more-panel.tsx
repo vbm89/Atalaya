@@ -39,7 +39,7 @@ export function MorePanel({
       </div>
       <div className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated shadow-[var(--shadow-border)]">
         <MoreRow icon={<Info className="size-4 text-cyan" />} title="Información" hint="Sobre Atalaya" onClick={onInfo} />
-        <MoreRow icon={<BookOpen className="size-4 text-muted" />} title="Historial" hint="Tus señales y resultados" onClick={onHistory} />
+        <MoreRow icon={<BookOpen className="size-4 text-muted" />} title="Historial" hint="Episodios registrados" onClick={onHistory} />
         <MoreRow icon={<GraduationCap className="size-4 text-muted" />} title="Aprendizaje" hint="Shadow y análisis" onClick={onLearn} />
         <MoreRow icon={<Bell className="size-4 text-muted" />} title="Alertas" hint="Notificaciones" onClick={onAlerts} />
         <MoreRow icon={<CalendarDays className="size-4 text-muted" />} title="Calendario" hint="Eventos de mercado" onClick={onCalendar} />
@@ -51,7 +51,7 @@ export function MorePanel({
           <AtalayaMark className="size-6" />
           <div>
             <p className="text-sm font-semibold tracking-tight">Atalaya V1</p>
-            <p className="text-[11px] text-subtle">Sistema operativo</p>
+            <p className="text-[11px] text-subtle">{statusHint}</p>
           </div>
         </div>
         <p className="font-mono text-[11px] tabular text-subtle">V1</p>

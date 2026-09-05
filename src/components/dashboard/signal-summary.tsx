@@ -2,9 +2,8 @@ import type { ReactNode } from "react";
 import type { AssetAnalysis } from "@/lib/trading/types";
 import { cn, formatPrice } from "@/lib/utils";
 import { displayEntryPrice } from "@/lib/chart/labels";
-import { setupStateEs } from "@/lib/watch/memory";
 import type { FrozenChartLevels } from "@/lib/chart/setup-overlay";
-import { episodeMarketView, marketSessionKind, marketSessionLabel } from "@/lib/watch/market-session";
+import { episodeMarketView, marketSessionKind, marketSessionLabel, setupBadgeLabel } from "@/lib/watch/market-session";
 
 
 function volumeLabel(asset: AssetAnalysis): { text: string; ok: boolean | null } {
@@ -12,19 +11,18 @@ function volumeLabel(asset: AssetAnalysis): { text: string; ok: boolean | null }
   const ratio = tf15?.indicators.volumeRatio ?? null;
   const available = tf15?.indicators.volumeAvailable ?? false;
   if (!available || ratio == null) return { text: "No disponible", ok: null };
-  const ok = ratio >= 1;
-  return {
-    text: ok ? "Válido" : "Por debajo",
-    ok,
-  };
+  return { text: ratio.toFixed(2).replace(".", ","), ok: null };
 }
 
 function t2Label(asset: AssetAnalysis): { text: string; tone: string } {
   const missing = asset.setup?.missingForEntry ?? "";
-  if (asset.setupState === "entry") return { text: "Confirmado", tone: "text-buy" };
-  if (asset.setupState === "pending") return { text: "Pendiente", tone: "text-wait" };
-  if (asset.setupState === "map") return { text: "En zona", tone: "text-map" };
-  if (/toque|T2|retorno|retest/i.test(missing)) return { text: "Falta", tone: "text-wait" };
+  if (asset.setupState === "entry") return { text: "V1 publicó ENTRADA", tone: "text-buy" };
+  if (/cierre 15M de fallo de aceptación o rechazo/.test(missing)) {
+    return { text: "Falta trigger 15M", tone: "text-wait" };
+  }
+  if (asset.setupState === "pending" || asset.setupState === "map") {
+    return { text: "No evaluado como evento", tone: "text-subtle" };
+  }
   return { text: "No disponible", tone: "text-subtle" };
 }
 
@@ -77,7 +75,7 @@ export function SignalSummary({
                     : "atalaya-badge-muted",
             )}
           >
-            {state === "entry" ? "ENTRY" : setupStateEs(state)}
+            {state === "entry" ? "ENTRY" : state === "pending" ? "PENDING" : setupBadgeLabel(state)}
           </span>
         }
       />
@@ -128,7 +126,9 @@ export function SignalSummary({
       />
       <Row
         label="Estructura 4H"
-        value={<span className="text-buy">{structure}</span>}
+        value={
+          <span className={structure === "No disponible" ? "text-subtle" : undefined}>{structure}</span>
+        }
       />
       <Row label="T2" value={<span className={t2.tone}>{t2.text}</span>} />
       <Row

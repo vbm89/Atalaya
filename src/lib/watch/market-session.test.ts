@@ -11,6 +11,8 @@ import {
   pickPresentedOpportunity,
   CLOSED_PENDING_CAPTION,
   CLOSED_PENDING_EXPLAIN,
+  countOperableEntries,
+  setupBadgeLabel,
 } from "./market-session.ts";
 /** CEST (UTC+2). Saturday 5 Sep 2026 10:30 Madrid. */
 const SAT = Date.UTC(2026, 8, 5, 8, 30, 0);
@@ -190,7 +192,7 @@ describe("jerarquía visual de la tarjeta", () => {
       now: SAT,
     });
     assert.equal(r.session.kind, "unknown");
-    assert.equal(r.session.label, "ESTADO NO DISPONIBLE");
+    assert.equal(r.session.label, "NO DISPONIBLE");
     assert.equal(r.hunting, false);
     assert.equal(r.setups.find((s) => s.key === "pending")?.current, false);
   });
@@ -208,6 +210,43 @@ describe("jerarquía visual de la tarjeta", () => {
     assert.equal(r.dim, false);
     assert.equal(r.session.kind, "closed");
     assert.equal(r.operable, false);
+  });
+});
+
+describe("countOperableEntries", () => {
+  it("closed-market ENTRY is not an operable opportunity", () => {
+    assert.equal(
+      countOperableEntries(
+        [
+          { id: "XAUUSD", setupState: "entry", dataStatus: "ok" },
+          { id: "BTCUSD", setupState: "wait", dataStatus: "ok" },
+        ],
+        SAT,
+      ),
+      0,
+    );
+  });
+
+  it("open-market ENTRY counts; PENDING does not", () => {
+    assert.equal(
+      countOperableEntries(
+        [
+          { id: "BTCUSD", setupState: "entry", dataStatus: "ok" },
+          { id: "XAUUSD", setupState: "pending", dataStatus: "ok" },
+        ],
+        SAT,
+      ),
+      1,
+    );
+  });
+});
+
+describe("setupBadgeLabel", () => {
+  it("uses the same compact tokens on Inicio, Historial and Alertas", () => {
+    assert.equal(setupBadgeLabel("entry"), "ENTRY");
+    assert.equal(setupBadgeLabel("pending"), "PENDING");
+    assert.equal(setupBadgeLabel("map"), "MAPA");
+    assert.equal(setupBadgeLabel("wait"), "ESPERAR");
   });
 });
 

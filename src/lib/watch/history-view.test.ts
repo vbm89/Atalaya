@@ -116,4 +116,41 @@ describe("history-view", () => {
     assert.equal(kindLabel("continuation"), "continuación");
     assert.equal(kindLabel("break-retest"), "ruptura + retest");
   });
+
+  it("live PENDING is PENDING, not a generic open trade", () => {
+    const card = historyCardModel(
+      row({
+        episode: episode({ openedState: "pending", currentState: "pending" }),
+        outcome: "pending",
+        hadV1Entry: false,
+      }),
+    );
+    assert.equal(card.outcome, "PENDING");
+    assert.equal(card.episodeState, "PENDING");
+    assert.equal(card.hadV1Entry, false);
+    assert.match(card.wick, /no son operaciones/i);
+  });
+
+  it("live ENTRY is ENTRY, not PENDIENTE", () => {
+    const card = historyCardModel(row({ outcome: "pending", hadV1Entry: true }));
+    assert.equal(card.outcome, "ENTRY");
+    assert.equal(card.episodeState, "ENTRY");
+    assert.equal(card.hadV1Entry, true);
+  });
+
+  it("MAPA wick TP1 stays MAPA and is not a V1 trade", () => {
+    const card = historyCardModel(
+      row({
+        episode: episode({ openedState: "map", currentState: "map" }),
+        outcome: "tp1",
+        firstTouch: "tp1",
+        firstTouchAtMs: Date.parse("2026-08-29T08:30:00Z"),
+        hadV1Entry: false,
+      }),
+    );
+    assert.equal(card.outcome, "TP1");
+    assert.equal(card.episodeState, "MAPA");
+    assert.equal(card.hadV1Entry, false);
+    assert.match(card.wick, /No hubo ENTRADA V1/);
+  });
 });
