@@ -1,0 +1,17 @@
+name: V1 SHA-256
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  v1-sha:
+    name: Protected V1 files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify frozen V1 SHA-256 pins
+        run: node scripts/check-v1-sha.mjs
