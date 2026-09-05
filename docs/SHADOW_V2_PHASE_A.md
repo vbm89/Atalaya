@@ -59,3 +59,5 @@ npm run shadow:replay
 ```
 
 The runner is read-only. It does not insert or update any database table.
+
+Phase B (sweep/reclaim and FVG retest on the same frozen maps) is documented in [SHADOW_V2_PHASE_B.md](./SHADOW_V2_PHASE_B.md). It does not change these invariants.
