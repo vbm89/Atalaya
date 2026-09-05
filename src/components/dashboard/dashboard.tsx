@@ -587,6 +587,7 @@ export function Dashboard() {
                 <p className="atalaya-markets-label pt-1 text-xs font-medium tracking-wider text-muted uppercase">
                   Mercados
                 </p>
+                <div className="atalaya-markets-grid">
                 {snapshot
                   ? snapshot.assets.map((a) => {
                       const shown = overlayAsset(a, episodeFocus);
@@ -599,8 +600,9 @@ export function Dashboard() {
                       );
                     })
                   : Array.from({ length: 4 }).map((_, i) => (
-                      <Skeleton key={i} className="h-28 rounded-[var(--radius-lg)]" />
+                      <Skeleton key={i} className="atalaya-market-tile" />
                     ))}
+                </div>
                 {snapshot ? (
                   <BestOpportunityCard
                     snapshot={snapshot}

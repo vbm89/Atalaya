@@ -142,7 +142,7 @@ export function InboxPanel({
             const key = inboxItemKey(row);
             const isRead = read.has(key);
             const isEntry = row.toState === "entry";
-            const session = marketSessionKind(sessionById.get(row.assetId));
+            const session = marketSessionKind({ id: row.assetId, dataStatus: sessionById.get(row.assetId) });
             return (
               <li key={key}>
                 <button
@@ -214,7 +214,7 @@ function MarketStatusBlock({
       </div>
       <ul className="atalaya-market-status-grid">
         {ASSETS.map((meta) => {
-          const kind = marketSessionKind(sessionById.get(meta.id));
+          const kind = marketSessionKind({ id: meta.id, dataStatus: sessionById.get(meta.id) });
           return (
             <li
               key={meta.id}

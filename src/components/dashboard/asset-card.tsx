@@ -275,6 +275,7 @@ export function MarketTile({
   const [starred, setStarred] = useState(() => readChartFavs().includes(asset.id));
   const setup = asset.setup;
   const chips = tileStatusChips({
+    id: asset.id,
     dataStatus: asset.dataStatus,
     setupState: asset.setupState,
     direction: setup?.direction ?? null,
@@ -308,9 +309,9 @@ export function MarketTile({
       <button type="button" onClick={onOpen} className="flex h-full w-full flex-col text-left">
         <div className="flex items-center gap-2 pr-7">
           <AssetMark id={asset.id} size="sm" />
-          <div className="min-w-0">
-            <p className="text-sm font-semibold tracking-tight">{asset.label}</p>
-            <p className="truncate text-[11px] text-subtle">{ASSET_SUBTITLE[asset.id]}</p>
+          <div className="atalaya-tile-id min-w-0">
+            <p className="atalaya-tile-name">{asset.label}</p>
+            <p className="atalaya-tile-sub">{ASSET_SUBTITLE[asset.id]}</p>
           </div>
         </div>
         <div className="mt-1.5">
@@ -339,10 +340,10 @@ export function MarketTile({
               )}
               aria-hidden
             />
-            {chips.session.label}
+            {chips.session.kind === "closed" ? "CERRADO" : chips.session.label}
           </span>
         </div>
-        <div className="mt-2">
+        <div className="mt-2 min-w-0">
           <LiveQuoteReadout
             id={asset.id}
             digits={asset.digits}
@@ -352,9 +353,14 @@ export function MarketTile({
             align="left"
             size="lg"
           />
-          {chips.session.kind === "closed" ? (
-            <p className="mt-1 text-[10px] tracking-wide text-subtle uppercase">Último dato disponible</p>
-          ) : null}
+          <p
+            className={cn(
+              "atalaya-tile-caption",
+              chips.session.kind !== "closed" && "is-spacer",
+            )}
+          >
+            {chips.session.kind === "closed" ? "Último dato disponible" : "\u00a0"}
+          </p>
         </div>
         <div className="mt-1 flex items-end justify-between gap-2">
           <p
@@ -367,45 +373,43 @@ export function MarketTile({
           >
             {chg == null ? "—" : compactPct(chg)}
           </p>
-          <div className="h-9 w-[5.2rem] shrink-0">
+          <div className="atalaya-tile-spark">
             <Sparkline values={asset.sparkline} positive={up} />
           </div>
         </div>
-        {chips.setups.length ? (
-          <div className="mt-2 flex flex-wrap items-center gap-1">
-            {chips.setups.map((chip) =>
-              chip.key === "dir" ? (
-                <span
-                  key={chip.key}
-                  className={cn(
-                    "text-[10px] font-semibold",
-                    chip.current ? (setup?.direction === "buy" ? "text-buy" : "text-sell") : "text-subtle",
-                  )}
-                  data-setup-current={chip.current ? "1" : "0"}
-                >
-                  {chip.label}
-                </span>
-              ) : (
-                <span
-                  key={chip.key}
-                  className={cn(
-                    "atalaya-badge",
-                    chip.key === "entry"
-                      ? "atalaya-badge-entry"
-                      : chip.current && chip.key === "pending"
-                        ? "atalaya-badge-wait"
-                        : chip.current && chip.key === "map"
-                          ? "atalaya-badge-map"
-                          : "atalaya-badge-muted",
-                  )}
-                  data-setup-current={chip.current ? "1" : "0"}
-                >
-                  {chip.label}
-                </span>
-              ),
-            )}
-          </div>
-        ) : null}
+        <div className="atalaya-tile-setups">
+          {chips.setups.map((chip) =>
+            chip.key === "dir" ? (
+              <span
+                key={chip.key}
+                className={cn(
+                  "text-[10px] font-semibold",
+                  chip.current ? (setup?.direction === "buy" ? "text-buy" : "text-sell") : "text-subtle",
+                )}
+                data-setup-current={chip.current ? "1" : "0"}
+              >
+                {chip.label}
+              </span>
+            ) : (
+              <span
+                key={chip.key}
+                className={cn(
+                  "atalaya-badge",
+                  chip.key === "entry"
+                    ? "atalaya-badge-entry"
+                    : chip.current && chip.key === "pending"
+                      ? "atalaya-badge-wait"
+                      : chip.current && chip.key === "map"
+                        ? "atalaya-badge-map"
+                        : "atalaya-badge-muted",
+                )}
+                data-setup-current={chip.current ? "1" : "0"}
+              >
+                {chip.label}
+              </span>
+            ),
+          )}
+        </div>
       </button>
     </div>
   );

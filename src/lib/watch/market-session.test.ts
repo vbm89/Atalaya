@@ -1,34 +1,111 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { marketSessionKind, marketSessionLabel, tileStatusChips } from "./market-session.ts";
+import {
+  SESSION_TZ,
+  isMadridWeekendClose,
+  marketSessionKind,
+  marketSessionLabel,
+  tileStatusChips,
+  underlyingSessionOpen,
+} from "./market-session.ts";
 
-describe("estado de mercado (UI, sin inventar horarios)", () => {
-  it("ok → abierto", () => {
-    assert.equal(marketSessionKind("ok"), "open");
-    assert.equal(marketSessionLabel("open", true), "ABIERTO");
+/** CEST (UTC+2). Saturday 5 Sep 2026 10:30 Madrid. */
+const SAT = Date.UTC(2026, 8, 5, 8, 30, 0);
+/** Friday 4 Sep 2026 22:59 Madrid — still open. */
+const FRI_BEFORE = Date.UTC(2026, 8, 4, 20, 59, 0);
+/** Friday 4 Sep 2026 23:00 Madrid — weekend close starts. */
+const FRI_CLOSE = Date.UTC(2026, 8, 4, 21, 0, 0);
+/** Monday 7 Sep 2026 00:00 Madrid — still closed. */
+const MON_MIDNIGHT = Date.UTC(2026, 8, 6, 22, 0, 0);
+/** Monday 7 Sep 2026 00:01 Madrid — open. */
+const MON_OPEN = Date.UTC(2026, 8, 6, 22, 1, 0);
+/** Tuesday 8 Sep 2026 12:00 Madrid — weekday. */
+const TUE = Date.UTC(2026, 8, 8, 10, 0, 0);
+/** Tuesday 8 Sep 2026 23:30 Madrid = 21:30 UTC CME daily halt. */
+const TUE_HALT = Date.UTC(2026, 8, 8, 21, 30, 0);
+/** Friday 9 Jan 2026 23:00 Madrid (CET UTC+1). */
+const FRI_WINTER_CLOSE = Date.UTC(2026, 0, 9, 22, 0, 0);
+
+describe("zona horaria de sesión", () => {
+  it("uses Europe/Madrid, not UTC or the browser", () => {
+    assert.equal(SESSION_TZ, "Europe/Madrid");
+  });
+});
+
+describe("cierre de fin de semana (Madrid)", () => {
+  it("Saturday is closed", () => {
+    assert.equal(isMadridWeekendClose(SAT), true);
   });
 
-  it("stale is delayed, not closed", () => {
-    assert.equal(marketSessionKind("stale"), "open");
+  it("starts Friday 23:00 Madrid, not a minute before", () => {
+    assert.equal(isMadridWeekendClose(FRI_BEFORE), false);
+    assert.equal(isMadridWeekendClose(FRI_CLOSE), true);
   });
 
-  it("session_closed → cerrado", () => {
-    assert.equal(marketSessionKind("session_closed"), "closed");
-    assert.equal(marketSessionLabel("closed"), "MERCADO CERRADO");
+  it("stays closed through Monday 00:00 and opens at 00:01", () => {
+    assert.equal(isMadridWeekendClose(MON_MIDNIGHT), true);
+    assert.equal(isMadridWeekendClose(MON_OPEN), false);
   });
 
-  it("error and insufficient → estado no disponible", () => {
-    assert.equal(marketSessionKind("error"), "unknown");
-    assert.equal(marketSessionKind("insufficient"), "unknown");
-    assert.equal(marketSessionKind(undefined), "unknown");
-    assert.equal(marketSessionKind(null), "unknown");
+  it("winter Friday 23:00 Madrid is also closed", () => {
+    assert.equal(isMadridWeekendClose(FRI_WINTER_CLOSE), true);
+  });
+});
+
+describe("reloj por activo", () => {
+  it("Saturday: BTC open, XAU/US100/WTI closed — last price is irrelevant", () => {
+    assert.equal(underlyingSessionOpen("BTCUSD", SAT), true);
+    assert.equal(underlyingSessionOpen("XAUUSD", SAT), false);
+    assert.equal(underlyingSessionOpen("US100", SAT), false);
+    assert.equal(underlyingSessionOpen("WTI", SAT), false);
+  });
+
+  it("Friday 23:00 Madrid closes XAU, US100 and WTI; BTC stays open", () => {
+    assert.equal(underlyingSessionOpen("XAUUSD", FRI_CLOSE), false);
+    assert.equal(underlyingSessionOpen("US100", FRI_CLOSE), false);
+    assert.equal(underlyingSessionOpen("WTI", FRI_CLOSE), false);
+    assert.equal(underlyingSessionOpen("BTCUSD", FRI_CLOSE), true);
+  });
+
+  it("weekday: gold is open even during the CME daily halt", () => {
+    assert.equal(underlyingSessionOpen("XAUUSD", TUE_HALT), true);
+    assert.equal(underlyingSessionOpen("US100", TUE_HALT), false);
+    assert.equal(underlyingSessionOpen("WTI", TUE_HALT), false);
+    assert.equal(underlyingSessionOpen("BTCUSD", TUE_HALT), true);
+  });
+
+  it("weekday midday all four are open", () => {
+    assert.equal(underlyingSessionOpen("XAUUSD", TUE), true);
+    assert.equal(underlyingSessionOpen("BTCUSD", TUE), true);
+    assert.equal(underlyingSessionOpen("US100", TUE), true);
+    assert.equal(underlyingSessionOpen("WTI", TUE), true);
+  });
+});
+
+describe("estado de mercado (UI)", () => {
+  it("a last price does not open a closed gold session", () => {
+    assert.equal(marketSessionKind({ id: "XAUUSD", dataStatus: "ok", now: SAT }), "closed");
+    assert.equal(marketSessionLabel("closed", true), "CERRADO");
+  });
+
+  it("stale while open is delayed, not closed", () => {
+    assert.equal(marketSessionKind({ id: "BTCUSD", dataStatus: "stale", now: SAT }), "open");
+  });
+
+  it("feed error while the clock is open → estado no disponible", () => {
+    assert.equal(marketSessionKind({ id: "BTCUSD", dataStatus: "error", now: SAT }), "unknown");
+    assert.equal(marketSessionKind({ id: "XAUUSD", dataStatus: "insufficient", now: TUE }), "unknown");
     assert.equal(marketSessionLabel("unknown"), "ESTADO NO DISPONIBLE");
+  });
+
+  it("feed error while closed still reads CERRADO", () => {
+    assert.equal(marketSessionKind({ id: "XAUUSD", dataStatus: "error", now: SAT }), "closed");
   });
 });
 
 describe("jerarquía visual de la tarjeta", () => {
   it("1. abierto sin señal → vigilando ahora", () => {
-    const r = tileStatusChips({ dataStatus: "ok", setupState: "wait" });
+    const r = tileStatusChips({ id: "BTCUSD", dataStatus: "ok", setupState: "wait", now: SAT });
     assert.equal(r.hunting, true);
     assert.equal(r.dim, false);
     assert.equal(r.session.label, "ABIERTO");
@@ -39,7 +116,13 @@ describe("jerarquía visual de la tarjeta", () => {
   });
 
   it("2. abierto con MAPA → MAPA es actual", () => {
-    const r = tileStatusChips({ dataStatus: "ok", setupState: "map", direction: "buy" });
+    const r = tileStatusChips({
+      id: "BTCUSD",
+      dataStatus: "ok",
+      setupState: "map",
+      direction: "buy",
+      now: SAT,
+    });
     assert.equal(r.hunting, true);
     const mapa = r.setups.find((s) => s.key === "map");
     assert.equal(mapa?.current, true);
@@ -47,20 +130,38 @@ describe("jerarquía visual de la tarjeta", () => {
   });
 
   it("3. abierto con PENDING → PENDING es actual", () => {
-    const r = tileStatusChips({ dataStatus: "stale", setupState: "pending", direction: "sell" });
+    const r = tileStatusChips({
+      id: "XAUUSD",
+      dataStatus: "stale",
+      setupState: "pending",
+      direction: "sell",
+      now: TUE,
+    });
     assert.equal(r.hunting, true);
     assert.equal(r.setups.find((s) => s.key === "pending")?.current, true);
   });
 
   it("4. abierto con ENTRY → ENTRY destaca y sigue actual", () => {
-    const r = tileStatusChips({ dataStatus: "ok", setupState: "entry", direction: "buy" });
+    const r = tileStatusChips({
+      id: "BTCUSD",
+      dataStatus: "ok",
+      setupState: "entry",
+      direction: "buy",
+      now: SAT,
+    });
     assert.equal(r.setups[0]?.key, "entry");
     assert.equal(r.setups[0]?.current, true);
     assert.equal(r.dim, false);
   });
 
   it("5. cerrado con eventos históricos → CERRADO manda; MAPA no es caza actual", () => {
-    const r = tileStatusChips({ dataStatus: "session_closed", setupState: "map", direction: "buy" });
+    const r = tileStatusChips({
+      id: "XAUUSD",
+      dataStatus: "ok",
+      setupState: "map",
+      direction: "buy",
+      now: SAT,
+    });
     assert.equal(r.session.kind, "closed");
     assert.equal(r.hunting, false);
     assert.equal(r.dim, true);
@@ -71,7 +172,7 @@ describe("jerarquía visual de la tarjeta", () => {
   });
 
   it("6. cerrado sin eventos → solo CERRADO, no Vigilando", () => {
-    const r = tileStatusChips({ dataStatus: "session_closed", setupState: "wait" });
+    const r = tileStatusChips({ id: "US100", dataStatus: "ok", setupState: "wait", now: SAT });
     assert.equal(r.setups.length, 0);
     assert.equal(r.hunting, false);
     assert.equal(r.dim, true);
@@ -79,7 +180,12 @@ describe("jerarquía visual de la tarjeta", () => {
   });
 
   it("7. estado no disponible no se inventa ni como abierto ni como cerrado", () => {
-    const r = tileStatusChips({ dataStatus: "error", setupState: "pending" });
+    const r = tileStatusChips({
+      id: "BTCUSD",
+      dataStatus: "error",
+      setupState: "pending",
+      now: SAT,
+    });
     assert.equal(r.session.kind, "unknown");
     assert.equal(r.session.label, "ESTADO NO DISPONIBLE");
     assert.equal(r.hunting, false);
@@ -87,7 +193,13 @@ describe("jerarquía visual de la tarjeta", () => {
   });
 
   it("ENTRY en mercado cerrado sigue siendo prioridad máxima y no se apaga", () => {
-    const r = tileStatusChips({ dataStatus: "session_closed", setupState: "entry", direction: "sell" });
+    const r = tileStatusChips({
+      id: "WTI",
+      dataStatus: "ok",
+      setupState: "entry",
+      direction: "sell",
+      now: SAT,
+    });
     assert.equal(r.setups[0]?.key, "entry");
     assert.equal(r.setups[0]?.current, true);
     assert.equal(r.dim, false);
