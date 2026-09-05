@@ -14,6 +14,8 @@ Research-only. Does not change V1. Complements [Phase A](./SHADOW_V2_PHASE_A.md)
 
 `signal_outcomes.details.postEntry` is written only when `signal_events.to_state='entry'` exists. MAP/PENDING never get `postEntry`. Old rows without these fields stay loadable. No backfill.
 
+Identity (`entryAtMs`, `entrySlot`, `entryPrice`) is write-once from the first ENTRY event. `firstTouch` and terminal `outcome` (`sl`/`tp1`/`tp2`/`expired`) never recede: a later tick that lost the touch bar from the feed window must keep the stored photograph. MFE/MAE may rise while `pending` and must not fall because the window shrank. `upsertOutcome` may replace `details` with `{rule}` while V1 outcome is still pending; the tick reads `postEntry` **before** that write and merges it back.
+
 After each successful tick, missing freeze / 15M tape / context on **born** episodes is logged with `repair: false`. Nothing is auto-repaired.
 
 ## Historial
