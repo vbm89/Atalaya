@@ -286,6 +286,7 @@ export function MarketTile({
       data-watch-asset={asset.id}
       data-market-session={chips.session.kind}
       data-market-hunting={chips.hunting ? "1" : "0"}
+      data-operable={chips.operable ? "1" : "0"}
       className={cn(
         "atalaya-market-tile relative",
         chips.session.kind === "open" && "is-open",

@@ -21,6 +21,7 @@ import {
   viewsFromAsset,
 } from "@/lib/broker/broker-view";
 import { QualityBadge, RiskBadge, WatchPhaseBadge } from "./signal-badge";
+import { episodeMarketView } from "@/lib/watch/market-session";
 
 export function SetupPanel({
   asset,
@@ -135,6 +136,11 @@ export function SetupPanel({
   const risk = calculateRisk({ capital: account.capital, spec, slDistance: slDist });
   const isEntry = asset.setupState === "entry";
   const isPending = asset.setupState === "pending";
+  const market = episodeMarketView({
+    id: asset.id,
+    setupState: asset.setupState,
+    dataStatus: asset.dataStatus,
+  });
   const tickSize = contract.tickSize;
   const slTicks = tickSize && tickSize > 0 ? slDist / tickSize : null;
   const costEst =
@@ -153,13 +159,17 @@ export function SetupPanel({
   const analysisKind = views.analysis.kind === "proxy" ? "PROXY" : "SPOT";
 
   return (
-    <div className="mt-2 space-y-3">
+    <div className="mt-2 space-y-3" data-operable={market.operable ? "1" : "0"}>
       <div className="flex flex-wrap items-center gap-2">
-        <WatchPhaseBadge phase="live" signal={asset.signal} />
+        {market.closedPending ? null : <WatchPhaseBadge phase="live" signal={asset.signal} />}
         <QualityBadge quality={setup.quality} />
       </div>
 
-      {isPending ? (
+      {market.closedPending ? (
+        <p className="text-sm font-medium text-muted">
+          {market.episodeLabel} — no operable ahora. El mercado está cerrado.
+        </p>
+      ) : isPending ? (
         <p className="text-sm font-medium text-wait">TRIGGER PENDIENTE — vigente, no es orden</p>
       ) : isEntry ? (
         <p className="text-sm font-medium">ENTRADA V1 vigente. Análisis, no orden.</p>

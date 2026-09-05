@@ -6,7 +6,7 @@ import { inboxItemKey, inboxPushLabel, inboxStateLabel, type InboxItem } from "@
 import { loadReadKeys, markInboxRead } from "@/lib/watch/inbox-read";
 import type { AssetAnalysis, AssetId, DataStatus } from "@/lib/trading/types";
 import { ASSETS } from "@/lib/trading/assets";
-import { marketSessionKind, marketSessionLabel } from "@/lib/watch/market-session";
+import { marketSessionKind, marketSessionLabel, episodeMarketView } from "@/lib/watch/market-session";
 import { cn } from "@/lib/utils";
 
 type Filter = "all" | "entry" | "result" | "system";
@@ -143,6 +143,13 @@ export function InboxPanel({
             const isRead = read.has(key);
             const isEntry = row.toState === "entry";
             const session = marketSessionKind({ id: row.assetId, dataStatus: sessionById.get(row.assetId) });
+            const market = episodeMarketView({
+              id: row.assetId,
+              setupState: row.toState,
+              dataStatus: sessionById.get(row.assetId),
+            });
+            const closedPending = Boolean(row.live) && market.closedPending;
+            const recorded = !isEntry || closedPending;
             return (
               <li key={key}>
                 <button
@@ -151,24 +158,30 @@ export function InboxPanel({
                     setRead(markInboxRead(row, read));
                     onOpen(row.episodeId, row.assetId);
                   }}
-                  className={cn("atalaya-alert-row", !isEntry && "is-recorded")}
+                  className={cn("atalaya-alert-row", recorded && "is-recorded")}
                   data-inbox-item={row.episodeId}
                   data-inbox-read={isRead ? "1" : "0"}
-                  data-inbox-kind={isEntry ? "entry" : "recorded"}
+                  data-inbox-kind={isEntry && !closedPending ? "entry" : "recorded"}
                   data-asset-session={session}
+                  data-operable={row.live && market.operable ? "1" : "0"}
                 >
                   <span className={cn("atalaya-alert-dot", toneForInbox(row))} />
                   <span className="min-w-0 flex-1 text-left">
                     <span className="block text-[10px] font-semibold tracking-wide text-subtle uppercase">
-                      {isEntry ? "Entrada" : "Evento registrado"}
+                      {isEntry && !closedPending ? "Entrada" : "Evento registrado"}
                     </span>
-                    <span className={cn("block text-sm", isRead && !isEntry ? "font-medium" : "font-semibold")}>
+                    <span className={cn("block text-sm", isRead && recorded ? "font-medium" : "font-semibold")}>
                       {inboxStateLabel(row.toState)}
                     </span>
                     <span className="mt-0.5 block text-xs text-subtle">
                       {row.assetId} · {row.direction === "buy" ? "BUY" : "SELL"}
                       {isRead ? "" : " · no leído"}
                     </span>
+                    {closedPending ? (
+                      <span className="mt-0.5 block text-[10px] text-subtle">
+                        {market.caption}
+                      </span>
+                    ) : null}
                     <span className="sr-only">{inboxPushLabel(row)}</span>
                   </span>
                   <span className="shrink-0 text-right">
@@ -188,7 +201,7 @@ export function InboxPanel({
                         )}
                         aria-hidden
                       />
-                      {marketSessionLabel(session, true)}
+                      {session === "closed" ? "CERRADO" : marketSessionLabel(session, true)}
                     </span>
                   </span>
                 </button>

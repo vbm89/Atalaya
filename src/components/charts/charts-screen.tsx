@@ -34,6 +34,8 @@ import { PullRefresh } from "@/components/dashboard/pull-refresh";
 import { AssetMark, ASSET_SUBTITLE, AtalayaMark } from "@/components/dashboard/marks";
 import { MarketDock } from "@/components/dashboard/market-dock";
 import { Sparkline } from "@/components/dashboard/sparkline";
+import { marketSessionKind, episodeMarketView } from "@/lib/watch/market-session";
+import { SessionKindBadge } from "@/components/dashboard/session-state";
 
 
 export type { ChartIntent };
@@ -240,19 +242,34 @@ function ChartMarketList({
           const chg = snap?.dayChangePct;
           const up = chg == null ? null : chg >= 0;
           const state = snap?.setupState ?? "wait";
+          const session = marketSessionKind({ id: a.id, dataStatus: snap?.dataStatus });
+          const market = episodeMarketView({
+            id: a.id,
+            setupState: state,
+            dataStatus: snap?.dataStatus,
+          });
           return (
             <li key={a.id}>
-              <div className="atalaya-market-row">
+              <div className="atalaya-market-row" data-operable={market.operable ? "1" : "0"} data-market-session={session}>
                 <button type="button" onClick={() => onPick(a.id)} className="flex min-w-0 flex-1 items-center gap-3 py-1 text-left">
                   <AssetMark id={a.id} />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold">{a.label}</p>
                     <p className="truncate text-[11px] text-subtle">{ASSET_SUBTITLE[a.id]}</p>
-                    <div className="mt-1 flex items-center gap-2">
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      {session === "closed" ? <SessionKindBadge kind="closed" /> : null}
                       {state === "entry" ? <span className="atalaya-badge atalaya-badge-entry">ENTRY</span> : null}
-                      {state === "pending" ? <span className="atalaya-badge atalaya-badge-wait">PENDING</span> : null}
-                      {state === "map" ? <span className="atalaya-badge atalaya-badge-map">MAPA</span> : null}
-                      {state === "wait" ? <span className="atalaya-badge atalaya-badge-muted">Vigilando</span> : null}
+                      {state === "pending" ? (
+                        <span className={market.operable ? "atalaya-badge atalaya-badge-wait" : "atalaya-badge atalaya-badge-muted"}>
+                          PENDING
+                        </span>
+                      ) : null}
+                      {state === "map" ? (
+                        <span className={market.operable ? "atalaya-badge atalaya-badge-map" : "atalaya-badge atalaya-badge-muted"}>
+                          MAPA
+                        </span>
+                      ) : null}
+                      {state === "wait" && session === "open" ? <span className="atalaya-badge atalaya-badge-muted">Vigilando</span> : null}
                     </div>
                   </div>
                   <div className="w-16 shrink-0">
@@ -340,6 +357,11 @@ function ChartWorkspace({
   });
 
   const analysis = snapshot?.assets.find((a) => a.id === assetId) ?? null;
+  const market = episodeMarketView({
+    id: assetId,
+    setupState: freeze?.state ?? analysis?.setupState ?? "wait",
+    dataStatus: analysis?.dataStatus,
+  });
   const series = query.data;
   const live = useChartLive(series);
   useEffect(() => {
@@ -423,6 +445,9 @@ function ChartWorkspace({
             <div className="min-w-0">
               <p className="text-lg font-semibold tracking-tight">{assetId}</p>
               <p className="text-xs text-subtle">{ASSET_SUBTITLE[assetId]}</p>
+              <div className="mt-1">
+                <SessionKindBadge kind={market.session} />
+              </div>
             </div>
           </div>
           <div className="text-right">

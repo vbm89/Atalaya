@@ -10,6 +10,8 @@ import { EpisodeMemory } from "./episode-memory";
 import { useAccountSettings, useCosts } from "./account-panel";
 import type { AssetWatch } from "@/lib/watch/memory";
 import { cn } from "@/lib/utils";
+import { ClosedPendingNotice } from "./session-state";
+import { episodeMarketView } from "@/lib/watch/market-session";
 
 const TABS = [
   { id: "resumen", label: "Resumen" },
@@ -39,9 +41,25 @@ export function MarketDock({
   const [account] = useAccountSettings();
   const [costs] = useCosts();
   const explain = asset ? explainFromAnalysis(asset) : null;
+  const market = asset
+    ? episodeMarketView({
+        id: asset.id,
+        setupState: freeze?.state ?? asset.setupState,
+        dataStatus: asset.dataStatus,
+      })
+    : null;
 
   return (
     <section className="atalaya-market-dock">
+      {asset && market?.closedPending ? (
+        <div className="px-1 pb-3">
+          <ClosedPendingNotice
+            id={asset.id}
+            setupState={freeze?.state ?? asset.setupState}
+            dataStatus={asset.dataStatus}
+          />
+        </div>
+      ) : null}
       <div className="atalaya-signal-tabs" role="tablist" aria-label="Información de la señal">
         {TABS.map((t) => (
           <button

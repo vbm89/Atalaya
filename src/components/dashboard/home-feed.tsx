@@ -1,6 +1,6 @@
 import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { AnalysisSnapshot, AssetAnalysis, SetupState } from "@/lib/trading/types";
+import type { AnalysisSnapshot, AssetAnalysis, AssetId, SetupState } from "@/lib/trading/types";
 import { cn, formatPrice } from "@/lib/utils";
 import { displayEntryPrice } from "@/lib/chart/labels";
 import { DataLampChip } from "./data-lamp";
@@ -31,20 +31,27 @@ function useLocalNow() {
 export function BestOpportunityCard({
   snapshot,
   asset,
+  presentedId,
+  presentedNote,
   onDetail,
 }: {
   snapshot: AnalysisSnapshot;
   asset: AssetAnalysis | null;
+  presentedId?: AssetId | null;
+  presentedNote?: string;
   onDetail: () => void;
 }) {
   const setup = asset?.setup ?? null;
   const state: SetupState = asset?.setupState ?? "wait";
   const isEntry = state === "entry" && setup != null;
+  const shownId = presentedId === undefined ? snapshot.bestOpportunityId ?? null : presentedId;
+  const note = presentedNote ?? snapshot.bestOpportunityNote;
 
   return (
     <section
       className="atalaya-best atalaya-markets-span"
-      data-best-opportunity={snapshot.bestOpportunityId ?? "none"}
+      data-best-opportunity={shownId ?? "none"}
+      data-operable-opportunity={shownId && (state === "entry" || state === "pending" || state === "map") ? shownId : "none"}
     >
       <p className="text-base font-semibold tracking-tight">Oportunidades</p>
       <p className="mt-0.5 text-xs text-subtle">Señales de alta calidad detectadas por Atalaya</p>
@@ -52,7 +59,7 @@ export function BestOpportunityCard({
         <div className="atalaya-empty mt-3">
           <p className="text-sm font-medium">Sin entradas activas</p>
           <p className="mt-1 text-sm leading-snug text-subtle">
-            {snapshot.bestOpportunityNote || "Atalaya está vigilando el mercado."}
+            {note || "Atalaya está vigilando el mercado."}
           </p>
         </div>
       ) : (

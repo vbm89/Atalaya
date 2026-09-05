@@ -7,8 +7,11 @@ import {
   marketSessionLabel,
   tileStatusChips,
   underlyingSessionOpen,
+  episodeMarketView,
+  pickPresentedOpportunity,
+  CLOSED_PENDING_CAPTION,
+  CLOSED_PENDING_EXPLAIN,
 } from "./market-session.ts";
-
 /** CEST (UTC+2). Saturday 5 Sep 2026 10:30 Madrid. */
 const SAT = Date.UTC(2026, 8, 5, 8, 30, 0);
 /** Friday 4 Sep 2026 22:59 Madrid — still open. */
@@ -204,5 +207,136 @@ describe("jerarquía visual de la tarjeta", () => {
     assert.equal(r.setups[0]?.current, true);
     assert.equal(r.dim, false);
     assert.equal(r.session.kind, "closed");
+    assert.equal(r.operable, false);
+  });
+});
+
+describe("PENDING vs mercado cerrado (presentación)", () => {
+  it("XAUUSD PENDING on Saturday is still PENDING and not operable", () => {
+    const v = episodeMarketView({
+      id: "XAUUSD",
+      dataStatus: "ok",
+      setupState: "pending",
+      now: SAT,
+    });
+    assert.equal(v.session, "closed");
+    assert.equal(v.episodeLabel, "PENDIENTE");
+    assert.equal(v.operable, false);
+    assert.equal(v.closedPending, true);
+    assert.equal(v.caption, CLOSED_PENDING_CAPTION);
+    assert.equal(v.explain, CLOSED_PENDING_EXPLAIN);
+  });
+
+  it("BTCUSD PENDING on Saturday remains operable — crypto is 24/7", () => {
+    const v = episodeMarketView({
+      id: "BTCUSD",
+      dataStatus: "ok",
+      setupState: "pending",
+      now: SAT,
+    });
+    assert.equal(v.session, "open");
+    assert.equal(v.operable, true);
+    assert.equal(v.closedPending, false);
+    assert.equal(v.caption, null);
+  });
+
+  it("XAUUSD PENDING becomes operable again on Monday 00:01 Madrid", () => {
+    const closed = episodeMarketView({
+      id: "XAUUSD",
+      dataStatus: "ok",
+      setupState: "pending",
+      now: MON_MIDNIGHT,
+    });
+    const open = episodeMarketView({
+      id: "XAUUSD",
+      dataStatus: "ok",
+      setupState: "pending",
+      now: MON_OPEN,
+    });
+    assert.equal(closed.operable, false);
+    assert.equal(open.operable, true);
+    assert.equal(open.closedPending, false);
+  });
+
+  it("does not present a closed-market PENDING as the current opportunity", () => {
+    const assets = [
+      {
+        id: "XAUUSD" as const,
+        label: "XAUUSD",
+        setupState: "pending" as const,
+        dataStatus: "ok" as const,
+        setup: { direction: "buy" as const, quality: "alta", riskReward: 2.85 },
+      },
+      {
+        id: "BTCUSD" as const,
+        label: "BTCUSD",
+        setupState: "wait" as const,
+        dataStatus: "ok" as const,
+        setup: null,
+      },
+      {
+        id: "US100" as const,
+        label: "US100",
+        setupState: "wait" as const,
+        dataStatus: "ok" as const,
+        setup: null,
+      },
+      {
+        id: "WTI" as const,
+        label: "WTI",
+        setupState: "wait" as const,
+        dataStatus: "ok" as const,
+        setup: null,
+      },
+    ];
+    const presented = pickPresentedOpportunity(assets, "XAUUSD", SAT);
+    assert.equal(presented.asset, null);
+    assert.equal(presented.note, "NO HAY NINGUNA ENTRADA CLARA AHORA.");
+    assert.doesNotMatch(presented.note, /XAUUSD|TRIGGER PENDIENTE|2,85|2\.85/);
+  });
+
+  it("falls through to an open-market setup instead of a closed PENDING", () => {
+    const assets = [
+      {
+        id: "XAUUSD" as const,
+        label: "XAUUSD",
+        setupState: "pending" as const,
+        dataStatus: "ok" as const,
+        setup: { direction: "buy" as const, quality: "alta", riskReward: 2.85 },
+      },
+      {
+        id: "BTCUSD" as const,
+        label: "BTCUSD",
+        setupState: "map" as const,
+        dataStatus: "ok" as const,
+        setup: { direction: "sell" as const, quality: "media", riskReward: 1.4 },
+      },
+    ];
+    const presented = pickPresentedOpportunity(assets, "XAUUSD", SAT);
+    assert.equal(presented.asset?.id, "BTCUSD");
+    assert.match(presented.note, /BTCUSD/);
+    assert.doesNotMatch(presented.note, /XAUUSD/);
+  });
+
+  it("keeps V1 best when that market is actually open", () => {
+    const assets = [
+      {
+        id: "XAUUSD" as const,
+        label: "XAUUSD",
+        setupState: "pending" as const,
+        dataStatus: "ok" as const,
+        setup: { direction: "buy" as const, quality: "alta", riskReward: 2.85 },
+      },
+      {
+        id: "BTCUSD" as const,
+        label: "BTCUSD",
+        setupState: "map" as const,
+        dataStatus: "ok" as const,
+        setup: { direction: "sell" as const, quality: "media", riskReward: 1.4 },
+      },
+    ];
+    const presented = pickPresentedOpportunity(assets, "XAUUSD", TUE);
+    assert.equal(presented.asset?.id, "XAUUSD");
+    assert.match(presented.note, /TRIGGER PENDIENTE/);
   });
 });

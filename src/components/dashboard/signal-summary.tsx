@@ -4,15 +4,8 @@ import { cn, formatPrice } from "@/lib/utils";
 import { displayEntryPrice } from "@/lib/chart/labels";
 import { setupStateEs } from "@/lib/watch/memory";
 import type { FrozenChartLevels } from "@/lib/chart/setup-overlay";
+import { episodeMarketView, marketSessionKind, marketSessionLabel } from "@/lib/watch/market-session";
 
-
-function sessionLabel(asset: AssetAnalysis): string {
-  if (asset.dataStatus === "session_closed") return "Sesión cerrada";
-  if (asset.id === "BTCUSD") return "Cripto 24h";
-  if (asset.id === "XAUUSD") return "Spot";
-  if (asset.id === "US100" || asset.id === "WTI") return "CME";
-  return "No disponible";
-}
 
 function volumeLabel(asset: AssetAnalysis): { text: string; ok: boolean | null } {
   const tf15 = asset.timeframes.find((t) => t.timeframe === "15m");
@@ -57,9 +50,18 @@ export function SignalSummary({
   const t2 = asset ? t2Label(asset) : { text: "No disponible", tone: "text-subtle" };
   const structure = asset?.bias4hLabel?.trim() || "No disponible";
   const quality = setup?.quality ?? null;
+  const market = asset
+    ? episodeMarketView({
+        id: asset.id,
+        setupState: freeze?.state ?? asset.setupState,
+        dataStatus: asset.dataStatus,
+      })
+    : null;
+  const sessionKind = asset ? marketSessionKind({ id: asset.id, dataStatus: asset.dataStatus }) : null;
 
   return (
-    <dl className="atalaya-summary-grid" data-signal-summary>
+    <div className="space-y-3" data-signal-summary data-operable={market?.operable ? "1" : "0"}>
+    <dl className="atalaya-summary-grid">
       <Row
         label="Estado"
         value={
@@ -68,9 +70,9 @@ export function SignalSummary({
               "atalaya-badge",
               state === "entry"
                 ? "atalaya-badge-entry"
-                : state === "pending"
+                : state === "pending" && market?.operable
                   ? "atalaya-badge-wait"
-                  : state === "map"
+                  : state === "map" && market?.operable
                     ? "atalaya-badge-map"
                     : "atalaya-badge-muted",
             )}
@@ -117,7 +119,7 @@ export function SignalSummary({
         mono
         className="text-buy"
       />
-      <Row label="Sesión" value={asset ? sessionLabel(asset) : "No disponible"} />
+      <Row label="Sesión" value={sessionKind ? marketSessionLabel(sessionKind, true) : "No disponible"} />
       <Row
         label="TP2"
         value={tp2 != null ? formatPrice(tp2, digits) : "n/d"}
@@ -142,6 +144,7 @@ export function SignalSummary({
         }
       />
     </dl>
+    </div>
   );
 }
 

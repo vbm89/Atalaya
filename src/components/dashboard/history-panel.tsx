@@ -3,11 +3,14 @@ import { useQuery } from "@tanstack/react-query";
 import { CircleHelp, UserRound } from "lucide-react";
 import { getWatchHistory, getWatchEpisode } from "@/lib/watch/watch.fn";
 import { historyCardModel } from "@/lib/watch/history-view";
+import { episodeMarketView } from "@/lib/watch/market-session";
 import { ASSETS } from "@/lib/trading/assets";
 import type { AssetId } from "@/lib/trading/types";
 import type { HistoryRow } from "@/lib/watch/store";
 import { EpisodeMemory } from "./episode-memory";
 import { AssetMark } from "./marks";
+import { SessionKindBadge } from "./session-state";
+import { cn } from "@/lib/utils";
 
 function ChartMixIcon({ className }: { className?: string }) {
   return (
@@ -64,14 +67,24 @@ function HistoryRowCard({
   const side = buy ? "BUY" : "SELL";
   const rLabel = resultR(row, card.rr);
   const date = card.openedStamp.replace(/,?\s+\d{2}:\d{2}:\d{2}$/, "");
+  const live =
+    row.episode.closedAtMs == null && row.episode.currentState !== "wait";
+  const market = live
+    ? episodeMarketView({
+        id: row.episode.assetId,
+        setupState: row.episode.currentState,
+      })
+    : null;
 
   return (
     <li>
       <article
-        className="atalaya-history-card"
+        className={cn("atalaya-history-card", market?.closedPending && "is-market-closed")}
         data-history-episode={card.episodeId}
         data-history-outcome={card.outcome}
         data-direction={row.episode.direction}
+        data-market-session={market?.session ?? ""}
+        data-operable={market ? (market.operable ? "1" : "0") : ""}
       >
         <button
           type="button"
@@ -84,14 +97,20 @@ function HistoryRowCard({
             <p className="mt-0.5 font-mono text-[11px] tabular text-subtle">{date}</p>
           </div>
           <div className="flex flex-col items-end gap-1">
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
               <span className={buy ? "text-xs font-semibold text-buy" : "text-xs font-semibold text-sell"}>{side}</span>
               <span className={outcomeBadgeClass(card.outcomeCls)}>{card.outcome}</span>
+              {market?.session === "closed" ? <SessionKindBadge kind="closed" compact={false} /> : null}
             </div>
             <p className="font-mono text-[11px] tabular text-subtle">
               {card.rr ? `R:R ${card.rr}` : ""}
               {rLabel ? `  ${rLabel}` : ""}
             </p>
+            {market?.caption ? (
+              <p className="max-w-[12.5rem] text-right text-[10px] leading-snug text-subtle">
+                {market.caption}
+              </p>
+            ) : null}
           </div>
           <span className="text-subtle">›</span>
         </button>

@@ -39,6 +39,7 @@ import { AtalayaMark } from "./marks";
 import { sheetJournalEpisodeId } from "@/lib/memory/journal";
 import { formatMadridClock } from "@/lib/watch/clock";
 import { watchLamp, worstDataLamp } from "@/lib/watch/feed-lamp";
+import { pickPresentedOpportunity } from "@/lib/watch/market-session";
 
 
 const CACHE_KEY = "atalaya:last-analysis:v5";
@@ -468,6 +469,10 @@ export function Dashboard() {
         ? query.error.message
         : null;
 
+  const presentedOpportunity = snapshot
+    ? pickPresentedOpportunity(snapshot.assets, snapshot.bestOpportunityId)
+    : { asset: null as AssetAnalysis | null, note: "" };
+
   const openMarket = (id: AssetId) => {
     const row = snapshot?.assets.find((a) => a.id === id);
     const shown = row ? overlayAsset(row, episodeFocus) : null;
@@ -606,12 +611,11 @@ export function Dashboard() {
                 {snapshot ? (
                   <BestOpportunityCard
                     snapshot={snapshot}
-                    asset={(() => {
-                      const row = snapshot.assets.find((a) => a.id === snapshot.bestOpportunityId);
-                      return row ? overlayAsset(row, episodeFocus) : null;
-                    })()}
+                    asset={presentedOpportunity.asset}
+                    presentedId={presentedOpportunity.asset?.id ?? null}
+                    presentedNote={presentedOpportunity.note}
                     onDetail={() => {
-                      if (snapshot.bestOpportunityId) openMarket(snapshot.bestOpportunityId);
+                      if (presentedOpportunity.asset) openMarket(presentedOpportunity.asset.id);
                     }}
                   />
                 ) : (

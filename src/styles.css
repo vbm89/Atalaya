@@ -552,6 +552,16 @@
   background: var(--color-wait);
 }
 
+.atalaya-closed-pending {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-muted) 12%, transparent);
+}
+
 .atalaya-market-tile.is-open {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-buy) 16%, transparent);
 }

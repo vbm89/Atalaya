@@ -9,6 +9,10 @@ export const SESSION_TZ = "Europe/Madrid";
 
 export type MarketSessionKind = "open" | "closed" | "unknown";
 
+export const CLOSED_PENDING_CAPTION = "Configuración registrada. El mercado está cerrado.";
+export const CLOSED_PENDING_EXPLAIN =
+  "Existe una configuración pendiente registrada por V1, pero el mercado está cerrado.";
+
 const WEEKDAY: Record<string, number> = {
   Sun: 0,
   Mon: 1,
@@ -93,6 +97,107 @@ export function marketSessionLabel(kind: MarketSessionKind, compact = false): st
   return compact ? "NO DISPONIBLE" : "ESTADO NO DISPONIBLE";
 }
 
+export function episodeStateLabel(state: SetupState): string {
+  if (state === "entry") return "ENTRY";
+  if (state === "pending") return "PENDIENTE";
+  if (state === "map") return "MAPA";
+  return "ESPERAR";
+}
+
+export interface EpisodeMarketView {
+  session: MarketSessionKind;
+  sessionLabel: string;
+  sessionLabelCompact: string;
+  episodeLabel: string;
+  operable: boolean;
+  closedPending: boolean;
+  caption: string | null;
+  explain: string | null;
+}
+
+/**
+ * Episode state (V1) vs market session (UI clock). Never mutates V1.
+ * A PENDING/MAPA on a closed market stays PENDING/MAPA — it is not operable.
+ */
+export function episodeMarketView(args: {
+  id: AssetId;
+  setupState: SetupState;
+  dataStatus?: DataStatus | null;
+  now?: number;
+}): EpisodeMarketView {
+  const session = marketSessionKind({
+    id: args.id,
+    dataStatus: args.dataStatus,
+    now: args.now,
+  });
+  const closedPending =
+    session === "closed" && (args.setupState === "pending" || args.setupState === "map");
+  const operable =
+    session === "open" &&
+    (args.setupState === "entry" || args.setupState === "pending" || args.setupState === "map");
+  return {
+    session,
+    sessionLabel: marketSessionLabel(session, false),
+    sessionLabelCompact: marketSessionLabel(session, true),
+    episodeLabel: episodeStateLabel(args.setupState),
+    operable,
+    closedPending,
+    caption: closedPending ? CLOSED_PENDING_CAPTION : null,
+    explain: closedPending ? CLOSED_PENDING_EXPLAIN : null,
+  };
+}
+
+export type OpportunityCandidate = {
+  id: AssetId;
+  setupState: SetupState;
+  dataStatus?: DataStatus | null;
+  label?: string;
+  setup?: { direction: "buy" | "sell"; quality: string; riskReward?: number } | null;
+};
+
+/**
+ * Presentation overlay of V1 pickBest. Does not change V1 ranking stored on
+ * the snapshot. A PENDING/MAPA whose market is closed is not an operable
+ * current opportunity; when the session reopens the same V1 state can show.
+ */
+export function pickPresentedOpportunity<T extends OpportunityCandidate>(
+  assets: T[],
+  v1BestId: AssetId | null,
+  now?: number,
+): { asset: T | null; note: string } {
+  const rank = (s: SetupState) =>
+    s === "entry" ? 3 : s === "pending" ? 2 : s === "map" ? 1 : 0;
+  const operable = (a: T) =>
+    episodeMarketView({
+      id: a.id,
+      setupState: a.setupState,
+      dataStatus: a.dataStatus,
+      now,
+    }).operable;
+  const scored = [...assets].filter(operable).sort((a, b) => {
+    const d = rank(b.setupState) - rank(a.setupState);
+    if (d !== 0) return d;
+    return (b.setup?.riskReward ?? 0) - (a.setup?.riskReward ?? 0);
+  });
+  const v1 = v1BestId ? scored.find((a) => a.id === v1BestId) : undefined;
+  const top = v1 ?? scored[0] ?? null;
+  if (!top) {
+    return { asset: null, note: "NO HAY NINGUNA ENTRADA CLARA AHORA." };
+  }
+  const dir =
+    top.setup?.direction === "buy" ? "LONG" : top.setup?.direction === "sell" ? "SHORT" : "";
+  const state =
+    top.setupState === "entry"
+      ? "ENTRADA"
+      : top.setupState === "pending"
+        ? "TRIGGER PENDIENTE"
+        : "MAPA";
+  const q = top.setup?.quality ? ` · calidad ${String(top.setup.quality).toUpperCase()}` : "";
+  const name = top.label ?? top.id;
+  const bits = [name, state, dir].filter(Boolean).join(" · ");
+  return { asset: top, note: `${bits}${q}` };
+}
+
 export interface SessionChip {
   kind: MarketSessionKind;
   label: string;
@@ -121,10 +226,17 @@ export function tileStatusChips(args: {
   setups: SetupChip[];
   hunting: boolean;
   dim: boolean;
+  operable: boolean;
 } {
   const kind = marketSessionKind({
     id: args.id,
     dataStatus: args.dataStatus,
+    now: args.now,
+  });
+  const view = episodeMarketView({
+    id: args.id,
+    dataStatus: args.dataStatus,
+    setupState: args.setupState,
     now: args.now,
   });
   const hunting = kind === "open";
@@ -156,5 +268,6 @@ export function tileStatusChips(args: {
     setups,
     hunting,
     dim: kind === "closed" && args.setupState !== "entry",
+    operable: view.operable,
   };
 }
