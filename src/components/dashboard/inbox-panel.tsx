@@ -4,7 +4,9 @@ import { getWatchInbox, getWatchHistory } from "@/lib/watch/watch.fn";
 import { formatMadridClock } from "@/lib/watch/clock";
 import { inboxItemKey, inboxPushLabel, inboxStateLabel, type InboxItem } from "@/lib/watch/inbox";
 import { loadReadKeys, markInboxRead } from "@/lib/watch/inbox-read";
-import type { AssetId } from "@/lib/trading/types";
+import type { AssetAnalysis, AssetId, DataStatus } from "@/lib/trading/types";
+import { ASSETS } from "@/lib/trading/assets";
+import { marketSessionKind, marketSessionLabel } from "@/lib/watch/market-session";
 import { cn } from "@/lib/utils";
 
 type Filter = "all" | "entry" | "result" | "system";
@@ -25,8 +27,10 @@ function toneForInbox(row: InboxItem): string {
 }
 
 export function InboxPanel({
+  assets,
   onOpen,
 }: {
+  assets?: Pick<AssetAnalysis, "id" | "dataStatus" | "label">[] | null;
   onOpen: (episodeId: string, assetId: AssetId) => void;
 }) {
   const q = useQuery({
@@ -47,6 +51,11 @@ export function InboxPanel({
   const rows: InboxItem[] = q.data ?? [];
   const unread = rows.filter((r) => !read.has(inboxItemKey(r))).length;
   const now = Date.now();
+  const sessionById = useMemo(() => {
+    const map = new Map<AssetId, DataStatus | undefined>();
+    for (const a of assets ?? []) map.set(a.id, a.dataStatus);
+    return map;
+  }, [assets]);
 
   const results = useMemo(() => {
     return (hist.data ?? [])
@@ -74,8 +83,17 @@ export function InboxPanel({
       <div>
         <h2 className="text-xl font-semibold tracking-tight">Alertas</h2>
         <p className="mt-0.5 text-sm text-subtle">
-          Notificaciones y eventos del sistema
+          Estado actual del mercado y eventos registrados
           {unread ? ` · ${unread} sin leer` : ""}
+        </p>
+      </div>
+
+      <MarketStatusBlock sessionById={sessionById} />
+
+      <div>
+        <h3 className="text-sm font-semibold tracking-tight">Eventos recientes</h3>
+        <p className="mt-0.5 text-xs text-subtle">
+          Eventos registrados. No son necesariamente el estado actual.
         </p>
       </div>
       <div className="atalaya-chip-row">
@@ -94,10 +112,13 @@ export function InboxPanel({
                 <button
                   type="button"
                   onClick={() => onOpen(row.episodeId, row.assetId)}
-                  className="atalaya-alert-row"
+                  className="atalaya-alert-row is-recorded"
                 >
                   <span className={cn("atalaya-alert-dot", row.tone)} />
                   <span className="min-w-0 flex-1 text-left">
+                    <span className="block text-[10px] font-semibold tracking-wide text-subtle uppercase">
+                      Evento registrado
+                    </span>
                     <span className="block text-sm font-semibold">{row.title}</span>
                     <span className="block text-xs text-subtle">
                       {row.assetId} · {row.direction === "buy" ? "BUY" : "SELL"}
@@ -120,6 +141,8 @@ export function InboxPanel({
           {visibleInbox.map((row) => {
             const key = inboxItemKey(row);
             const isRead = read.has(key);
+            const isEntry = row.toState === "entry";
+            const session = marketSessionKind(sessionById.get(row.assetId));
             return (
               <li key={key}>
                 <button
@@ -128,13 +151,18 @@ export function InboxPanel({
                     setRead(markInboxRead(row, read));
                     onOpen(row.episodeId, row.assetId);
                   }}
-                  className="atalaya-alert-row"
+                  className={cn("atalaya-alert-row", !isEntry && "is-recorded")}
                   data-inbox-item={row.episodeId}
                   data-inbox-read={isRead ? "1" : "0"}
+                  data-inbox-kind={isEntry ? "entry" : "recorded"}
+                  data-asset-session={session}
                 >
                   <span className={cn("atalaya-alert-dot", toneForInbox(row))} />
                   <span className="min-w-0 flex-1 text-left">
-                    <span className={cn("block text-sm", isRead ? "font-medium" : "font-semibold")}>
+                    <span className="block text-[10px] font-semibold tracking-wide text-subtle uppercase">
+                      {isEntry ? "Entrada" : "Evento registrado"}
+                    </span>
+                    <span className={cn("block text-sm", isRead && !isEntry ? "font-medium" : "font-semibold")}>
                       {inboxStateLabel(row.toState)}
                     </span>
                     <span className="mt-0.5 block text-xs text-subtle">
@@ -143,13 +171,89 @@ export function InboxPanel({
                     </span>
                     <span className="sr-only">{inboxPushLabel(row)}</span>
                   </span>
-                  <span className="shrink-0 text-xs text-subtle">{timeAgo(row.atMs, now)}</span>
+                  <span className="shrink-0 text-right">
+                    <span className="block text-xs text-subtle">{timeAgo(row.atMs, now)}</span>
+                    <span
+                      className={cn(
+                        "mt-1 inline-flex items-center gap-1 text-[10px] font-semibold tracking-wide uppercase",
+                        session === "open" ? "text-buy" : session === "closed" ? "text-muted" : "text-wait",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "atalaya-session-dot",
+                          session === "open" && "is-open",
+                          session === "closed" && "is-closed",
+                          session === "unknown" && "is-unknown",
+                        )}
+                        aria-hidden
+                      />
+                      {marketSessionLabel(session, true)}
+                    </span>
+                  </span>
                 </button>
               </li>
             );
           })}
         </ul>
       )}
+    </section>
+  );
+}
+
+function MarketStatusBlock({
+  sessionById,
+}: {
+  sessionById: Map<AssetId, DataStatus | undefined>;
+}) {
+  return (
+    <section className="atalaya-market-status" data-market-status>
+      <div>
+        <h3 className="text-sm font-semibold tracking-tight">Estado del mercado</h3>
+        <p className="mt-0.5 text-xs text-subtle">Ahora. Independiente de los eventos registrados.</p>
+      </div>
+      <ul className="atalaya-market-status-grid">
+        {ASSETS.map((meta) => {
+          const kind = marketSessionKind(sessionById.get(meta.id));
+          return (
+            <li
+              key={meta.id}
+              className={cn(
+                "atalaya-market-status-row",
+                kind === "open" && "is-open",
+                kind === "closed" && "is-closed",
+                kind === "unknown" && "is-unknown",
+              )}
+              data-asset={meta.id}
+              data-market-session={kind}
+            >
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold">{meta.label}</span>
+                <span className="block truncate text-[10px] text-subtle">{meta.name}</span>
+              </span>
+              <span
+                className={cn(
+                  "atalaya-badge",
+                  kind === "open" && "atalaya-badge-open",
+                  kind === "closed" && "atalaya-badge-closed",
+                  kind === "unknown" && "atalaya-badge-unknown",
+                )}
+              >
+                <span
+                  className={cn(
+                    "atalaya-session-dot",
+                    kind === "open" && "is-open",
+                    kind === "closed" && "is-closed",
+                    kind === "unknown" && "is-unknown",
+                  )}
+                  aria-hidden
+                />
+                {kind === "closed" ? "CERRADO" : kind === "open" ? "ABIERTO" : "NO DISPONIBLE"}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }

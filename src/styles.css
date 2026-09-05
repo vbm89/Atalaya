@@ -343,7 +343,7 @@
 
 .atalaya-market-tile {
   display: flex;
-  min-height: 8.4rem;
+  min-height: 10.2rem;
   flex-direction: column;
   justify-content: space-between;
   border-radius: var(--radius-lg);
@@ -351,7 +351,7 @@
   box-shadow: var(--shadow-border);
   padding: 0.85rem 0.9rem 0.75rem;
   text-align: left;
-  transition: box-shadow 160ms ease, transform 160ms ease;
+  transition: box-shadow 160ms ease, transform 160ms ease, background 160ms ease;
 }
 
 .atalaya-market-tile [data-live-price] {
@@ -390,6 +390,7 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  gap: 0.28rem;
 }
 
 .atalaya-badge-entry {
@@ -420,6 +421,98 @@
 .atalaya-badge-muted {
   background: color-mix(in srgb, var(--color-elevated) 40%, #06111a);
   color: var(--color-muted);
+}
+
+.atalaya-badge-open {
+  background: var(--color-buy-dim);
+  color: var(--color-buy);
+}
+
+.atalaya-badge-closed {
+  background: color-mix(in srgb, var(--color-muted) 16%, transparent);
+  color: var(--color-muted);
+}
+
+.atalaya-badge-unknown {
+  background: var(--color-wait-dim);
+  color: var(--color-wait);
+}
+
+.atalaya-session-dot {
+  display: inline-block;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--color-muted);
+  flex-shrink: 0;
+}
+
+.atalaya-session-dot.is-open {
+  background: var(--color-buy);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-buy) 22%, transparent);
+}
+
+.atalaya-session-dot.is-closed {
+  background: var(--color-muted);
+}
+
+.atalaya-session-dot.is-unknown {
+  background: var(--color-wait);
+}
+
+.atalaya-market-tile.is-open {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-buy) 16%, transparent);
+}
+
+.atalaya-market-tile.is-closed {
+  background: color-mix(in srgb, var(--color-elevated) 58%, var(--color-bg));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-muted) 18%, transparent);
+}
+
+.atalaya-market-tile.is-closed [data-live-price] {
+  color: var(--color-muted);
+}
+
+.atalaya-market-tile.is-unknown {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-wait) 16%, transparent);
+}
+
+.atalaya-market-status {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.atalaya-market-status-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.atalaya-market-status-row {
+  display: flex;
+  min-height: 3.1rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-radius: var(--radius-md);
+  background: var(--color-elevated);
+  padding: 0.55rem 0.7rem;
+}
+
+.atalaya-market-status-row.is-open {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-buy) 16%, transparent);
+}
+
+.atalaya-market-status-row.is-closed {
+  background: color-mix(in srgb, var(--color-elevated) 58%, var(--color-bg));
+}
+
+.atalaya-market-status-row.is-unknown {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-wait) 16%, transparent);
+}
+
+.atalaya-alert-row.is-recorded {
+  background: color-mix(in srgb, var(--color-elevated) 70%, var(--color-bg));
 }
 
 .atalaya-why-row {

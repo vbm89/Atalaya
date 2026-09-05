@@ -624,6 +624,7 @@ export function Dashboard() {
             ) : tab === "alerts" ? (
               <div className="mt-4 space-y-3 atalaya-markets-span">
                 <InboxPanel
+                  assets={snapshot?.assets}
                   onOpen={(episodeId, assetId) => {
                     void applyWatchLink(`?asset=${assetId}&episode=${episodeId}`);
                   }}
