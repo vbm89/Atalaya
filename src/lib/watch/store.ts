@@ -100,6 +100,7 @@ export interface WatchStore {
   getOutcomeDetails(episodeId: string): Promise<Record<string, unknown> | null>;
   listHistory(limit: number): Promise<HistoryRow[]>;
   listInbox(limit: number): Promise<InboxItem[]>;
+  listEpisodeEvents(episodeId: string): Promise<InboxItem[]>;
   getPushPrefs(): Promise<PushPrefs>;
   setPushPrefs(prefs: PushPrefs): Promise<void>;
   upsertSnapshot(row: SnapshotDraft): Promise<void>;
@@ -609,6 +610,33 @@ export function createPgStore(sql: SqlQuery): WatchStore {
          order by ev.at desc
          limit $1`,
         [limit],
+      );
+      return rows.map((r) => ({
+        episodeId: String(r.episode_id),
+        assetId: r.asset_id as AssetId,
+        direction: r.direction as "buy" | "sell",
+        fromState: r.from_state as SetupState,
+        toState: r.to_state as SetupState,
+        atMs: ms(r.at),
+        slot: num(r.slot),
+        notified: r.notified === true,
+        live: r.closed_at == null,
+        notifyStatus: r.notify_status == null ? null : String(r.notify_status),
+        notifyAttempts: r.notify_attempts == null ? null : num(r.notify_attempts),
+        notifyLastError: r.notify_last_error == null ? null : String(r.notify_last_error),
+      }));
+    },
+
+    async listEpisodeEvents(episodeId) {
+      const rows = await sql.query<Record<string, unknown>>(
+        `select ev.episode_id, ev.from_state, ev.to_state, ev.at, ev.slot, ev.notified,
+                ev.notify_status, ev.notify_attempts, ev.notify_last_error,
+                e.asset_id, e.direction, e.closed_at
+         from signal_events ev
+         join signal_episodes e on e.episode_id = ev.episode_id
+         where ev.episode_id = $1
+         order by ev.at asc, ev.slot asc, ev.id asc`,
+        [episodeId],
       );
       return rows.map((r) => ({
         episodeId: String(r.episode_id),

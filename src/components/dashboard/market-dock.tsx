@@ -84,7 +84,7 @@ export function MarketDock({
           )
         ) : null}
         {tab === "timeline" ? (
-          <SignalTimeline assetId={assetId} asset={asset} freeze={freeze} />
+          <SignalTimeline assetId={assetId} asset={asset} freeze={freeze} episodeId={episodeId} />
         ) : null}
         {tab === "details" ? (
           asset ? (

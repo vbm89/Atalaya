@@ -314,6 +314,31 @@ export function createMemoryStore(): WatchStore {
       return rows.slice(0, limit);
     },
 
+    async listEpisodeEvents(episodeId) {
+      const rows: InboxItem[] = [];
+      for (const ev of events.values()) {
+        if (ev.episodeId !== episodeId) continue;
+        const ep = episodes.get(ev.episodeId);
+        if (!ep) continue;
+        rows.push({
+          episodeId: ev.episodeId,
+          assetId: ep.assetId,
+          direction: ep.direction,
+          fromState: ev.fromState,
+          toState: ev.toState,
+          atMs: ev.atMs,
+          slot: ev.slot,
+          notified: ev.notified,
+          live: ep.closedAtMs == null,
+          notifyStatus: ev.notifyStatus,
+          notifyAttempts: ev.notifyAttempts,
+          notifyLastError: ev.notifyLastError,
+        });
+      }
+      rows.sort((a, b) => a.atMs - b.atMs || a.slot - b.slot);
+      return rows;
+    },
+
     async getPushPrefs() {
       return { ...prefs };
     },

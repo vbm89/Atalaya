@@ -302,6 +302,19 @@ export const getWatchInbox = createServerFn({ method: "POST" }).handler(async ()
   return createPgStore(sql).listInbox(20);
 });
 
+export const getWatchEpisodeEvents = createServerFn({ method: "POST" })
+  .validator((input: { episodeId: string }) => {
+    const episodeId = input?.episodeId?.trim() ?? "";
+    if (episodeId.length < 8) throw new Error("Episodio no válido.");
+    return { episodeId };
+  })
+  .handler(async ({ data }) => {
+    const { getSql } = await import("@/lib/db");
+    const { createPgStore } = await import("./store");
+    const sql = await getSql();
+    return createPgStore(sql).listEpisodeEvents(data.episodeId);
+  });
+
 export const getPushPrefs = createServerFn({ method: "POST" }).handler(async () => {
   const { getSql } = await import("@/lib/db");
   const { createPgStore } = await import("./store");

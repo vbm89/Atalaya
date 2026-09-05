@@ -221,6 +221,42 @@ describe("bandeja de avisos", () => {
     const inbox = await store.listInbox(20);
     assert.ok(inbox.some((r) => r.toState === "wait"));
   });
+
+  it("listEpisodeEvents is chronological and does not mix episodes", async () => {
+    const store = createMemoryStore();
+    const pendingSetup = { ...setup, state: "pending" as const };
+    const a = foldEpisode(
+      null,
+      { id: "XAUUSD", setupState: "pending", setup: pendingSetup, waitReason: null, digits: 2 },
+      100,
+      1_000,
+    );
+    await store.upsertEpisode(a.episode!);
+    for (const ev of a.events) await store.insertEvent(ev);
+    const b = foldEpisode(
+      null,
+      { id: "XAUUSD", setupState: "entry", setup, waitReason: null, digits: 2 },
+      200,
+      2_000,
+    );
+    await store.upsertEpisode(b.episode!);
+    for (const ev of b.events) await store.insertEvent(ev);
+    const later = foldEpisode(
+      a.episode,
+      { id: "XAUUSD", setupState: "entry", setup, waitReason: null, digits: 2 },
+      150,
+      1_500,
+    );
+    if (later.episode) await store.upsertEpisode(later.episode);
+    for (const ev of later.events) await store.insertEvent(ev);
+
+    const focused = await store.listEpisodeEvents(a.episode!.episodeId);
+    assert.ok(focused.length >= 1);
+    assert.ok(focused.every((r) => r.episodeId === a.episode!.episodeId));
+    assert.ok(!focused.some((r) => r.episodeId === b.episode!.episodeId));
+    const times = focused.map((r) => r.atMs);
+    assert.deepEqual(times, [...times].sort((x, y) => x - y));
+  });
 });
 
 describe("compartir setup", () => {

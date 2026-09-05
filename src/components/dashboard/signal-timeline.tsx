@@ -1,130 +1,32 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Clock } from "lucide-react";
 import type { AssetAnalysis, AssetId, SetupState } from "@/lib/trading/types";
-import { getWatchHistory, getWatchInbox } from "@/lib/watch/watch.fn";
-import { formatMadridClock } from "@/lib/watch/clock";
+import { getWatchEpisodeEvents, getWatchHistory, getWatchSnapshots } from "@/lib/watch/watch.fn";
 import { setupStateEs } from "@/lib/watch/memory";
-import { inboxStateLabel } from "@/lib/watch/inbox";
 import { cn } from "@/lib/utils";
 import type { FrozenChartLevels } from "@/lib/chart/setup-overlay";
-
-export interface TimelineEvent {
-  id: string;
-  atMs: number;
-  title: string;
-  detail: string;
-  tone: "buy" | "sell" | "wait" | "map" | "muted" | "cyan";
-}
-
-function toneForState(state: SetupState): TimelineEvent["tone"] {
-  if (state === "entry") return "buy";
-  if (state === "pending") return "wait";
-  if (state === "map") return "map";
-  return "muted";
-}
-
-function captionForState(state: SetupState): { title: string; detail: string } {
-  if (state === "entry") return { title: "ENTRADA", detail: "Se registra la entrada. Análisis, no orden." };
-  if (state === "pending") return { title: "PENDING", detail: "Condiciones casi completas." };
-  if (state === "map") return { title: "MAPA", detail: "Zona en vigilancia." };
-  return { title: "ESPERAR", detail: "Sin setup vigente." };
-}
-
-function outcomeEvent(outcome: string | null, atMs: number | null): TimelineEvent | null {
-  if (!outcome || atMs == null) return null;
-  if (outcome === "tp1") return { id: "tp1", atMs, title: "TP1", detail: "Primer objetivo alcanzado.", tone: "buy" };
-  if (outcome === "tp2") return { id: "tp2", atMs, title: "TP2", detail: "Segundo objetivo alcanzado.", tone: "buy" };
-  if (outcome === "sl") return { id: "sl", atMs, title: "SL", detail: "Stop alcanzado.", tone: "sell" };
-  if (outcome === "expired") return { id: "exp", atMs, title: "Expirada", detail: "Cerrada sin toque de SL ni TP.", tone: "muted" };
-  return null;
-}
-
-export function timelineFromReal(args: {
-  assetId: AssetId;
-  asset: AssetAnalysis | null;
-  freeze: FrozenChartLevels | null;
-  inbox: Array<{
-    episodeId: string;
-    assetId: AssetId;
-    toState: SetupState;
-    atMs: number;
-    live: boolean;
-  }>;
-  history: Array<{
-    episode: { episodeId: string; assetId: AssetId; openedAtMs: number; openedState: SetupState };
-    outcome: string | null;
-    firstTouch: string | null;
-    firstTouchAtMs: number | null;
-  }>;
-}): TimelineEvent[] {
-  const episodeId = args.freeze?.episodeId ?? null;
-  const events: TimelineEvent[] = [];
-
-  const inbox = args.inbox
-    .filter((r) => r.assetId === args.assetId && (!episodeId || r.episodeId === episodeId))
-    .slice()
-    .sort((a, b) => a.atMs - b.atMs);
-
-  for (const row of inbox) {
-    const cap = captionForState(row.toState);
-    events.push({
-      id: `${row.episodeId}-${row.toState}-${row.atMs}`,
-      atMs: row.atMs,
-      title: cap.title,
-      detail: cap.detail,
-      tone: toneForState(row.toState),
-    });
-  }
-
-  const hist = args.history.filter((r) => r.episode.assetId === args.assetId);
-  const focused = episodeId ? hist.find((r) => r.episode.episodeId === episodeId) : hist[0];
-  if (focused) {
-    const open = captionForState(focused.episode.openedState);
-    if (!events.some((e) => e.atMs === focused.episode.openedAtMs)) {
-      events.push({
-        id: `${focused.episode.episodeId}-open`,
-        atMs: focused.episode.openedAtMs,
-        title: open.title,
-        detail: `Se abre como ${setupStateEs(focused.episode.openedState)}.`,
-        tone: toneForState(focused.episode.openedState),
-      });
-    }
-    const oc = outcomeEvent(focused.firstTouch ?? focused.outcome, focused.firstTouchAtMs);
-    if (oc) events.push(oc);
-  }
-
-  if (!events.length && args.asset) {
-    events.push({
-      id: "live-state",
-      atMs: Date.parse(args.asset.lastDataAt ?? args.asset.marketTime ?? "") || Date.now(),
-      title: captionForState(args.asset.setupState).title,
-      detail: args.asset.waitReason ?? captionForState(args.asset.setupState).detail,
-      tone: toneForState(args.asset.setupState),
-    });
-  }
-
-  events.sort((a, b) => a.atMs - b.atMs);
-  const seen = new Set<string>();
-  return events.filter((e) => {
-    const key = `${e.title}-${Math.round(e.atMs / 1000)}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
+import {
+  buildSignalTimeline,
+  formatTimelineHm,
+  resolveTimelineEpisodeId,
+  type TimelineTone,
+} from "@/lib/watch/signal-timeline";
 
 export function SignalTimeline({
   assetId,
   asset,
   freeze,
+  episodeId,
 }: {
   assetId: AssetId;
   asset: AssetAnalysis | null;
   freeze?: FrozenChartLevels | null;
+  episodeId?: string | null;
 }) {
-  const inboxQ = useQuery({
-    queryKey: ["watch-inbox"],
-    queryFn: () => getWatchInbox(),
+  const snapsQ = useQuery({
+    queryKey: ["watch-snapshots"],
+    queryFn: () => getWatchSnapshots(),
     staleTime: 15_000,
     retry: 0,
   });
@@ -135,53 +37,110 @@ export function SignalTimeline({
     retry: 0,
   });
 
+  const snapId = snapsQ.data?.find((s) => s.assetId === assetId)?.episodeId;
+  const openHistId = histQ.data?.find(
+    (r) => r.episode.assetId === assetId && r.episode.closedAtMs == null,
+  )?.episode.episodeId;
+
+  const focusedId = resolveTimelineEpisodeId(freeze?.episodeId, episodeId, snapId, openHistId);
+
+  const eventsQ = useQuery({
+    queryKey: ["watch-episode-events", focusedId],
+    queryFn: () => getWatchEpisodeEvents({ data: { episodeId: focusedId! } }),
+    enabled: Boolean(focusedId),
+    staleTime: 15_000,
+    retry: 0,
+  });
+
   const events = useMemo(
     () =>
-      timelineFromReal({
+      buildSignalTimeline({
         assetId,
-        asset,
-        freeze: freeze ?? null,
-        inbox: inboxQ.data ?? [],
+        episodeId: focusedId,
+        events: eventsQ.data ?? [],
         history: histQ.data ?? [],
       }),
-    [assetId, asset, freeze, inboxQ.data, histQ.data],
+    [assetId, focusedId, eventsQ.data, histQ.data],
   );
 
-  if (inboxQ.isLoading || histQ.isLoading) {
-    return <p className="px-1 text-sm text-subtle">Cargando timeline…</p>;
-  }
-  if (!events.length) {
-    return (
-      <p className="px-1 text-sm text-subtle">
-        Sin eventos registrados todavía. La timeline usa transiciones reales de V1, no se reconstruye.
-      </p>
-    );
-  }
+  const loading = snapsQ.isLoading || histQ.isLoading || (Boolean(focusedId) && eventsQ.isLoading);
+  const current: SetupState | null = freeze?.state ?? asset?.setupState ?? null;
+  const eventsFailed = Boolean(focusedId) && eventsQ.isError;
 
   return (
-    <ol className="atalaya-timeline" data-signal-timeline={assetId}>
-      {events.map((ev, i) => (
-        <li key={ev.id} className="atalaya-timeline-item" data-tone={ev.tone}>
-          <p className="atalaya-timeline-time">{formatMadridClock(ev.atMs).slice(0, 5)}</p>
-          <span className={cn("atalaya-timeline-dot", `is-${ev.tone}`)} />
-          {i < events.length - 1 ? <span className="atalaya-timeline-rail" /> : null}
-          <div>
-            <p className={cn("text-sm font-semibold", toneClass(ev.tone))}>{ev.title}</p>
-            <p className="mt-0.5 text-xs leading-snug text-subtle">{ev.detail}</p>
-          </div>
-        </li>
-      ))}
-    </ol>
+    <section
+      className="atalaya-timeline-wrap"
+      data-signal-timeline={assetId}
+      data-timeline-episode={focusedId ?? ""}
+    >
+      <div className="px-1">
+        <h3 className="text-[17px] font-semibold tracking-tight">Timeline — {assetId}</h3>
+        <p className="mt-0.5 text-xs text-subtle">Evolución de la señal en el tiempo</p>
+      </div>
+
+      {loading ? (
+        <p className="mt-3 px-1 text-sm text-subtle">Cargando timeline…</p>
+      ) : !focusedId ? (
+        <div className="mt-3 px-1" data-timeline-empty="no-episode">
+          <p className="text-sm text-subtle">Sin episodio concreto. El Timeline no inventa una historia.</p>
+          {current && current !== "wait" ? (
+            <p className="mt-1 text-xs text-muted">Estado actual: {setupStateEs(current)}.</p>
+          ) : null}
+        </div>
+      ) : eventsFailed ? (
+        <p className="mt-3 px-1 text-sm text-subtle" data-timeline-empty="error">
+          No se pudieron leer los eventos V1 de este episodio. No se reconstruye.
+        </p>
+      ) : !events.length ? (
+        <p className="mt-3 px-1 text-sm text-subtle" data-timeline-empty="no-events">
+          Sin transiciones V1 registradas para este episodio. No se reconstruye.
+        </p>
+      ) : (
+        <ol className="atalaya-timeline mt-3">
+          {events.map((ev, i) => {
+            const last = i === events.length - 1;
+            return (
+              <li
+                key={ev.id}
+                className={cn("atalaya-timeline-item", last && "is-last")}
+                data-tone={ev.tone}
+                data-timeline-kind={ev.kind}
+              >
+                <div className="atalaya-timeline-when">
+                  <span className="atalaya-timeline-clock" aria-hidden="true">
+                    <Clock strokeWidth={2.25} />
+                  </span>
+                  <time className="atalaya-timeline-time" dateTime={new Date(ev.atMs).toISOString()}>
+                    {formatTimelineHm(ev.atMs)}
+                  </time>
+                </div>
+                <div className="atalaya-timeline-axis">
+                  <span className={cn("atalaya-timeline-dot", `is-${ev.tone}`)} />
+                  {!last ? <span className="atalaya-timeline-rail" /> : null}
+                </div>
+                <div className="min-w-0 pb-0.5">
+                  <p className={cn("text-sm font-semibold leading-tight", toneClass(ev.tone))}>{ev.title}</p>
+                  <p className="mt-0.5 text-xs leading-snug text-subtle">{ev.detail}</p>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+
+      {focusedId && !loading ? (
+        <p className="atalaya-timeline-note" data-timeline-unregistered="1">
+          BOS 4H, zona de origen y T2 no aparecen: V1 no los registra como eventos con hora.
+        </p>
+      ) : null}
+    </section>
   );
 }
 
-function toneClass(tone: TimelineEvent["tone"]): string {
+function toneClass(tone: TimelineTone): string {
   if (tone === "buy") return "text-buy";
   if (tone === "sell") return "text-sell";
   if (tone === "wait") return "text-wait";
-  if (tone === "map") return "text-map";
-  if (tone === "cyan") return "text-cyan";
+  if (tone === "map") return "text-cyan";
   return "text-muted";
 }
-
-export { inboxStateLabel };

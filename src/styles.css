@@ -1082,23 +1082,65 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 0.25rem 0.15rem;
+  padding: 0.35rem 0.15rem 0.15rem;
 }
 
 .atalaya-timeline-item {
   position: relative;
   display: grid;
-  grid-template-columns: 2.6rem 1rem minmax(0, 1fr);
-  column-gap: 0.65rem;
-  min-height: 3.1rem;
-  padding-bottom: 0.85rem;
+  grid-template-columns: 4.35rem 0.9rem minmax(0, 1fr);
+  column-gap: 0.7rem;
+  min-height: 3.15rem;
+  padding-bottom: 1.15rem;
+}
+
+.atalaya-timeline-item:last-child,
+.atalaya-timeline-item.is-last {
+  padding-bottom: 0.15rem;
+  min-height: 0;
+}
+
+.atalaya-timeline-when {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.28rem;
+  padding-top: 0.02rem;
+  min-width: 0;
+}
+
+.atalaya-timeline-clock {
+  display: flex;
+  width: 0.95rem;
+  height: 0.95rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--color-subtle);
+  background: color-mix(in srgb, var(--color-elevated) 70%, #07141c);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-cyan) 22%, var(--color-border));
+}
+
+.atalaya-timeline-clock svg {
+  width: 0.58rem;
+  height: 0.58rem;
 }
 
 .atalaya-timeline-time {
   font-family: var(--font-mono);
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
   color: var(--color-subtle);
-  padding-top: 0.1rem;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.atalaya-timeline-axis {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-self: stretch;
 }
 
 .atalaya-timeline-dot {
@@ -1106,25 +1148,41 @@
   z-index: 1;
   width: 0.7rem;
   height: 0.7rem;
-  margin-top: 0.2rem;
+  margin-top: 0.18rem;
   border-radius: 999px;
   background: var(--color-muted);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-muted) 22%, transparent);
 }
 
-.atalaya-timeline-dot.is-buy { background: var(--color-buy); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-buy) 22%, transparent); }
-.atalaya-timeline-dot.is-sell { background: var(--color-sell); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-sell) 22%, transparent); }
-.atalaya-timeline-dot.is-wait { background: var(--color-wait); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-wait) 22%, transparent); }
-.atalaya-timeline-dot.is-map { background: var(--color-map); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-map) 22%, transparent); }
-.atalaya-timeline-dot.is-cyan { background: var(--color-cyan); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-cyan) 22%, transparent); }
+.atalaya-timeline-item.is-last .atalaya-timeline-dot {
+  width: 0.78rem;
+  height: 0.78rem;
+  margin-top: 0.14rem;
+}
+
+.atalaya-timeline-dot.is-buy { background: var(--color-buy); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-buy) 24%, transparent); }
+.atalaya-timeline-dot.is-sell { background: var(--color-sell); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-sell) 24%, transparent); }
+.atalaya-timeline-dot.is-wait { background: var(--color-wait); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-wait) 24%, transparent); }
+.atalaya-timeline-dot.is-map { background: var(--color-cyan); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-cyan) 24%, transparent); }
+.atalaya-timeline-dot.is-cyan { background: var(--color-cyan); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-cyan) 24%, transparent); }
+.atalaya-timeline-dot.is-muted { background: var(--color-muted); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-muted) 22%, transparent); }
 
 .atalaya-timeline-rail {
   position: absolute;
-  left: calc(2.6rem + 0.28rem);
-  top: 0.95rem;
-  bottom: 0;
+  left: 50%;
+  top: 0.92rem;
+  bottom: -1.15rem;
   width: 1px;
-  background: var(--color-border);
+  transform: translateX(-50%);
+  background: color-mix(in srgb, var(--color-cyan) 34%, var(--color-border));
+}
+
+.atalaya-timeline-note {
+  margin-top: 0.85rem;
+  padding: 0 0.15rem;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--color-subtle);
 }
 
 .atalaya-chip-row {
