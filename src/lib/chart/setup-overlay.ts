@@ -241,8 +241,8 @@ export function frozenLevelsFromEpisode(
     ? ep.state
     : setup?.state && setup.state !== "wait"
       ? setup.state
-      : ep.state === "wait"
-        ? "entry"
+      : ep.freeze?.setupState && ep.freeze.setupState !== "wait"
+        ? ep.freeze.setupState
         : ep.state;
   const openedAtMs =
     ep.openedAtMs != null && Number.isFinite(ep.openedAtMs) && ep.openedAtMs >= 1_000_000_000_000

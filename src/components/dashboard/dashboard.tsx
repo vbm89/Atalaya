@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, House, BarChart3, CalendarDays, BookOpen, GraduationCap, Ellipsis, Settings, Download } from "lucide-react";
+import { House, BarChart3, BookOpen, Ellipsis, Bell } from "lucide-react";
 import { getMarketAnalysis } from "@/lib/market/analysis.fn";
 import { getWatchHealth, getWatchEpisode, getWatchSnapshots, type WatchEpisodeView } from "@/lib/watch/watch.fn";
 import type { AnalysisSnapshot, AssetAnalysis, AssetId } from "@/lib/trading/types";
-import { formatClock } from "@/lib/utils";
 import type { SnapshotDraft } from "@/lib/watch/episode";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarketTile } from "./asset-card";
@@ -16,11 +15,17 @@ import { ChartsScreen, type ChartIntent } from "@/components/charts/charts-scree
 import { hasChartableSetup, SETUP_CHART_TF, chartIntentFromAnalysis, frozenLevelsFromEpisode, type StudyClock } from "@/lib/chart/setup-overlay";
 import { PullRefresh } from "./pull-refresh";
 import { getAsset } from "@/lib/trading/assets";
-import { foldWatchBook, type WatchBook } from "@/lib/watch/memory";
+import {
+  foldAssetWatch,
+  foldWatchBook,
+  setupsEqual,
+  watchBooksEqual,
+  type AssetWatch,
+  type WatchBook,
+} from "@/lib/watch/memory";
 import { readWatchBook, writeWatchBook } from "@/lib/watch/persist";
 import { useWatchLoop } from "@/lib/watch/use-watch-loop";
 import { parseWatchLink } from "@/lib/watch/link";
-import { foldAssetWatch, type AssetWatch } from "@/lib/watch/memory";
 import { AlertsPanel } from "./alerts-panel";
 import { HistoryPanel } from "./history-panel";
 import { ExplainSheet } from "./explain-sheet";
@@ -28,7 +33,23 @@ import { LearnPanel } from "./learn-panel";
 import { explainFromAnalysis, explainFromHistory, type ExplainView } from "@/lib/learn/explain";
 import type { HistoryRow } from "@/lib/watch/store";
 import { InboxPanel } from "./inbox-panel";
+import { InfoPanel } from "./info-panel";
+import { MorePanel } from "./more-panel";
+import { LabIntegrityPanel } from "./lab-integrity-panel";
+import { AtalayaMark } from "./marks";
 import { sheetJournalEpisodeId } from "@/lib/memory/journal";
+import { formatMadridClock } from "@/lib/watch/clock";
+import { watchLamp, worstDataLamp } from "@/lib/watch/feed-lamp";
+import { pickPresentedOpportunity, marketSessionKind, marketSessionLabel } from "@/lib/watch/market-session";
+
+/**
+ * HOME / app-shell composer. Presentation only.
+ *
+ * Shadow, causal capture, and lab integrity must not replace this chrome.
+ * Add research surfaces as Más destinations (LabIntegrityPanel, LearnPanel)
+ * or lib modules — never swap the header, 2×2 market grid, or dock.
+ * Contract: docs/HOME_SHELL.md (enforced by home-shell.test.ts).
+ */
 
 const CACHE_KEY = "atalaya:last-analysis:v5";
 const QUERY_KEY = ["market-analysis"] as const;
@@ -53,27 +74,136 @@ function writeCache(data: AnalysisSnapshot) {
   }
 }
 
-function useLocalNow() {
-  const [now, setNow] = useState<Date | null>(null);
-  useEffect(() => {
-    const tick = () => setNow(new Date());
-    tick();
-    const id = window.setInterval(tick, 1000);
-    return () => window.clearInterval(id);
-  }, []);
-  return now;
+function OperativoPill({
+  snapshot,
+  server,
+}: {
+  snapshot: AnalysisSnapshot | undefined;
+  server: { lastStatus?: "ok" | "lag" | "failed" | "none" | null; lastOkMs?: number | null; stale: boolean; watchSecretConfigured: boolean } | null;
+}) {
+  const assets = snapshot?.assets ?? [];
+  const data = worstDataLamp(
+    assets.map((a) => ({
+      dataStatus: a.dataStatus,
+      dataStatusLabel: a.dataStatusLabel,
+      lastDataAt: a.lastDataAt,
+      price: a.id === "XAUUSD" ? a.priceSpot : a.price,
+    })),
+  );
+  const hint = systemHint(snapshot, server);
+  const watch = watchLamp(
+    {
+      lastStatus: server?.lastStatus,
+      lastOkMs: server?.lastOkMs,
+      stale: server?.stale ?? true,
+      watchSecretConfigured: server?.watchSecretConfigured ?? false,
+    },
+    Date.now(),
+  );
+  const ok = hint === "Todo funcionando";
+  const label = ok ? "Operativo" : hint;
+  return (
+    <span className={ok ? "atalaya-pill is-ok" : watch.lamp === "error" || data.lamp === "unavailable" ? "atalaya-pill is-bad" : "atalaya-pill is-warn"}>
+      <span className="atalaya-status-dot" />
+      <span className="max-w-[9.5rem] truncate">{label}</span>
+    </span>
+  );
 }
 
-function HeaderClock() {
-  const now = useLocalNow();
+function systemHint(
+  snapshot: AnalysisSnapshot | undefined,
+  server: { stale: boolean; watchSecretConfigured: boolean; lastStatus?: "ok" | "lag" | "failed" | "none" | null; lastOkMs?: number | null } | null,
+): string {
+  if (!server) return "No disponible";
+  if (!server.watchSecretConfigured) return "Falta el secreto del servidor";
+  if (server.lastStatus === "failed") return "Vigilancia con error";
+  if (server.stale) return "Vigilancia retrasada";
+  const data = snapshot
+    ? worstDataLamp(
+        snapshot.assets.map((a) => ({
+          dataStatus: a.dataStatus,
+          dataStatusLabel: a.dataStatusLabel,
+          lastDataAt: a.lastDataAt,
+          price: a.id === "XAUUSD" ? a.priceSpot : a.price,
+        })),
+      )
+    : null;
+  if (data && data.lamp !== "ok") return data.label;
+  return "Todo funcionando";
+}
+
+function SystemStatusPanel({
+  snapshot,
+  server,
+  lastEvalMs,
+}: {
+  snapshot: AnalysisSnapshot | undefined;
+  server: { stale: boolean; watchSecretConfigured: boolean; lastStatus?: "ok" | "lag" | "failed" | "none" | null; lastOkMs?: number | null; lastEvalMs?: number | null } | null;
+  lastEvalMs: number | null;
+}) {
+  const hint = systemHint(snapshot, server);
+  const data = snapshot
+    ? worstDataLamp(
+        snapshot.assets.map((a) => ({
+          dataStatus: a.dataStatus,
+          dataStatusLabel: a.dataStatusLabel,
+          lastDataAt: a.lastDataAt,
+          price: a.id === "XAUUSD" ? a.priceSpot : a.price,
+        })),
+      )
+    : null;
   return (
-    <time
-      dateTime={now ? now.toISOString() : undefined}
-      className="font-mono text-xs tabular text-subtle"
-    >
-      {now ? formatClock(now) : "—"}
-    </time>
+    <section className="mt-2 space-y-3" data-system-status>
+      <div>
+        <h2 className="text-xl font-semibold tracking-tight">Estado del sistema</h2>
+        <p className="mt-0.5 text-sm text-subtle">{hint}</p>
+      </div>
+      <dl className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]">
+        <StatusRow label="Atalaya" value={hint === "Todo funcionando" ? "OPERATIVO" : hint} />
+        <StatusRow label="Último tick" value={server?.lastEvalMs ? formatMadridClock(server.lastEvalMs) : lastEvalMs ? formatMadridClock(lastEvalMs) : "No disponible"} />
+        <StatusRow label="Estado de datos" value={data?.label ?? "No disponible"} />
+        <StatusRow label="Motor" value="V1" />
+        <StatusRow label="Alertas" value="Solo ENTRADA genera push" />
+      </dl>
+      {snapshot ? (
+        <div className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]" data-system-session>
+          <p className="text-xs font-medium tracking-wider text-subtle uppercase">Sesión</p>
+          <ul>
+            {snapshot.assets.map((a) => {
+              const kind = marketSessionKind({ id: a.id, dataStatus: a.dataStatus });
+              return (
+                <li key={a.id} className="flex items-baseline justify-between gap-3 py-1.5 text-sm">
+                  <span className="text-subtle">{a.id}</span>
+                  <span className="font-medium">{marketSessionLabel(kind, true)}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+    </section>
   );
+}
+
+function StatusRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-2 text-sm">
+      <dt className="text-subtle">{label}</dt>
+      <dd className="min-w-0 text-right font-medium leading-snug break-words">{value}</dd>
+    </div>
+  );
+}
+
+function overlayAssetsEqual(a: AssetAnalysis[], b: AssetAnalysis[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]!;
+    const y = b[i]!;
+    if (x.id !== y.id || x.setupState !== y.setupState || x.waitReason !== y.waitReason) return false;
+    if (!setupsEqual(x.setup, y.setup)) return false;
+  }
+  return true;
 }
 
 function applyServerTruth(
@@ -83,16 +213,25 @@ function applyServerTruth(
 ): AssetAnalysis[] {
   if (stale || !snaps?.length) return assets;
   const byId = new Map(snaps.map((s) => [s.assetId, s]));
-  return assets.map((a) => {
+  let changed = false;
+  const next = assets.map((a) => {
     const s = byId.get(a.id);
     if (!s) return a;
+    const setupState = s.state;
+    const setup = s.state === "wait" ? null : (s.setup ?? a.setup);
+    const waitReason = s.waitReason ?? a.waitReason;
+    if (a.setupState === setupState && a.waitReason === waitReason && setupsEqual(a.setup, setup)) {
+      return a;
+    }
+    changed = true;
     return {
       ...a,
-      setupState: s.state,
-      setup: s.state === "wait" ? null : (s.setup ?? a.setup),
-      waitReason: s.waitReason ?? a.waitReason,
+      setupState,
+      setup,
+      waitReason,
     };
   });
+  return changed ? next : assets;
 }
 
 function overlayAsset(asset: AssetAnalysis, focus: WatchEpisodeView | null): AssetAnalysis {
@@ -103,6 +242,21 @@ function overlayAsset(asset: AssetAnalysis, focus: WatchEpisodeView | null): Ass
     setupState: focus.live ? focus.state : "wait",
     waitReason: focus.live ? asset.waitReason : focus.waitReason,
   };
+}
+
+function studyClocksEqual(
+  a: Partial<Record<AssetId, StudyClock>>,
+  b: Partial<Record<AssetId, StudyClock>>,
+): boolean {
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const k of keys) {
+    const id = k as AssetId;
+    const x = a[id];
+    const y = b[id];
+    if (!x || !y || x.openedAtMs !== y.openedAtMs || x.closedAtMs !== y.closedAtMs) return false;
+  }
+  return true;
 }
 
 function overlayWatch(
@@ -135,16 +289,18 @@ function overlayWatch(
 
 export function Dashboard() {
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"markets" | "calendar" | "charts" | "history" | "learn" | "settings">("markets");
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [tab, setTab] = useState<"markets" | "calendar" | "charts" | "history" | "learn" | "settings" | "info" | "alerts" | "more" | "status" | "lab">("markets");
   const [openId, setOpenId] = useState<AssetId | null>(null);
   const [chartIntent, setChartIntent] = useState<ChartIntent | null>(null);
   const [chartBrowse, setChartBrowse] = useState(0);
+  const [chartMode, setChartMode] = useState<"list" | "workspace">("list");
   const [account, setAccount] = useAccountSettings();
   const [costs, setCosts] = useCosts();
   const [book, setBook] = useState<WatchBook>({});
   const [episodeFocus, setEpisodeFocus] = useState<WatchEpisodeView | null>(null);
   const [explainView, setExplainView] = useState<ExplainView | null>(null);
+  const snapshotRef = useRef<AnalysisSnapshot | undefined>(undefined);
+  const studyClockRef = useRef<Partial<Record<AssetId, StudyClock>>>({});
 
   useEffect(() => {
     const cached = readCache();
@@ -191,13 +347,27 @@ export function Dashboard() {
       void qc.invalidateQueries({ queryKey: ["watch-inbox"] });
     },
   });
+  const refreshMutateRef = useRef(refresh.mutate);
+  refreshMutateRef.current = refresh.mutate;
 
-  const snapshot: AnalysisSnapshot | undefined = query.data
-    ? {
-        ...query.data,
-        assets: applyServerTruth(query.data.assets, snaps.data, health.data?.stale ?? true),
-      }
-    : undefined;
+  const serverStale = health.data?.stale ?? true;
+  const serverSnaps = snaps.data;
+  const snapshot = useMemo((): AnalysisSnapshot | undefined => {
+    if (!query.data) return undefined;
+    const assets = applyServerTruth(query.data.assets, serverSnaps, serverStale);
+    const next: AnalysisSnapshot =
+      assets === query.data.assets ? query.data : { ...query.data, assets };
+    const prev = snapshotRef.current;
+    if (
+      prev &&
+      next.generatedAt === prev.generatedAt &&
+      overlayAssetsEqual(next.assets, prev.assets)
+    ) {
+      return prev;
+    }
+    return next;
+  }, [query.data, serverSnaps, serverStale]);
+  snapshotRef.current = snapshot;
   const lastEvalMs = (() => {
     if (!snapshot?.generatedAt) return null;
     const t = Date.parse(snapshot.generatedAt);
@@ -213,6 +383,46 @@ export function Dashboard() {
     onEval: runEval,
   });
 
+  const onChartBack = useCallback(() => {
+    setTab("markets");
+    setChartIntent(null);
+    setChartMode("list");
+  }, []);
+  const onChartRefresh = useCallback(() => {
+    refreshMutateRef.current();
+  }, []);
+
+  const chartSnapshot = useMemo((): AnalysisSnapshot | undefined => {
+    if (!snapshot) return undefined;
+    if (!episodeFocus) return snapshot;
+    let changed = false;
+    const assets = snapshot.assets.map((a) => {
+      const next = overlayAsset(a, episodeFocus);
+      if (next !== a) changed = true;
+      return next;
+    });
+    return changed ? { ...snapshot, assets } : snapshot;
+  }, [snapshot, episodeFocus]);
+
+  const studyClockByAsset = useMemo((): Partial<Record<AssetId, StudyClock>> => {
+    const out: Partial<Record<AssetId, StudyClock>> = {};
+    for (const s of snaps.data ?? []) {
+      if (s.openedAtMs != null && Number.isFinite(s.openedAtMs) && s.openedAtMs > 0) {
+        out[s.assetId] = { openedAtMs: s.openedAtMs, closedAtMs: s.closedAtMs ?? null };
+      }
+    }
+    if (episodeFocus && episodeFocus.openedAtMs > 0) {
+      out[episodeFocus.assetId] = {
+        openedAtMs: episodeFocus.openedAtMs,
+        closedAtMs: episodeFocus.closedAtMs,
+      };
+    }
+    const prev = studyClockRef.current;
+    if (studyClocksEqual(prev, out)) return prev;
+    studyClockRef.current = out;
+    return out;
+  }, [snaps.data, episodeFocus]);
+
   useEffect(() => {
     if (!snapshot) return;
     const t = Date.parse(snapshot.generatedAt);
@@ -220,6 +430,7 @@ export function Dashboard() {
     setBook((prev) => {
       const base = Object.keys(prev).length ? prev : readWatchBook(now);
       const next = foldWatchBook(base, snapshot.assets, now);
+      if (watchBooksEqual(next, base)) return Object.is(base, prev) ? prev : base;
       writeWatchBook(next);
       return next;
     });
@@ -286,6 +497,23 @@ export function Dashboard() {
         ? query.error.message
         : null;
 
+  const presentedOpportunity = snapshot
+    ? pickPresentedOpportunity(snapshot.assets, snapshot.bestOpportunityId)
+    : { asset: null as AssetAnalysis | null, note: "" };
+
+  const openMarket = (id: AssetId) => {
+    const row = snapshot?.assets.find((a) => a.id === id);
+    const shown = row ? overlayAsset(row, episodeFocus) : null;
+    setOpenId(null);
+    if (shown && hasChartableSetup(shown)) {
+      openSetupChart(id);
+      return;
+    }
+    setChartIntent({ assetId: id, tf: SETUP_CHART_TF, nonce: Date.now(), freeze: null });
+    setChartMode("workspace");
+    setTab("charts");
+  };
+
   const openSetupChart = (id: AssetId) => {
     const row = snapshot?.assets.find((a) => a.id === id);
     const shown = row ? overlayAsset(row, episodeFocus) : null;
@@ -304,6 +532,7 @@ export function Dashboard() {
     if (!intent) return;
     setOpenId(null);
     setChartIntent(intent);
+    setChartMode("workspace");
     setTab("charts");
     const episodeId = fromSnap?.episodeId;
     if (clock?.openedAtMs || !episodeId) return;
@@ -324,31 +553,28 @@ export function Dashboard() {
   };
 
   return (
-    <div className="atalaya-shell" data-chrome={tab === "charts" ? "chart" : "home"}>
-      {tab !== "charts" ? (
+    <div className="atalaya-shell" data-chrome={tab === "charts" && chartMode === "workspace" ? "chart" : "home"}>
+      {tab !== "charts" || chartMode !== "workspace" ? (
       <header className="atalaya-header">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs tracking-wider text-muted uppercase">Terminal</p>
-            <h1 className="atalaya-title text-2xl font-semibold tracking-tight">Atalaya</h1>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2 text-cyan">
+            <AtalayaMark className="size-6 shrink-0" />
+            <h1 className="atalaya-title text-[15px] font-semibold tracking-[0.18em] uppercase">Atalaya</h1>
           </div>
-          <div className="flex items-center gap-0.5">
-            <HeaderClock />
-            <button
-              type="button"
-              aria-label="Actualizar análisis"
-              title="Actualizar análisis"
-              disabled={loading}
-              onClick={() => refresh.mutate()}
-              className="flex size-11 items-center justify-center rounded-[var(--radius-md)] text-muted disabled:opacity-50"
-            >
-              <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} />
-            </button>
+          <div className="flex min-w-0 items-center gap-2">
+            <OperativoPill
+              snapshot={snapshot}
+              server={health.data ?? null}
+            />
+            <p className="atalaya-header-sub shrink-0 font-mono text-[10px] tabular text-subtle">
+              {health.data?.lastEvalMs
+                ? formatMadridClock(health.data.lastEvalMs)
+                : lastEvalMs
+                  ? formatMadridClock(lastEvalMs)
+                  : "—"}
+            </p>
           </div>
         </div>
-        <p className="atalaya-header-sub mt-1 text-xs text-subtle">
-          Tiempo real · XAU · BTC · US100 · WTI
-        </p>
       </header>
       ) : null}
 
@@ -356,35 +582,14 @@ export function Dashboard() {
         {tab === "charts" ? (
           <ChartsScreen
             key={chartIntent ? `i-${chartIntent.nonce}` : `l-${chartBrowse}`}
-            snapshot={
-              snapshot && episodeFocus
-                ? {
-                    ...snapshot,
-                    assets: snapshot.assets.map((a) => overlayAsset(a, episodeFocus)),
-                  }
-                : snapshot
-            }
+            snapshot={chartSnapshot}
             intent={chartIntent}
-            studyClockByAsset={(() => {
-              const out: Partial<Record<AssetId, StudyClock>> = {};
-              for (const s of snaps.data ?? []) {
-                if (s.openedAtMs != null && Number.isFinite(s.openedAtMs) && s.openedAtMs > 0) {
-                  out[s.assetId] = { openedAtMs: s.openedAtMs, closedAtMs: s.closedAtMs ?? null };
-                }
-              }
-              if (episodeFocus && episodeFocus.openedAtMs > 0) {
-                out[episodeFocus.assetId] = {
-                  openedAtMs: episodeFocus.openedAtMs,
-                  closedAtMs: episodeFocus.closedAtMs,
-                };
-              }
-              return out;
-            })()}
-            onBack={() => {
-              setTab("markets");
-              setChartIntent(null);
-            }}
-            onRefresh={() => refresh.mutate()}
+            studyClockByAsset={studyClockByAsset}
+            onBack={onChartBack}
+            onRefresh={onChartRefresh}
+            onMode={setChartMode}
+            statusOk={systemHint(snapshot, health.data ?? null) === "Todo funcionando"}
+            statusLabel={systemHint(snapshot, health.data ?? null) === "Todo funcionando" ? "Operativo" : systemHint(snapshot, health.data ?? null)}
           />
         ) : (
           <PullRefresh
@@ -395,7 +600,7 @@ export function Dashboard() {
             inert={sheetOpen || undefined}
             aria-hidden={sheetOpen}
           >
-            {snapshot ? (
+            {snapshot && tab === "markets" ? (
               <FeedStatus
                 assets={snapshot.assets}
                 lastEvalMs={lastEvalMs}
@@ -403,9 +608,9 @@ export function Dashboard() {
                 watching={!busy && visible}
                 server={health.data ?? null}
               />
-            ) : (
+            ) : tab === "markets" ? (
               <Skeleton className="h-14 rounded-[var(--radius-lg)]" />
-            )}
+            ) : null}
 
             {error ? (
               <p className="mt-3 rounded-[var(--radius-md)] bg-sell-dim px-3 py-2 text-sm text-sell">
@@ -416,23 +621,10 @@ export function Dashboard() {
 
             {tab === "markets" ? (
               <div className="atalaya-markets mt-4">
-                {snapshot ? (
-                  <BestOpportunityCard
-                    snapshot={snapshot}
-                    asset={(() => {
-                      const row = snapshot.assets.find((a) => a.id === snapshot.bestOpportunityId);
-                      return row ? overlayAsset(row, episodeFocus) : null;
-                    })()}
-                    onDetail={() => {
-                      if (snapshot.bestOpportunityId) setOpenId(snapshot.bestOpportunityId);
-                    }}
-                  />
-                ) : (
-                  <Skeleton className="h-40 rounded-[var(--radius-lg)]" />
-                )}
                 <p className="atalaya-markets-label pt-1 text-xs font-medium tracking-wider text-muted uppercase">
                   Mercados
                 </p>
+                <div className="atalaya-markets-grid">
                 {snapshot
                   ? snapshot.assets.map((a) => {
                       const shown = overlayAsset(a, episodeFocus);
@@ -440,36 +632,56 @@ export function Dashboard() {
                         <MarketTile
                           key={a.id}
                           asset={shown}
-                          onOpen={() => setOpenId(a.id)}
+                          onOpen={() => openMarket(a.id)}
                         />
                       );
                     })
                   : Array.from({ length: 4 }).map((_, i) => (
-                      <Skeleton key={i} className="h-16 rounded-[var(--radius-lg)]" />
+                      <Skeleton key={i} className="atalaya-market-tile" />
                     ))}
+                </div>
+                {snapshot ? (
+                  <BestOpportunityCard
+                    snapshot={snapshot}
+                    asset={presentedOpportunity.asset}
+                    presentedId={presentedOpportunity.asset?.id ?? null}
+                    presentedNote={presentedOpportunity.note}
+                    onDetail={() => {
+                      if (presentedOpportunity.asset) openMarket(presentedOpportunity.asset.id);
+                    }}
+                  />
+                ) : (
+                  <Skeleton className="atalaya-markets-span h-28 rounded-[var(--radius-lg)]" />
+                )}
                 {!snapshot && loading ? (
                   <p className="atalaya-markets-label px-1 text-center text-sm text-muted">
                     Obteniendo precios y noticias reales…
                   </p>
                 ) : null}
               </div>
-            ) : tab === "learn" ? (
-              <LearnPanel />
-            ) : tab === "settings" ? (
-              <div className="mt-4 space-y-3">
+            ) : tab === "alerts" ? (
+              <div className="mt-4 space-y-3 atalaya-markets-span">
                 <InboxPanel
+                  assets={snapshot?.assets}
                   onOpen={(episodeId, assetId) => {
                     void applyWatchLink(`?asset=${assetId}&episode=${episodeId}`);
                   }}
                 />
-                <AlertsPanel />
+              </div>
+            ) : tab === "learn" ? (
+              <LearnPanel />
+            ) : tab === "settings" ? (
+              <div className="mt-4 space-y-3 atalaya-markets-span">
                 <AccountPanel
                   value={account}
                   onChange={setAccount}
                   costs={costs}
                   onCostsChange={setCosts}
                 />
+                <AlertsPanel />
               </div>
+            ) : tab === "info" ? (
+              <InfoPanel disclaimer={snapshot?.disclaimer} source={snapshot?.source} />
             ) : tab === "history" ? (
               <HistoryPanel
                 onOpenEpisode={(episodeId, assetId) => {
@@ -487,11 +699,54 @@ export function Dashboard() {
                       nonce: Date.now(),
                       freeze,
                     });
+                    setChartMode("workspace");
                     setTab("charts");
                   });
                 }}
                 onWhy={(row: HistoryRow) => setExplainView(explainFromHistory(row))}
               />
+            ) : tab === "more" ? (
+              <div className="mt-2">
+                <MorePanel
+                  statusHint={systemHint(snapshot, health.data ?? null)}
+                  onInfo={() => {
+                    setTab("info");
+                    setChartIntent(null);
+                  }}
+                  onHistory={() => {
+                    setTab("history");
+                    setChartIntent(null);
+                  }}
+                  onLearn={() => {
+                    setTab("learn");
+                    setChartIntent(null);
+                  }}
+                  onAlerts={() => {
+                    setTab("alerts");
+                    setChartIntent(null);
+                  }}
+                  onCalendar={() => {
+                    setTab("calendar");
+                    setChartIntent(null);
+                  }}
+                  onSettings={() => {
+                    setTab("settings");
+                    setChartIntent(null);
+                  }}
+                  onStatus={() => {
+                    setTab("status");
+                    setChartIntent(null);
+                  }}
+                  onLab={() => {
+                    setTab("lab");
+                    setChartIntent(null);
+                  }}
+                />
+              </div>
+            ) : tab === "status" ? (
+              <SystemStatusPanel snapshot={snapshot} server={health.data ?? null} lastEvalMs={lastEvalMs} />
+            ) : tab === "lab" ? (
+              <LabIntegrityPanel />
             ) : (
               <div className="mt-4">
                 {snapshot ? (
@@ -502,14 +757,9 @@ export function Dashboard() {
               </div>
             )}
 
-            {snapshot ? (
+            {snapshot?.errors.length ? (
               <p className="mt-6 pb-4 text-center text-xs leading-relaxed text-subtle">
-                {snapshot.disclaimer}
-                <br />
-                Fuentes: {snapshot.source}
-                {snapshot.errors.length
-                  ? ` · Avisos: ${snapshot.errors.join(" · ")}`
-                  : ""}
+                Avisos: {snapshot.errors.join(" · ")}
               </p>
             ) : null}
           </PullRefresh>
@@ -555,38 +805,26 @@ export function Dashboard() {
       <nav className="atalaya-dock" aria-label="Navegación">
         <DockBtn
           active={tab === "markets"}
-          label="Atalaya"
+          label="Inicio"
           onClick={() => {
             setTab("markets");
             setChartIntent(null);
-            setMoreOpen(false);
           }}
         >
           <House className="size-4" />
         </DockBtn>
         <DockBtn
           active={tab === "charts"}
-          label="Gráficos"
+          label="Mercados"
           onClick={() => {
             setOpenId(null);
             setChartIntent(null);
             setChartBrowse((n) => n + 1);
+            setChartMode("list");
             setTab("charts");
-            setMoreOpen(false);
           }}
         >
           <BarChart3 className="size-4" />
-        </DockBtn>
-        <DockBtn
-          active={tab === "calendar"}
-          label="Calendario"
-          onClick={() => {
-            setTab("calendar");
-            setChartIntent(null);
-            setMoreOpen(false);
-          }}
-        >
-          <CalendarDays className="size-4" />
         </DockBtn>
         <DockBtn
           active={tab === "history"}
@@ -594,59 +832,31 @@ export function Dashboard() {
           onClick={() => {
             setTab("history");
             setChartIntent(null);
-            setMoreOpen(false);
           }}
         >
           <BookOpen className="size-4" />
         </DockBtn>
         <DockBtn
-          active={tab === "learn" || tab === "settings" || moreOpen}
+          active={tab === "alerts"}
+          label="Alertas"
+          onClick={() => {
+            setTab("alerts");
+            setChartIntent(null);
+          }}
+        >
+          <Bell className="size-4" />
+        </DockBtn>
+        <DockBtn
+          active={tab === "more" || tab === "learn" || tab === "settings" || tab === "info" || tab === "calendar" || tab === "status" || tab === "lab"}
           label="Más"
-          onClick={() => setMoreOpen((v) => !v)}
+          onClick={() => {
+            setTab("more");
+            setChartIntent(null);
+          }}
         >
           <Ellipsis className="size-4" />
         </DockBtn>
       </nav>
-      {moreOpen ? (
-        <div className="atalaya-more">
-          <button type="button" className="atalaya-more-backdrop" aria-label="Cerrar" onClick={() => setMoreOpen(false)} />
-          <div className="atalaya-more-panel">
-            <p className="px-4 pb-2 text-xs font-medium tracking-wider text-muted uppercase">Más</p>
-            <button
-              type="button"
-              className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-sm"
-              onClick={() => {
-                setTab("learn");
-                setChartIntent(null);
-                setMoreOpen(false);
-              }}
-            >
-              <GraduationCap className="size-4 text-muted" />
-              Aprendizaje
-            </button>
-            <button
-              type="button"
-              className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-sm"
-              onClick={() => {
-                setTab("settings");
-                setChartIntent(null);
-                setMoreOpen(false);
-              }}
-            >
-              <Settings className="size-4 text-muted" />
-              Ajustes
-            </button>
-            <a
-              href="/atalaya-source-236.zip"
-              download="atalaya-source-236.zip"
-              className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-sm"
-            >
-              <Download className="size-4 text-muted" />
-              Descargar código (ZIP)
-            </a>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -668,8 +878,8 @@ function DockBtn({
       onClick={onClick}
       className={
         active
-          ? "flex h-11 flex-1 flex-col items-center justify-center gap-0 text-[10px] font-medium text-buy"
-          : "flex h-11 flex-1 flex-col items-center justify-center gap-0 text-[10px] text-muted"
+          ? "flex flex-1 flex-col items-center justify-end p-0 text-[10px] leading-none font-medium text-cyan"
+          : "flex flex-1 flex-col items-center justify-end p-0 text-[10px] leading-none text-muted"
       }
     >
       {children}
@@ -677,3 +887,4 @@ function DockBtn({
     </button>
   );
 }
+

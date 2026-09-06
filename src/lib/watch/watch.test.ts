@@ -11,7 +11,7 @@ import {
   shouldEvalNow,
   WATCH_STEP_MS,
 } from "./schedule.ts";
-import { foldAssetWatch, foldWatchBook, setupStateEs, type AssetWatch } from "./memory.ts";
+import { foldAssetWatch, foldWatchBook, setupsEqual, watchBooksEqual, setupStateEs, type AssetWatch } from "./memory.ts";
 
 type Pack = { m15: number[][]; h1: number[][]; h4: number[][] };
 
@@ -152,6 +152,34 @@ describe("watch memory", () => {
     );
     assert.equal(book.BTCUSD?.phase, "wait");
     assert.equal(book.XAUUSD?.phase, "wait");
+  });
+
+  it("treats two books as equal when only evaluatedAt differs", () => {
+    const a = foldAssetWatch(
+      null,
+      { id: "BTCUSD", setupState: "entry", setup, waitReason: null },
+      1,
+    );
+    const b = { ...a, evaluatedAt: 99 };
+    assert.equal(watchBooksEqual({ BTCUSD: a }, { BTCUSD: b }), true);
+    assert.equal(watchBooksEqual({ BTCUSD: a }, { BTCUSD: { ...a, phase: "wait" } }), false);
+    assert.equal(setupsEqual(setup, { ...setup }), true);
+    assert.equal(setupsEqual(setup, { ...setup, takeProfit1: setup.takeProfit1 + 1 }), false);
+  });
+
+  it("foldWatchBook always returns a new object even when phases do not change", () => {
+    const first = foldWatchBook(
+      {},
+      [{ id: "BTCUSD", setupState: "wait", setup: null, waitReason: "ESPERAR" }],
+      1,
+    );
+    const second = foldWatchBook(
+      first,
+      [{ id: "BTCUSD", setupState: "wait", setup: null, waitReason: "ESPERAR" }],
+      2,
+    );
+    assert.notEqual(second, first);
+    assert.equal(watchBooksEqual(first, second), true);
   });
 });
 

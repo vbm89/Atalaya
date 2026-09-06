@@ -12,6 +12,8 @@ export interface HistoryRow {
   firstTouchAtMs: number | null;
   mfe: number | null;
   mae: number | null;
+  /** True only when signal_events has to_state = 'entry'. Never inferred from outcome. */
+  hadV1Entry?: boolean;
 }
 
 export type EvalStatus = "pending" | "ok" | "failed" | "lag";
@@ -93,8 +95,12 @@ export interface WatchStore {
   getAlertPinHash(): Promise<string | null>;
   setAlertPinHash(hash: string): Promise<boolean>;
   upsertOutcome(episodeId: string, nowMs: number, result: OutcomeResult): Promise<void>;
+  findEntryEvent(episodeId: string): Promise<SignalEventDraft | null>;
+  patchOutcomeDetails(episodeId: string, patch: Record<string, unknown>): Promise<void>;
+  getOutcomeDetails(episodeId: string): Promise<Record<string, unknown> | null>;
   listHistory(limit: number): Promise<HistoryRow[]>;
   listInbox(limit: number): Promise<InboxItem[]>;
+  listEpisodeEvents(episodeId: string): Promise<InboxItem[]>;
   getPushPrefs(): Promise<PushPrefs>;
   setPushPrefs(prefs: PushPrefs): Promise<void>;
   upsertSnapshot(row: SnapshotDraft): Promise<void>;
@@ -530,9 +536,53 @@ export function createPgStore(sql: SqlQuery): WatchStore {
       );
     },
 
+    async findEntryEvent(episodeId) {
+      const rows = await sql.query<Record<string, unknown>>(
+        `select episode_id, from_state, to_state, at, slot
+         from signal_events
+         where episode_id = $1 and to_state = 'entry'
+         order by at asc, slot asc
+         limit 1`,
+        [episodeId],
+      );
+      const r = rows[0];
+      if (!r) return null;
+      return {
+        episodeId: String(r.episode_id),
+        fromState: r.from_state as SetupState,
+        toState: r.to_state as SetupState,
+        atMs: ms(r.at),
+        slot: num(r.slot),
+        notified: false as const,
+      };
+    },
+
+    async patchOutcomeDetails(episodeId, patch) {
+      await sql.query(
+        `update signal_outcomes
+         set details = coalesce(details, '{}'::jsonb) || $2::jsonb
+         where episode_id = $1`,
+        [episodeId, JSON.stringify(patch)],
+      );
+    },
+
+    async getOutcomeDetails(episodeId) {
+      const rows = await sql.query<{ details: unknown }>(
+        `select details from signal_outcomes where episode_id = $1`,
+        [episodeId],
+      );
+      const raw = rows[0]?.details;
+      if (raw == null || typeof raw !== "object") return null;
+      return raw as Record<string, unknown>;
+    },
+
     async listHistory(limit) {
       const rows = await sql.query<Record<string, unknown>>(
-        `select e.*, o.outcome, o.first_touch, o.first_touch_at, o.mfe, o.mae
+        `select e.*, o.outcome, o.first_touch, o.first_touch_at, o.mfe, o.mae,
+                exists (
+                  select 1 from signal_events ev
+                  where ev.episode_id = e.episode_id and ev.to_state = 'entry'
+                ) as had_v1_entry
          from signal_episodes e
          left join signal_outcomes o on o.episode_id = e.episode_id
          order by e.opened_at desc
@@ -546,6 +596,7 @@ export function createPgStore(sql: SqlQuery): WatchStore {
         firstTouchAtMs: r.first_touch_at == null ? null : ms(r.first_touch_at),
         mfe: r.mfe == null ? null : num(r.mfe),
         mae: r.mae == null ? null : num(r.mae),
+        hadV1Entry: r.had_v1_entry === true,
       }));
     },
 
@@ -559,6 +610,33 @@ export function createPgStore(sql: SqlQuery): WatchStore {
          order by ev.at desc
          limit $1`,
         [limit],
+      );
+      return rows.map((r) => ({
+        episodeId: String(r.episode_id),
+        assetId: r.asset_id as AssetId,
+        direction: r.direction as "buy" | "sell",
+        fromState: r.from_state as SetupState,
+        toState: r.to_state as SetupState,
+        atMs: ms(r.at),
+        slot: num(r.slot),
+        notified: r.notified === true,
+        live: r.closed_at == null,
+        notifyStatus: r.notify_status == null ? null : String(r.notify_status),
+        notifyAttempts: r.notify_attempts == null ? null : num(r.notify_attempts),
+        notifyLastError: r.notify_last_error == null ? null : String(r.notify_last_error),
+      }));
+    },
+
+    async listEpisodeEvents(episodeId) {
+      const rows = await sql.query<Record<string, unknown>>(
+        `select ev.episode_id, ev.from_state, ev.to_state, ev.at, ev.slot, ev.notified,
+                ev.notify_status, ev.notify_attempts, ev.notify_last_error,
+                e.asset_id, e.direction, e.closed_at
+         from signal_events ev
+         join signal_episodes e on e.episode_id = ev.episode_id
+         where ev.episode_id = $1
+         order by ev.at asc, ev.slot asc, ev.id asc`,
+        [episodeId],
       );
       return rows.map((r) => ({
         episodeId: String(r.episode_id),

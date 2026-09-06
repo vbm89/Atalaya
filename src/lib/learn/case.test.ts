@@ -9,6 +9,7 @@ import {
   learningCasesFromHistory,
   levelsIncoherent,
   timestampsInvalid,
+  v1EntryCases,
 } from "./case.ts";
 import { summarize } from "./stats.ts";
 
@@ -334,5 +335,57 @@ describe("P5 TIMESTAMP_INVALID uses openedSlot, not wall-clock openedAtMs", () =
     assert.equal(stats.global.expired, 1);
     assert.equal(stats.global.success.n, 2);
     assert.equal(stats.global.success.hits, 1);
+  });
+});
+
+describe("SETUPS vs ENTRADAS V1", () => {
+  it("does not treat MAP/PENDING SL as a V1 entry", () => {
+    const f = freezeFromAnalysis(analysis(), 1_000);
+    const mapSl = learningCaseFromHistory(
+      row(
+        { outcome: "sl", firstTouch: "sl", hadV1Entry: false },
+        { freeze: f, openedState: "map", currentState: "wait" },
+      ),
+    );
+    assert.equal(mapSl.hadV1Entry, false);
+    assert.equal(mapSl.trainable, true);
+    assert.equal(v1EntryCases([mapSl]).length, 0);
+    const setups = summarize([mapSl]);
+    assert.equal(setups.global.sl, 1);
+    assert.equal(summarize(v1EntryCases([mapSl])).global.sl, 0);
+  });
+
+  it("counts ENTRADAS only from the real to_state=entry event", () => {
+    const f = freezeFromAnalysis(analysis(), 1_000);
+    const entered = learningCaseFromHistory(
+      row(
+        { outcome: "sl", firstTouch: "sl", hadV1Entry: true },
+        { freeze: f, openedState: "pending", currentState: "wait", episodeId: "BTCUSD-in" },
+      ),
+    );
+    const setupOnly = learningCaseFromHistory(
+      row(
+        { outcome: "sl", firstTouch: "sl", hadV1Entry: false },
+        { freeze: f, openedState: "map", currentState: "wait", episodeId: "BTCUSD-map" },
+      ),
+    );
+    assert.equal(entered.hadV1Entry, true);
+    const all = summarize([entered, setupOnly]);
+    const entries = summarize(v1EntryCases([entered, setupOnly]));
+    assert.equal(all.global.trainable, 2);
+    assert.equal(all.global.sl, 2);
+    assert.equal(entries.global.trainable, 1);
+    assert.equal(entries.global.sl, 1);
+    assert.equal(v1EntryCases([entered, setupOnly]).map((c) => c.episodeId).join(), "BTCUSD-in");
+  });
+
+  it("does not infer ENTRY from TP/SL outcome", () => {
+    const f = freezeFromAnalysis(analysis(), 1_000);
+    const tpNoEvent = learningCaseFromHistory(
+      row({ outcome: "tp1", firstTouch: "tp1", hadV1Entry: false }, { freeze: f, openedState: "pending" }),
+    );
+    assert.equal(tpNoEvent.outcome, "tp1");
+    assert.equal(tpNoEvent.hadV1Entry, false);
+    assert.equal(v1EntryCases([tpNoEvent]).length, 0);
   });
 });

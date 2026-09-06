@@ -35,6 +35,7 @@ interface OutcomeRec {
   firstTouchAtMs: number | null;
   mfe: number | null;
   mae: number | null;
+  details: Record<string, unknown>;
 }
 
 function eventKey(episodeId: string, slot: number, from: SetupState, to: SetupState): string {
@@ -237,7 +238,35 @@ export function createMemoryStore(): WatchStore {
         firstTouchAtMs: result.firstTouchAtSec == null ? null : result.firstTouchAtSec * 1000,
         mfe: result.mfe,
         mae: result.mae,
+        details: { rule: result.rule },
       });
+    },
+
+    async findEntryEvent(episodeId) {
+      const hits = [...events.values()]
+        .filter((ev) => ev.episodeId === episodeId && ev.toState === "entry")
+        .sort((a, b) => a.atMs - b.atMs || a.slot - b.slot);
+      const ev = hits[0];
+      if (!ev) return null;
+      return {
+        episodeId: ev.episodeId,
+        fromState: ev.fromState,
+        toState: ev.toState,
+        atMs: ev.atMs,
+        slot: ev.slot,
+        notified: false as const,
+      };
+    },
+
+    async patchOutcomeDetails(episodeId, patch) {
+      const prev = outcomes.get(episodeId);
+      if (!prev) return;
+      outcomes.set(episodeId, { ...prev, details: { ...prev.details, ...patch } });
+    },
+
+    async getOutcomeDetails(episodeId) {
+      const prev = outcomes.get(episodeId);
+      return prev ? { ...prev.details } : null;
     },
 
     async listHistory(limit) {
@@ -253,6 +282,9 @@ export function createMemoryStore(): WatchStore {
             firstTouchAtMs: o?.firstTouchAtMs ?? null,
             mfe: o?.mfe ?? null,
             mae: o?.mae ?? null,
+            hadV1Entry: [...events.values()].some(
+              (ev) => ev.episodeId === episode.episodeId && ev.toState === "entry",
+            ),
           };
         });
       return rows;
@@ -280,6 +312,31 @@ export function createMemoryStore(): WatchStore {
       }
       rows.sort((a, b) => b.atMs - a.atMs);
       return rows.slice(0, limit);
+    },
+
+    async listEpisodeEvents(episodeId) {
+      const rows: InboxItem[] = [];
+      for (const ev of events.values()) {
+        if (ev.episodeId !== episodeId) continue;
+        const ep = episodes.get(ev.episodeId);
+        if (!ep) continue;
+        rows.push({
+          episodeId: ev.episodeId,
+          assetId: ep.assetId,
+          direction: ep.direction,
+          fromState: ev.fromState,
+          toState: ev.toState,
+          atMs: ev.atMs,
+          slot: ev.slot,
+          notified: ev.notified,
+          live: ep.closedAtMs == null,
+          notifyStatus: ev.notifyStatus,
+          notifyAttempts: ev.notifyAttempts,
+          notifyLastError: ev.notifyLastError,
+        });
+      }
+      rows.sort((a, b) => a.atMs - b.atMs || a.slot - b.slot);
+      return rows;
     },
 
     async getPushPrefs() {

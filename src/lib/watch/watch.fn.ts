@@ -295,12 +295,37 @@ export const getWatchHistory = createServerFn({ method: "POST" }).handler(async 
   return createPgStore(sql).listHistory(80);
 });
 
+export const getLabIntegrity = createServerFn({ method: "POST" }).handler(async () => {
+  const { labUnavailable } = await import("./lab-integrity");
+  try {
+    const { getSql } = await import("@/lib/db");
+    const { readLabIntegrity } = await import("./lab-integrity-read");
+    const sql = await getSql();
+    return await readLabIntegrity(sql, Date.now());
+  } catch {
+    return labUnavailable("error");
+  }
+});
+
 export const getWatchInbox = createServerFn({ method: "POST" }).handler(async () => {
   const { getSql } = await import("@/lib/db");
   const { createPgStore } = await import("./store");
   const sql = await getSql();
   return createPgStore(sql).listInbox(20);
 });
+
+export const getWatchEpisodeEvents = createServerFn({ method: "POST" })
+  .validator((input: { episodeId: string }) => {
+    const episodeId = input?.episodeId?.trim() ?? "";
+    if (episodeId.length < 8) throw new Error("Episodio no válido.");
+    return { episodeId };
+  })
+  .handler(async ({ data }) => {
+    const { getSql } = await import("@/lib/db");
+    const { createPgStore } = await import("./store");
+    const sql = await getSql();
+    return createPgStore(sql).listEpisodeEvents(data.episodeId);
+  });
 
 export const getPushPrefs = createServerFn({ method: "POST" }).handler(async () => {
   const { getSql } = await import("@/lib/db");

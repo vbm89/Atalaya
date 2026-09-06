@@ -14,7 +14,7 @@ export const Route = createRootRoute({
         content: "width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover",
       },
       { title: APP_NAME },
-      { name: "theme-color", content: "#0b0c0e" },
+      { name: "theme-color", content: "#06111a" },
       {
         name: "description",
         content: "Análisis técnico de XAUUSD, Bitcoin, Nasdaq 100 y WTI. Sin ejecución de órdenes.",

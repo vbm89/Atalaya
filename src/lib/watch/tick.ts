@@ -2,6 +2,8 @@ import type { AssetId, CalendarEvent, Candle } from "../trading/types";
 import { foldEpisode, type EpisodeDraft, type FoldInput, type SignalEventDraft } from "./episode";
 import { slotOpenSec, slotSecFromNow } from "./identity";
 import { resolveOutcome } from "./outcome";
+import { computePostEntryMetrics, mergePostEntry, parsePostEntry } from "./post-entry";
+import { diagnoseBornFreeze, logCaptureIssues } from "./capture-issues";
 import { FEED_GRACE_MS } from "./schedule";
 import type { WatchStore } from "./store";
 
@@ -170,6 +172,7 @@ export async function runWatchTick(args: {
       );
       for (const ep of toResolve) {
         const candles = loaded.m15ByAsset[asset.id] ?? [];
+        const priorDetails = await args.store.getOutcomeDetails(ep.episodeId);
         const resolved = resolveOutcome({
           direction: ep.direction,
           sl: ep.sl,
@@ -182,6 +185,15 @@ export async function runWatchTick(args: {
           candles,
         });
         await args.store.upsertOutcome(ep.episodeId, args.nowMs, resolved);
+        // postEntry only when a real V1 ENTRY event exists. MAP/PENDING never.
+        const entryEv =
+          folded.events.find((e) => e.episodeId === ep.episodeId && e.toState === "entry") ??
+          (await args.store.findEntryEvent(ep.episodeId));
+        if (entryEv) {
+          const computed = computePostEntryMetrics(ep, entryEv, candles);
+          const postEntry = mergePostEntry(parsePostEntry(priorDetails?.postEntry), computed);
+          await args.store.patchOutcomeDetails(ep.episodeId, { postEntry });
+        }
       }
       let written = 0;
       for (const ev of folded.events) {
@@ -228,6 +240,7 @@ export async function runWatchTick(args: {
       born,
       touched,
     });
+    logCaptureIssues(diagnoseBornFreeze(born));
     console.info("[watch] tick", {
       slot,
       status: "ok",

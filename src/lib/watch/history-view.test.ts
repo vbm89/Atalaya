@@ -6,8 +6,10 @@ import type { HistoryRow } from "./store.ts";
 import {
   HISTORY_DISCLAIMER,
   entryPrice,
+  historyBuckets,
   historyCardModel,
   kindLabel,
+  setupWithoutEntryLabel,
   wickNote,
 } from "./history-view.ts";
 
@@ -76,9 +78,12 @@ describe("history-view", () => {
         outcome: "tp1",
         firstTouch: "tp1",
         firstTouchAtMs: Date.parse("2026-08-29T08:30:00Z"),
+        hadV1Entry: true,
       }),
     );
     assert.equal(card.outcome, "TP1");
+    assert.equal(card.entryV1Label, "SÍ");
+    assert.equal(card.isTradeOutcome, true);
     assert.doesNotMatch(card.outcome, /WIN|LOSS|ganad|perdid/i);
     assert.doesNotMatch(card.wick, /WIN|LOSS/i);
     assert.ok(card.disclaimer.includes(HISTORY_DISCLAIMER));
@@ -96,6 +101,7 @@ describe("history-view", () => {
         outcome: "tp1",
         firstTouch: "tp1",
         firstTouchAtMs: Date.parse("2026-08-29T08:30:00Z"),
+        hadV1Entry: true,
       }),
     );
     assert.equal(card.outcome, "TP1");
@@ -115,5 +121,71 @@ describe("history-view", () => {
   it("kind labels stay on V1 vocabulary", () => {
     assert.equal(kindLabel("continuation"), "continuación");
     assert.equal(kindLabel("break-retest"), "ruptura + retest");
+  });
+
+  it("live PENDING is PENDING, not a generic open trade", () => {
+    const card = historyCardModel(
+      row({
+        episode: episode({ openedState: "pending", currentState: "pending" }),
+        outcome: "pending",
+        hadV1Entry: false,
+      }),
+    );
+    assert.equal(card.outcome, "PENDING");
+    assert.equal(card.episodeState, "PENDING");
+    assert.equal(card.hadV1Entry, false);
+    assert.equal(card.entryV1Label, "NO");
+    assert.equal(card.isTradeOutcome, false);
+    assert.match(card.wick, /no son operaciones/i);
+  });
+
+  it("live ENTRY is ENTRY, not PENDIENTE", () => {
+    const card = historyCardModel(row({ outcome: "pending", hadV1Entry: true }));
+    assert.equal(card.outcome, "ENTRY");
+    assert.equal(card.episodeState, "ENTRY");
+    assert.equal(card.hadV1Entry, true);
+    assert.equal(card.entryV1Label, "SÍ");
+  });
+
+  it("MAPA wick TP1 stays MAPA and is not a V1 trade", () => {
+    const card = historyCardModel(
+      row({
+        episode: episode({ openedState: "map", currentState: "map" }),
+        outcome: "tp1",
+        firstTouch: "tp1",
+        firstTouchAtMs: Date.parse("2026-08-29T08:30:00Z"),
+        hadV1Entry: false,
+      }),
+    );
+    assert.equal(card.outcome, "toque técnico TP1");
+    assert.equal(card.episodeState, "MAPA");
+    assert.equal(card.hadV1Entry, false);
+    assert.equal(card.entryV1Label, "NO");
+    assert.equal(card.isTradeOutcome, false);
+    assert.match(card.wick, /No hubo ENTRADA V1/);
+    assert.match(card.setupCaption ?? "", /Setup sin ENTRADA V1 — toque técnico TP1/);
+    assert.doesNotMatch(card.outcome, /^SL$|^TP1$|^TP2$|^ENTRY$/);
+    assert.doesNotMatch(JSON.stringify(card), /ZONE_SWEEP|FVG_RETEST|BASELINE_V1|SHADOW/i);
+  });
+
+  it("MAP SL is a technical touch, never Operación SL", () => {
+    const mapSl = row({
+      episode: episode({ openedState: "map", currentState: "map" }),
+      outcome: "sl",
+      firstTouch: "sl",
+      hadV1Entry: false,
+    });
+    const card = historyCardModel(mapSl);
+    assert.equal(card.outcome, "toque técnico SL");
+    assert.equal(card.isTradeOutcome, false);
+    assert.equal(setupWithoutEntryLabel(mapSl), "Setup sin ENTRADA V1 — toque técnico SL");
+    const buckets = historyBuckets([
+      mapSl,
+      row({ outcome: "tp1", hadV1Entry: true }),
+    ]);
+    assert.equal(buckets.operations.length, 1);
+    assert.equal(buckets.setups.length, 1);
+    assert.equal(buckets.operations[0]?.hadV1Entry, true);
+    assert.equal(buckets.setups[0]?.hadV1Entry, false);
   });
 });

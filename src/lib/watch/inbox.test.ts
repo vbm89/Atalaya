@@ -77,6 +77,32 @@ describe("bandeja de avisos", () => {
     assert.equal(inboxItemKey(inbox[0]!), `${inbox[0]!.episodeId}|100|wait|entry`);
   });
 
+  it("listHistory marks hadV1Entry only from to_state=entry", async () => {
+    const store = createMemoryStore();
+    const entered = foldEpisode(
+      null,
+      { id: "BTCUSD", setupState: "entry", setup, waitReason: null, digits: 2 },
+      100,
+      1_000,
+    );
+    await store.upsertEpisode(entered.episode!);
+    for (const ev of entered.events) await store.insertEvent(ev);
+    const mapSetup = { ...setup, state: "map" as const, missingForEntry: "Falta: salida 15M de la zona a favor." };
+    const mapped = foldEpisode(
+      null,
+      { id: "XAUUSD", setupState: "map", setup: mapSetup, waitReason: null, digits: 2 },
+      200,
+      2_000,
+    );
+    await store.upsertEpisode(mapped.episode!);
+    for (const ev of mapped.events) await store.insertEvent(ev);
+    const history = await store.listHistory(10);
+    const btc = history.find((r) => r.episode.assetId === "BTCUSD");
+    const xau = history.find((r) => r.episode.assetId === "XAUUSD");
+    assert.equal(btc?.hadV1Entry, true);
+    assert.equal(xau?.hadV1Entry, false);
+  });
+
   it("does not duplicate the same transition", async () => {
     const store = createMemoryStore();
     const f = foldEpisode(
@@ -194,6 +220,42 @@ describe("bandeja de avisos", () => {
     assert.ok(n.skipped >= 1);
     const inbox = await store.listInbox(20);
     assert.ok(inbox.some((r) => r.toState === "wait"));
+  });
+
+  it("listEpisodeEvents is chronological and does not mix episodes", async () => {
+    const store = createMemoryStore();
+    const pendingSetup = { ...setup, state: "pending" as const };
+    const a = foldEpisode(
+      null,
+      { id: "XAUUSD", setupState: "pending", setup: pendingSetup, waitReason: null, digits: 2 },
+      100,
+      1_000,
+    );
+    await store.upsertEpisode(a.episode!);
+    for (const ev of a.events) await store.insertEvent(ev);
+    const b = foldEpisode(
+      null,
+      { id: "XAUUSD", setupState: "entry", setup, waitReason: null, digits: 2 },
+      200,
+      2_000,
+    );
+    await store.upsertEpisode(b.episode!);
+    for (const ev of b.events) await store.insertEvent(ev);
+    const later = foldEpisode(
+      a.episode,
+      { id: "XAUUSD", setupState: "entry", setup, waitReason: null, digits: 2 },
+      150,
+      1_500,
+    );
+    if (later.episode) await store.upsertEpisode(later.episode);
+    for (const ev of later.events) await store.insertEvent(ev);
+
+    const focused = await store.listEpisodeEvents(a.episode!.episodeId);
+    assert.ok(focused.length >= 1);
+    assert.ok(focused.every((r) => r.episodeId === a.episode!.episodeId));
+    assert.ok(!focused.some((r) => r.episodeId === b.episode!.episodeId));
+    const times = focused.map((r) => r.atMs);
+    assert.deepEqual(times, [...times].sort((x, y) => x - y));
   });
 });
 

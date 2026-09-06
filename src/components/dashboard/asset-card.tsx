@@ -1,6 +1,7 @@
-import { ChevronRight, HelpCircle } from "lucide-react";
+import { useState } from "react";
+import { ChevronRight, HelpCircle, Star } from "lucide-react";
 import { cn, formatDateTime, formatPct, formatPrice, decodeEntities } from "@/lib/utils";
-import type { AssetAnalysis, Timeframe } from "@/lib/trading/types";
+import type { AssetAnalysis, AssetId, Timeframe } from "@/lib/trading/types";
 import { hasChartableSetup } from "@/lib/chart/setup-overlay";
 import { displayEntryPrice } from "@/lib/chart/labels";
 import { setupDistance, distanceUnavailableLabel } from "@/lib/chart/zone-distance";
@@ -8,12 +9,34 @@ import { analysisPriceCaption } from "@/lib/broker/broker-view";
 import type { AssetWatch } from "@/lib/watch/memory";
 import { setupStateEs, watchPhaseCaption } from "@/lib/watch/memory";
 import { assetDataLamp } from "@/lib/watch/feed-lamp";
+import { tileStatusChips } from "@/lib/watch/market-session";
 import { WatchPhaseBadge } from "./signal-badge";
 import { Sparkline } from "./sparkline";
 import { DataLampChip } from "./data-lamp";
 import { LiveQuoteReadout } from "./live-quote-readout";
+import { AssetMark, ASSET_SUBTITLE } from "./marks";
+
 
 const TF_ORDER: Timeframe[] = ["5m", "15m", "1h", "4h"];
+const CHART_FAV_KEY = "atalaya:chart-favs:v1";
+
+function readChartFavs(): AssetId[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(CHART_FAV_KEY);
+    return raw ? (JSON.parse(raw) as AssetId[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeChartFavs(ids: AssetId[]) {
+  try {
+    window.localStorage.setItem(CHART_FAV_KEY, JSON.stringify(ids));
+  } catch {
+    /* ignore */
+  }
+}
 
 export function AssetCard({
   asset,
@@ -249,39 +272,159 @@ export function MarketTile({
 }) {
   const chg = asset.dayChangePct;
   const up = chg == null ? null : chg >= 0;
-  const state = setupStateEs(asset.setupState);
-  const stateCls =
-    asset.setupState === "entry"
-      ? "text-buy"
-      : asset.setupState === "pending"
-        ? "text-wait"
-        : asset.setupState === "map"
-          ? "text-map"
-          : "text-muted";
+  const [starred, setStarred] = useState(() => readChartFavs().includes(asset.id));
+  const setup = asset.setup;
+  const chips = tileStatusChips({
+    id: asset.id,
+    dataStatus: asset.dataStatus,
+    setupState: asset.setupState,
+    direction: setup?.direction ?? null,
+  });
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
+    <div
       data-watch-asset={asset.id}
-      className="flex min-h-16 w-full items-center gap-3 rounded-[var(--radius-lg)] bg-elevated px-3 py-2.5 text-left shadow-[var(--shadow-border)]"
+      data-market-session={chips.session.kind}
+      data-market-hunting={chips.hunting ? "1" : "0"}
+      data-operable={chips.operable ? "1" : "0"}
+      className={cn(
+        "atalaya-market-tile relative",
+        chips.session.kind === "open" && "is-open",
+        chips.dim && "is-closed",
+        chips.session.kind === "unknown" && "is-unknown",
+      )}
     >
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold tracking-tight">{asset.label}</p>
-        <p className={cn("mt-0.5 text-xs font-medium tracking-wide", stateCls)}>{state}</p>
-      </div>
-      <div className="w-16 shrink-0">
-        <Sparkline values={asset.sparkline} positive={up} />
-      </div>
-      <LiveQuoteReadout
-        id={asset.id}
-        digits={asset.digits}
-        snapshotPrice={asset.price}
-        snapshotSpot={asset.priceSpot}
-      />
-    </button>
+      <button
+        type="button"
+        className="absolute top-1.5 right-1 z-10 flex size-9 items-center justify-center text-muted"
+        aria-label={starred ? "Quitar de favoritos" : "Añadir a favoritos"}
+        onClick={() => {
+          const next = readChartFavs();
+          const ids = next.includes(asset.id) ? next.filter((x) => x !== asset.id) : [...next, asset.id];
+          writeChartFavs(ids);
+          setStarred(ids.includes(asset.id));
+        }}
+      >
+        <Star className={starred ? "size-3.5 fill-wait text-wait" : "size-3.5"} />
+      </button>
+      <button type="button" onClick={onOpen} className="flex h-full w-full flex-col text-left">
+        <div className="flex items-center gap-2 pr-7">
+          <AssetMark id={asset.id} size="sm" />
+          <div className="atalaya-tile-id min-w-0">
+            <p className="atalaya-tile-name">{asset.label}</p>
+            <p className="atalaya-tile-sub">{ASSET_SUBTITLE[asset.id]}</p>
+          </div>
+        </div>
+        <div className="mt-1.5">
+          <span
+            className={cn(
+              "atalaya-badge",
+              chips.session.kind === "open" && "atalaya-badge-open",
+              chips.session.kind === "closed" && "atalaya-badge-closed",
+              chips.session.kind === "unknown" && "atalaya-badge-unknown",
+            )}
+            title={
+              chips.session.kind === "open"
+                ? "Mercado abierto"
+                : chips.session.kind === "closed"
+                  ? "Mercado cerrado"
+                  : "Estado de mercado no disponible"
+            }
+            data-session-badge={chips.session.kind}
+          >
+            <span
+              className={cn(
+                "atalaya-session-dot",
+                chips.session.kind === "open" && "is-open",
+                chips.session.kind === "closed" && "is-closed",
+                chips.session.kind === "unknown" && "is-unknown",
+              )}
+              aria-hidden
+            />
+            {chips.session.kind === "closed" ? "CERRADO" : chips.session.label}
+          </span>
+        </div>
+        <div className="mt-2 min-w-0">
+          <LiveQuoteReadout
+            id={asset.id}
+            digits={asset.digits}
+            snapshotPrice={asset.price}
+            snapshotSpot={asset.priceSpot}
+            showSpotLabel={false}
+            align="left"
+            size="lg"
+          />
+          <p
+            className={cn(
+              "atalaya-tile-caption",
+              chips.session.kind !== "closed" && "is-spacer",
+            )}
+          >
+            {chips.session.kind === "closed" ? "Último dato disponible" : "\u00a0"}
+          </p>
+        </div>
+        <div className="mt-1 flex items-end justify-between gap-2">
+          <p
+            className={cn(
+              "font-mono text-[11px] tabular",
+              up == null && "text-muted",
+              up === true && "text-buy",
+              up === false && "text-sell",
+            )}
+          >
+            {chg == null ? "—" : compactPct(chg)}
+          </p>
+          <div className="atalaya-tile-spark">
+            <Sparkline values={asset.sparkline} positive={up} />
+          </div>
+        </div>
+        <div className="atalaya-tile-setups">
+          {chips.setups.map((chip) =>
+            chip.key === "dir" ? (
+              <span
+                key={chip.key}
+                className={cn(
+                  "text-[10px] font-semibold",
+                  chip.current ? (setup?.direction === "buy" ? "text-buy" : "text-sell") : "text-subtle",
+                )}
+                data-setup-current={chip.current ? "1" : "0"}
+              >
+                {chip.label}
+              </span>
+            ) : (
+              <span
+                key={chip.key}
+                className={cn(
+                  "atalaya-badge",
+                  chip.key === "entry"
+                    ? "atalaya-badge-entry"
+                    : chip.current && chip.key === "pending"
+                      ? "atalaya-badge-wait"
+                      : chip.current && chip.key === "map"
+                        ? "atalaya-badge-map"
+                        : "atalaya-badge-muted",
+                )}
+                data-setup-current={chip.current ? "1" : "0"}
+              >
+                {chip.label}
+              </span>
+            ),
+          )}
+        </div>
+      </button>
+    </div>
   );
 }
+
+function compactPct(value: number): string {
+  const n = new Intl.NumberFormat("es-ES", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    signDisplay: "exceptZero",
+  }).format(value);
+  return `${n}%`;
+}
+
 
 function SetupLine({
   asset,

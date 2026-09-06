@@ -10,6 +10,8 @@ import { WatchPhaseBadge } from "./signal-badge";
 import { SetupPanel } from "./setup-panel";
 import { DataLampChip } from "./data-lamp";
 import { EpisodeMemory } from "./episode-memory";
+import { ClosedPendingNotice, SessionBadge } from "./session-state";
+import { episodeMarketView } from "@/lib/watch/market-session";
 
 export function AssetSheet({
   asset,
@@ -93,6 +95,11 @@ function SheetBody({
     lastDataAt: asset.lastDataAt,
     price: displayPrice,
   });
+  const market = episodeMarketView({
+    id: asset.id,
+    setupState: asset.setupState,
+    dataStatus: asset.dataStatus,
+  });
   return (
     <>
       <div className="atalaya-sheet-chrome flex items-start justify-between gap-3">
@@ -101,10 +108,13 @@ function SheetBody({
             {asset.label}
           </h2>
           <p className="text-sm text-muted">{asset.name}</p>
+          <div className="mt-1.5">
+            <SessionBadge id={asset.id} dataStatus={asset.dataStatus} compact={false} />
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <div className="flex flex-col items-end gap-1">
-            <WatchPhaseBadge phase={phase} signal={asset.signal} />
+            {market.closedPending ? null : <WatchPhaseBadge phase={phase} signal={asset.signal} />}
             <DataLampChip lamp={dataLamp.lamp} label={dataLamp.label} />
           </div>
           <button
@@ -158,6 +168,15 @@ function SheetBody({
           <h3 className="text-xs font-medium tracking-wider text-muted uppercase">
             Setup
           </h3>
+          {market.closedPending ? (
+            <div className="mt-2">
+              <ClosedPendingNotice
+                id={asset.id}
+                setupState={asset.setupState}
+                dataStatus={asset.dataStatus}
+              />
+            </div>
+          ) : null}
           <SetupPanel
             asset={asset}
             watch={watch}

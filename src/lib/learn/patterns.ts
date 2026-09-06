@@ -1,5 +1,6 @@
 import type { AssetId } from "../trading/types";
 import type { LearningCase } from "./case";
+import { v1TradeCases } from "./case";
 import {
   ASSET_ORDER,
   evidenceLevel,
@@ -177,7 +178,7 @@ export function detectFindings(
   opts?: { dataset?: "production" | "all" },
 ): PatternReport {
   const dataset = opts?.dataset ?? "production";
-  const src = dataset === "all" ? cases : productionCases(cases);
+  const src = v1TradeCases(dataset === "all" ? cases : productionCases(cases));
   const emptyLabel = "Aún no hay suficiente histórico para detectar patrones.";
   const findings: Finding[] = [];
 

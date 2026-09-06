@@ -355,6 +355,28 @@ describe("ChartIntent freeze", () => {
     assert.notEqual(f.basis, liveBasisWouldBe);
   });
 
+  it("a closed wait episode is not coerced to ENTRY", () => {
+    const f = frozenLevelsFromEpisode(
+      {
+        episodeId: "ep-wait-1",
+        assetId: "BTCUSD",
+        live: false,
+        state: "wait",
+        direction: "sell",
+        zoneLow: 77500,
+        zoneHigh: 77600,
+        sl: 78150,
+        tp1: 77100,
+        tp2: 76800,
+        setup: null,
+        freeze: null,
+      },
+      2,
+    );
+    assert.ok(f);
+    assert.equal(f.state, "wait");
+  });
+
   it("BTC M15 freeze is not drawn on BTC H1 or on XAU", () => {
     const freeze = frozenLevelsFromSetup(
       asset({ setupState: "pending", setup: setup() }),

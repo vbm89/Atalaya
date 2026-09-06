@@ -1,4 +1,5 @@
 import type { LearningCase } from "./case";
+import { v1TradeCases } from "./case";
 import {
   assetUniverse,
   detectFindings,
@@ -196,7 +197,7 @@ export function runValidation(
   createdAtMs: number,
   opts?: { dataset?: "production" | "all" },
 ): ValidationReport {
-  const src = opts?.dataset === "all" ? cases : productionCases(cases);
+  const src = v1TradeCases(opts?.dataset === "all" ? cases : productionCases(cases));
   const split = splitTemporal(src);
   const discovered = actionableProposals(
     proposalsFromFindings(detectFindings(split.train, { dataset: "all" }).findings, createdAtMs),
