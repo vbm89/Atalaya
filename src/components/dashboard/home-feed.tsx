@@ -1,4 +1,9 @@
 import { ChevronRight } from "lucide-react";
+/**
+ * HOME feed: "Mercado en vigilancia" + Oportunidades.
+ * Consumes existing analysis/watch state. Does not run Shadow or capture.
+ * See docs/HOME_SHELL.md.
+ */
 import { useEffect, useState } from "react";
 import type { AnalysisSnapshot, AssetAnalysis, AssetId, SetupState } from "@/lib/trading/types";
 import { cn, formatPrice } from "@/lib/utils";

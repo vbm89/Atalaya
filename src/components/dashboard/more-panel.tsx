@@ -1,4 +1,8 @@
 import type { ReactNode } from "react";
+/**
+ * HOME Más screen. Research items (Aprendizaje, Estado del laboratorio)
+ * are rows here — they must not replace the HOME shell. See docs/HOME_SHELL.md.
+ */
 import {
   Bell,
   BookOpen,

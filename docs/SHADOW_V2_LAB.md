@@ -58,3 +58,17 @@ A future promotion to V1 would require at least:
 - human review
 
 Until then: **SEGUIR ACUMULANDO**.
+
+## HOME / UI independence
+
+**Las futuras fases de Shadow/captura no deben modificar ni sustituir la HOME
+de Atalaya salvo que exista una tarea explícita de UI.**
+
+HOME (header ATALAYA + OPERATIVO, “Mercado en vigilancia”, rejilla 2×2, dock
+Inicio/Mercados/Historial/Alertas/Más) is a separate layer from Shadow replay,
+causal capture, `entryGates`, `postEntry`, and lab integrity.
+
+Estado del laboratorio lives under **Más**. It must not become the start screen.
+
+Contract and regression test: [HOME_SHELL.md](./HOME_SHELL.md),
+`src/components/dashboard/home-shell.test.ts`.

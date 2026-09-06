@@ -42,6 +42,14 @@ import { formatMadridClock } from "@/lib/watch/clock";
 import { watchLamp, worstDataLamp } from "@/lib/watch/feed-lamp";
 import { pickPresentedOpportunity, marketSessionKind, marketSessionLabel } from "@/lib/watch/market-session";
 
+/**
+ * HOME / app-shell composer. Presentation only.
+ *
+ * Shadow, causal capture, and lab integrity must not replace this chrome.
+ * Add research surfaces as Más destinations (LabIntegrityPanel, LearnPanel)
+ * or lib modules — never swap the header, 2×2 market grid, or dock.
+ * Contract: docs/HOME_SHELL.md (enforced by home-shell.test.ts).
+ */
 
 const CACHE_KEY = "atalaya:last-analysis:v5";
 const QUERY_KEY = ["market-analysis"] as const;
