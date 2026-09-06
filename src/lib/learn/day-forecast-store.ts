@@ -41,11 +41,6 @@ function dayKey(iso: string): string {
   return iso.slice(0, 10);
 }
 
-function pctMove(reference: number, current: number): number {
-  if (!Number.isFinite(reference) || reference === 0 || !Number.isFinite(current)) return 0;
-  return ((current - reference) / reference) * 100;
-}
-
 function rowToTracking(row: Record<string, unknown>): ForecastTracking {
   const snapshot = typeof row.snapshot === "string" ? JSON.parse(row.snapshot) : (row.snapshot ?? {});
   const reasons = typeof row.reasons === "string" ? JSON.parse(row.reasons) : (row.reasons ?? []);
@@ -74,39 +69,20 @@ function rowToTracking(row: Record<string, unknown>): ForecastTracking {
   };
 }
 
-function evaluateOutcome(direction: DailyForecast["direction"], movePct: number): ForecastOutcome {
-  if (direction === "neutro") return Math.abs(movePct) < 0.5 ? "neutro" : movePct > 0 ? "acierto" : "fallo";
-  const favorable = direction === "subir" ? movePct : -movePct;
-  const adverse = -favorable;
-  if (favorable >= 0.5) return "acierto";
-  if (adverse >= 0.5) return "fallo";
-  return "en_curso";
-}
-
-export async function recordDailyForecasts(
-  sql: SqlQuery,
-  assets: AssetAnalysis[],
-  forecasts: DailyForecast[],
-  generatedAt: string,
-): Promise<void> {
+export async function recordDailyForecasts(sql: SqlQuery, assets: AssetAnalysis[], forecasts: DailyForecast[], generatedAt: string): Promise<void> {
   const date = dayKey(generatedAt);
   for (const forecast of forecasts) {
     const asset = assets.find((a) => a.id === forecast.assetId);
     if (!asset || !Number.isFinite(asset.price)) continue;
     const snapshot = {
       technicalSummary: asset.technicalSummary,
-      timeframes: asset.timeframes.map((tf) => ({
-        timeframe: tf.timeframe,
-        trend: tf.trend,
-        structure: tf.structure,
-        score: tf.score,
-        sufficient: tf.sufficient,
-      })),
+      timeframes: asset.timeframes.map((tf) => ({ timeframe: tf.timeframe, trend: tf.trend, structure: tf.structure, score: tf.score, sufficient: tf.sufficient })),
       supports: asset.supports,
       resistances: asset.resistances,
       setupState: asset.setupState,
       signal: asset.signal,
     };
+
     await sql.query(
       `insert into shadow_day_forecasts
        (forecast_date, asset_id, generated_at, direction, confidence, bullish_score, bearish_score,
@@ -115,18 +91,38 @@ export async function recordDailyForecasts(
        on conflict (forecast_date, asset_id) do update set
          last_price = excluded.last_price,
          last_seen_at = excluded.last_seen_at,
-         mfe_pct = greatest(shadow_day_forecasts.mfe_pct, case when shadow_day_forecasts.direction = 'subir' then ((excluded.last_price - shadow_day_forecasts.reference_price) / nullif(shadow_day_forecasts.reference_price, 0)) * 100 else ((shadow_day_forecasts.reference_price - excluded.last_price) / nullif(shadow_day_forecasts.reference_price, 0)) * 100 end),
-         mae_pct = greatest(shadow_day_forecasts.mae_pct, case when shadow_day_forecasts.direction = 'subir' then ((shadow_day_forecasts.reference_price - excluded.last_price) / nullif(shadow_day_forecasts.reference_price, 0)) * 100 else ((excluded.last_price - shadow_day_forecasts.reference_price) / nullif(shadow_day_forecasts.reference_price, 0)) * 100 end)`,
+         mfe_pct = greatest(shadow_day_forecasts.mfe_pct,
+           case when shadow_day_forecasts.direction = 'subir' then greatest(0, ((excluded.last_price - shadow_day_forecasts.reference_price) / nullif(shadow_day_forecasts.reference_price, 0)) * 100)
+                when shadow_day_forecasts.direction = 'bajar' then greatest(0, ((shadow_day_forecasts.reference_price - excluded.last_price) / nullif(shadow_day_forecasts.reference_price, 0)) * 100)
+                else 0 end),
+         mae_pct = greatest(shadow_day_forecasts.mae_pct,
+           case when shadow_day_forecasts.direction = 'subir' then greatest(0, ((shadow_day_forecasts.reference_price - excluded.last_price) / nullif(shadow_day_forecasts.reference_price, 0)) * 100)
+                when shadow_day_forecasts.direction = 'bajar' then greatest(0, ((excluded.last_price - shadow_day_forecasts.reference_price) / nullif(shadow_day_forecasts.reference_price, 0)) * 100)
+                else greatest(0, abs(((excluded.last_price - shadow_day_forecasts.reference_price) / nullif(shadow_day_forecasts.reference_price, 0)) * 100)) end)`,
       [date, forecast.assetId, generatedAt, forecast.direction, forecast.confidence, forecast.bullishScore, forecast.bearishScore, JSON.stringify(forecast.reasons), JSON.stringify(snapshot), asset.price],
     );
+
     await sql.query(
-      `update shadow_day_forecasts
-       set outcome = case when direction = 'neutro' then case when abs(((last_price-reference_price)/nullif(reference_price,0))*100) >= 0.5 then case when last_price > reference_price then 'acierto' else 'fallo' end else 'en_curso' end
-                           when direction = 'subir' then case when ((last_price-reference_price)/nullif(reference_price,0))*100 >= 0.5 then 'acierto' when ((reference_price-last_price)/nullif(reference_price,0))*100 >= 0.5 then 'fallo' else 'en_curso' end
-                           when direction = 'bajar' then case when ((reference_price-last_price)/nullif(reference_price,0))*100 >= 0.5 then 'acierto' when ((last_price-reference_price)/nullif(reference_price,0))*100 >= 0.5 then 'fallo' else 'en_curso' end end,
-           status = case when outcome in ('acierto','fallo') then 'closed' else status end,
-           outcome_at = case when outcome in ('acierto','fallo') then coalesce(outcome_at, last_seen_at) else outcome_at end
-       where forecast_date = $1::date and asset_id = $2`,
+      `with calculated as (
+         select id,
+           case
+             when direction = 'neutro' and abs(((last_price-reference_price)/nullif(reference_price,0))*100) >= 0.5 then case when last_price > reference_price then 'acierto' else 'fallo' end
+             when direction = 'neutro' then 'neutro'
+             when direction = 'subir' and ((last_price-reference_price)/nullif(reference_price,0))*100 >= 0.5 then 'acierto'
+             when direction = 'subir' and ((reference_price-last_price)/nullif(reference_price,0))*100 >= 0.5 then 'fallo'
+             when direction = 'bajar' and ((reference_price-last_price)/nullif(reference_price,0))*100 >= 0.5 then 'acierto'
+             when direction = 'bajar' and ((last_price-reference_price)/nullif(reference_price,0))*100 >= 0.5 then 'fallo'
+             else 'en_curso'
+           end as new_outcome
+         from shadow_day_forecasts
+         where forecast_date = $1::date and asset_id = $2
+       )
+       update shadow_day_forecasts s
+       set outcome = c.new_outcome,
+           status = case when c.new_outcome in ('acierto','fallo') then 'closed' else 'open' end,
+           outcome_at = case when c.new_outcome in ('acierto','fallo') then coalesce(s.outcome_at, s.last_seen_at) else null end
+       from calculated c
+       where s.id = c.id`,
       [date, forecast.assetId],
     );
   }
@@ -135,10 +131,7 @@ export async function recordDailyForecasts(
 export async function getDailyForecastTracking(sql: SqlQuery, date?: string): Promise<ForecastTracking[]> {
   const target = date ?? new Date().toISOString().slice(0, 10);
   try {
-    const rows = await sql.query<Record<string, unknown>>(
-      `select * from shadow_day_forecasts where forecast_date = $1::date order by asset_id`,
-      [target],
-    );
+    const rows = await sql.query<Record<string, unknown>>(`select * from shadow_day_forecasts where forecast_date = $1::date order by asset_id`, [target]);
     return rows.map(rowToTracking);
   } catch {
     return [];
@@ -147,10 +140,7 @@ export async function getDailyForecastTracking(sql: SqlQuery, date?: string): Pr
 
 export async function getDailyForecastHistory(sql: SqlQuery, limit = 120): Promise<ForecastTracking[]> {
   try {
-    const rows = await sql.query<Record<string, unknown>>(
-      `select * from shadow_day_forecasts order by forecast_date desc, asset_id limit $1`,
-      [limit],
-    );
+    const rows = await sql.query<Record<string, unknown>>(`select * from shadow_day_forecasts order by forecast_date desc, asset_id limit $1`, [limit]);
     return rows.map(rowToTracking);
   } catch {
     return [];
