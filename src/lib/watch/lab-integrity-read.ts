@@ -31,12 +31,10 @@ export async function readLabIntegrity(sql: SqlQuery, nowMs: number): Promise<La
     counts = parseLabCounts(null);
   }
 
-  // The current lab database does not persist a replay report. Keep the
-  // historical fields unavailable rather than reconstructing or inventing it.
-  // MIN_TEST_N is nevertheless exposed through the evidence label so the UI
-  // has a stable methodological threshold.
+  // Replay is not persisted in the lab DB yet. Never invent a replay result.
+  // Expose the conservative methodological state instead.
   const extraTestN = null;
-  const evidence = evidenceLabelFor("INSUFFICIENT", extraTestN ?? 0);
+  const evidence = evidenceLabelFor("INSUFFICIENT", 0);
 
   return {
     tick,
