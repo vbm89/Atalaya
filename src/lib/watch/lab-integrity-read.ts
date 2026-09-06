@@ -1,7 +1,4 @@
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import type { PublicWatchHealth } from "./health";
 import type { SqlQuery } from "./store";
 import { readWatchHealth, toPublicWatchHealth } from "./health";
 import { createPgStore } from "./store";
@@ -13,34 +10,15 @@ import {
   tickIntegrityLabel,
   type LabIntegrity,
 } from "./lab-integrity";
+import { V1_FINGERPRINT_STATUS } from "./v1-fingerprint.generated";
 
-/** Keep in sync with scripts/check-v1-sha.mjs — canonical pins live there. */
-const V1_SHA256: Record<string, string> = {
-  "src/lib/trading/engine.ts":
-    "c3d53a4f4366add2c8a284d4f068ea5d2826a36e3aa259b460d74b37c36ce618",
-  "src/lib/trading/signals.ts":
-    "dfb2d2cd188b18daaebed5e843bd8dbefb1e1c6672be86d2092390a8b3bc019b",
-  "src/lib/trading/structure.ts":
-    "e72ba478f524170c7f6c1c6916e033c3fafb418b874aa33565e32dbd01b54170",
-  "src/lib/trading/risk.ts":
-    "4aa406c0061149486532e9f787d20c3cc9f845362dd5497fd42b42563b5d385e",
-  "src/lib/watch/outcome.ts":
-    "fdad185119978866d6bec772091e2d6d0d0af49a5207a7bae061d2d840453c90",
-  "src/lib/market/xau-spot.ts":
-    "393d01945077190a7745ad7cabc3b87bfb170f55fad82a4189a5ee661c678068",
-};
-
+/**
+ * V1 integrity is verified at build time by check-v1-sha.mjs. The generated
+ * module is bundled with the serverless function, so the lab does not depend
+ * on protected source files being present in the runtime filesystem.
+ */
 export function inspectV1Sha(): "intacta" | "error" | typeof LAB_UNAVAILABLE {
-  try {
-    const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
-    for (const [rel, expected] of Object.entries(V1_SHA256)) {
-      const actual = createHash("sha256").update(readFileSync(join(root, rel))).digest("hex");
-      if (actual !== expected) return "error";
-    }
-    return "intacta";
-  } catch {
-    return LAB_UNAVAILABLE;
-  }
+  return V1_FINGERPRINT_STATUS;
 }
 
 /**
