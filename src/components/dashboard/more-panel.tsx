@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 /**
- * HOME Más screen. Research items (Aprendizaje, Estado del laboratorio)
- * are rows here — they must not replace the HOME shell. See docs/HOME_SHELL.md.
+ * HOME Más screen. Research items (Aprendizaje, Estado del laboratorio,
+ * Previsión del día) are rows here — they must not replace the HOME shell.
+ * See docs/HOME_SHELL.md.
  */
 import {
   Bell,
@@ -13,6 +14,7 @@ import {
   Info,
   Settings,
   Activity,
+  Compass,
 } from "lucide-react";
 import { AtalayaMark } from "./marks";
 import { cn } from "@/lib/utils";
@@ -26,6 +28,7 @@ export function MorePanel({
   onSettings,
   onStatus,
   onLab,
+  onForecast,
   statusHint,
 }: {
   onInfo: () => void;
@@ -36,6 +39,7 @@ export function MorePanel({
   onSettings: () => void;
   onStatus: () => void;
   onLab: () => void;
+  onForecast: () => void;
   statusHint: string;
 }) {
   return (
@@ -48,6 +52,7 @@ export function MorePanel({
         <MoreRow icon={<Info className="size-4 text-cyan" />} title="Información" hint="Sobre Atalaya" onClick={onInfo} />
         <MoreRow icon={<BookOpen className="size-4 text-muted" />} title="Historial" hint="Episodios registrados" onClick={onHistory} />
         <MoreRow icon={<GraduationCap className="size-4 text-muted" />} title="Aprendizaje" hint="Shadow y análisis" onClick={onLearn} />
+        <MoreRow icon={<Compass className="size-4 text-cyan" />} title="Previsión del día" hint="Sesgo diario experimental" onClick={onForecast} />
         <MoreRow icon={<FlaskConical className="size-4 text-muted" />} title="Estado del laboratorio" hint="Captura e integridad" onClick={onLab} />
         <MoreRow icon={<Bell className="size-4 text-muted" />} title="Alertas" hint="Notificaciones" onClick={onAlerts} />
         <MoreRow icon={<CalendarDays className="size-4 text-muted" />} title="Calendario" hint="Eventos de mercado" onClick={onCalendar} />
