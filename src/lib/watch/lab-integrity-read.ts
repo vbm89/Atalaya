@@ -1,4 +1,3 @@
-import type { PublicWatchHealth } from "./health";
 import type { SqlQuery } from "./store";
 import { readWatchHealth, toPublicWatchHealth } from "./health";
 import { createPgStore } from "./store";
