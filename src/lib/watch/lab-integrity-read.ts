@@ -1,29 +1,14 @@
 import type { SqlQuery } from "./store";
 import { readWatchHealth, toPublicWatchHealth } from "./health";
 import { createPgStore } from "./store";
-import {
-  LAB_COUNTS_SQL,
-  LAB_UNAVAILABLE,
-  labUnavailable,
-  parseLabCounts,
-  tickIntegrityLabel,
-  type LabIntegrity,
-} from "./lab-integrity";
+import { LAB_COUNTS_SQL, LAB_UNAVAILABLE, labUnavailable, parseLabCounts, tickIntegrityLabel, type LabIntegrity } from "./lab-integrity";
 import { V1_FINGERPRINT_STATUS } from "./v1-fingerprint.generated";
+import { MIN_TEST_N, evidenceLabelFor } from "@/lib/learn/shadow-analysis";
 
-/**
- * V1 integrity is verified at build time by check-v1-sha.mjs. The generated
- * module is bundled with the serverless function, so the lab does not depend
- * on protected source files being present in the runtime filesystem.
- */
 export function inspectV1Sha(): "intacta" | "error" | typeof LAB_UNAVAILABLE {
   return V1_FINGERPRINT_STATUS;
 }
 
-/**
- * Read-only laboratory snapshot. SELECT only. Never writes. Shadow replay is
- * ephemeral — last replay fields stay unavailable rather than invented.
- */
 export async function readLabIntegrity(sql: SqlQuery, nowMs: number): Promise<LabIntegrity> {
   const v1Sha = inspectV1Sha();
   let tick = LAB_UNAVAILABLE;
@@ -46,15 +31,22 @@ export async function readLabIntegrity(sql: SqlQuery, nowMs: number): Promise<La
     counts = parseLabCounts(null);
   }
 
+  // The current lab database does not persist a replay report. Keep the
+  // historical fields unavailable rather than reconstructing or inventing it.
+  // MIN_TEST_N is nevertheless exposed through the evidence label so the UI
+  // has a stable methodological threshold.
+  const extraTestN = null;
+  const evidence = evidenceLabelFor("INSUFFICIENT", extraTestN ?? 0);
+
   return {
     tick,
     persistence,
     v1Sha,
     ...counts,
     lastShadowReplayAt: null,
-    lastShadowReplayResult: null,
-    extraTestN: null,
-    lastReplayInsufficient: null,
+    lastShadowReplayResult: `Evidencia ${evidence} · mínimo EXTRA TEST ${MIN_TEST_N}`,
+    extraTestN,
+    lastReplayInsufficient: true,
   };
 }
 
