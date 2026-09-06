@@ -4,6 +4,7 @@ import { createPgStore } from "./store";
 import { LAB_COUNTS_SQL, LAB_UNAVAILABLE, labUnavailable, parseLabCounts, tickIntegrityLabel, type LabIntegrity } from "./lab-integrity";
 import { V1_FINGERPRINT_STATUS } from "./v1-fingerprint.generated";
 import { MIN_TEST_N, evidenceLabelFor } from "@/lib/learn/shadow-analysis";
+import { getLatestShadowReplayReport } from "@/lib/learn/shadow-replay-store";
 
 export function inspectV1Sha(): "intacta" | "error" | typeof LAB_UNAVAILABLE {
   return V1_FINGERPRINT_STATUS;
@@ -31,20 +32,22 @@ export async function readLabIntegrity(sql: SqlQuery, nowMs: number): Promise<La
     counts = parseLabCounts(null);
   }
 
-  // Replay is not persisted in the lab DB yet. Never invent a replay result.
-  // Expose the conservative methodological state instead.
-  const extraTestN = null;
-  const evidence = evidenceLabelFor("INSUFFICIENT", 0);
+  const latest = await getLatestShadowReplayReport(sql);
+  const extraTestN = latest?.extraTestN ?? null;
+  const evidence = latest ? latest.evidenceLabel : evidenceLabelFor("INSUFFICIENT", 0);
+  const lastShadowReplayResult = latest
+    ? `Evidencia ${evidence} · EXTRA TEST ${extraTestN}/${MIN_TEST_N} · metodología ${latest.methodologyVersion}`
+    : `Evidencia ${evidence} · mínimo EXTRA TEST ${MIN_TEST_N} · sin replay persistido`;
 
   return {
     tick,
     persistence,
     v1Sha,
     ...counts,
-    lastShadowReplayAt: null,
-    lastShadowReplayResult: `Evidencia ${evidence} · mínimo EXTRA TEST ${MIN_TEST_N}`,
+    lastShadowReplayAt: latest?.generatedAt ?? null,
+    lastShadowReplayResult,
     extraTestN,
-    lastReplayInsufficient: true,
+    lastReplayInsufficient: extraTestN == null || extraTestN < MIN_TEST_N,
   };
 }
 
