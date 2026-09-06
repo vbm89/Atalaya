@@ -3,9 +3,7 @@
   "private": true,
   "sideEffects": false,
   "type": "module",
-  "overrides": {
-    "nf3": "0.3.17"
-  },
+  "overrides": {"nf3": "0.3.17"},
   "scripts": {
     "dev": "node scripts/with-app-env.mjs vite dev --host 0.0.0.0 --port 8080",
     "build": "npm run check:v1-sha && node scripts/generate-v1-fingerprint.mjs && node scripts/with-app-env.mjs vite build && npm run db:migrate",
@@ -94,6 +92,7 @@
     "nitro": "3.0.260610-beta",
     "playwright": "^1.62.0",
     "prettier": "^3.4.0",
+    "typescript": "^5.7.0",
     "typescript-eslint": "^8.56.1",
     "vite": "^8.2.0"
   }
