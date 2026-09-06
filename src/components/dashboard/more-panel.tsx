@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 /**
  * HOME Más screen. Research items (Aprendizaje, Estado del laboratorio,
@@ -16,11 +16,20 @@ import {
   Settings,
   Activity,
   Compass,
+  ArrowLeft,
 } from "lucide-react";
 import { AtalayaMark } from "./marks";
 import { cn } from "@/lib/utils";
 import { getMarketAnalysis } from "@/lib/market/analysis.fn";
-import { forecastAll } from "@/lib/learn/day-forecast";
+import { forecastAll, type DailyForecast } from "@/lib/learn/day-forecast";
+import type { AssetAnalysis } from "@/lib/trading/types";
+
+const LABELS: Record<string, string> = {
+  XAUUSD: "Oro",
+  BTCUSD: "Bitcoin",
+  US100: "US100",
+  WTI: "Petróleo",
+};
 
 export function MorePanel({
   onInfo,
@@ -50,6 +59,7 @@ export function MorePanel({
     retry: 1,
   });
   const forecasts = forecast.data ? forecastAll(forecast.data.assets, forecast.data.generatedAt) : [];
+  const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
 
   return (
     <div className="space-y-4" data-more-panel>
@@ -68,7 +78,15 @@ export function MorePanel({
         <MoreRow icon={<Settings className="size-4 text-muted" />} title="Configuración" hint="Preferencias" onClick={onSettings} />
         <MoreRow icon={<Activity className="size-4 text-buy" />} title="Estado del sistema" hint={statusHint} onClick={onStatus} last />
       </div>
-      <DayForecastSummary forecasts={forecasts} loading={forecast.isLoading} />
+      {selectedAsset && forecast.data ? (
+        <DayForecastDetail
+          asset={forecast.data.assets.find((a) => a.id === selectedAsset) ?? null}
+          forecast={forecasts.find((f) => f.assetId === selectedAsset) ?? null}
+          onBack={() => setSelectedAsset(null)}
+        />
+      ) : (
+        <DayForecastSummary forecasts={forecasts} loading={forecast.isLoading} onSelect={setSelectedAsset} />
+      )}
       <div className="flex items-center justify-between rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]">
         <div className="flex items-center gap-2 text-cyan">
           <AtalayaMark className="size-6" />
@@ -86,9 +104,11 @@ export function MorePanel({
 function DayForecastSummary({
   forecasts,
   loading,
+  onSelect,
 }: {
   forecasts: ReturnType<typeof forecastAll>;
   loading: boolean;
+  onSelect: (assetId: string) => void;
 }) {
   return (
     <section className="rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]" data-day-forecast>
@@ -104,7 +124,13 @@ function DayForecastSummary({
       ) : (
         <div className="mt-3 grid grid-cols-2 gap-2">
           {forecasts.map((f) => (
-            <div key={f.assetId} className="rounded-[var(--radius-md)] bg-surface px-3 py-2">
+            <button
+              key={f.assetId}
+              type="button"
+              onClick={() => onSelect(f.assetId)}
+              className="rounded-[var(--radius-md)] bg-surface px-3 py-2 text-left transition-opacity active:opacity-70"
+              aria-label={`Abrir previsión de ${f.assetId}`}
+            >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-semibold">{f.assetId}</span>
                 <span className={`text-[11px] font-bold ${f.direction === "subir" ? "text-buy" : f.direction === "bajar" ? "text-sell" : "text-muted"}`}>
@@ -112,7 +138,7 @@ function DayForecastSummary({
                 </span>
               </div>
               <p className="mt-1 text-[10px] text-subtle">Confianza técnica {f.confidence}%</p>
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -121,6 +147,161 @@ function DayForecastSummary({
       </p>
     </section>
   );
+}
+
+function DayForecastDetail({
+  asset,
+  forecast,
+  onBack,
+}: {
+  asset: AssetAnalysis | null;
+  forecast: DailyForecast | null;
+  onBack: () => void;
+}) {
+  if (!asset || !forecast) return null;
+
+  const directionLabel = forecast.direction === "subir" ? "SUBIR" : forecast.direction === "bajar" ? "BAJAR" : "NEUTRO";
+  const directionClass = forecast.direction === "subir" ? "text-buy" : forecast.direction === "bajar" ? "text-sell" : "text-muted";
+
+  return (
+    <section className="space-y-3" data-day-forecast-detail>
+      <button type="button" onClick={onBack} className="flex items-center gap-1.5 text-xs font-medium text-subtle">
+        <ArrowLeft className="size-3.5" /> Volver a Previsión del día
+      </button>
+
+      <div className="rounded-[var(--radius-lg)] bg-elevated px-4 py-4 shadow-[var(--shadow-border)]">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] text-subtle">{LABELS[asset.id] ?? asset.name}</p>
+            <h3 className="text-xl font-semibold tracking-tight">{asset.id}</h3>
+          </div>
+          <div className="text-right">
+            <p className={`text-lg font-bold ${directionClass}`}>{directionLabel}</p>
+            <p className="text-[11px] text-subtle">Confianza {forecast.confidence}%</p>
+          </div>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-center">
+          <Metric label="Sesgo alcista" value={`${forecast.bullishScore}%`} />
+          <Metric label="Sesgo bajista" value={`${forecast.bearishScore}%`} />
+        </div>
+      </div>
+
+      <DetailSection title="Escenario del día">
+        <p className="text-sm leading-relaxed">{asset.technicalSummary}</p>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {forecast.reasons.map((reason) => <Tag key={reason}>{reason}</Tag>)}
+        </div>
+      </DetailSection>
+
+      <DetailSection title="Confluencia por temporalidad">
+        <div className="space-y-2">
+          {asset.timeframes.map((tf) => (
+            <div key={tf.timeframe} className="rounded-[var(--radius-md)] bg-surface px-3 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold">{tf.timeframe.toUpperCase()}</span>
+                <span className="text-xs font-medium">{tf.trend}</span>
+              </div>
+              <p className="mt-1 text-[11px] text-subtle">{tf.structure}</p>
+              <p className="mt-1 text-[10px] text-subtle">Score {tf.score} · {tf.barCount} velas{tf.sufficient ? "" : " · datos insuficientes"}</p>
+              {(tf.notes.length > 0) && <p className="mt-1 text-[10px] text-subtle">{tf.notes.join(" · ")}</p>}
+            </div>
+          ))}
+        </div>
+      </DetailSection>
+
+      <DetailSection title="Niveles y contexto">
+        <div className="grid grid-cols-2 gap-2">
+          <Metric label="Precio" value={formatPrice(asset.price)} />
+          <Metric label="Cambio día" value={asset.dayChangePct == null ? "—" : `${asset.dayChangePct >= 0 ? "+" : ""}${asset.dayChangePct.toFixed(2)}%`} />
+          <Metric label="Volatilidad" value={asset.volatility} />
+          <Metric label="ATR %" value={asset.atrPct == null ? "—" : `${asset.atrPct.toFixed(2)}%`} />
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <LevelList title="Soportes" values={asset.supports} />
+          <LevelList title="Resistencias" values={asset.resistances} />
+        </div>
+      </DetailSection>
+
+      <DetailSection title="Qué tiene que pasar / invalidación">
+        {asset.setup ? (
+          <div className="space-y-1.5 text-xs">
+            <p><span className="text-subtle">Estado:</span> {asset.setup.state.toUpperCase()}</p>
+            <p><span className="text-subtle">Dirección:</span> {asset.setup.direction === "buy" ? "COMPRA" : "VENTA"}</p>
+            <p><span className="text-subtle">Zona:</span> {formatPrice(asset.setup.zone.low)} – {formatPrice(asset.setup.zone.high)}</p>
+            <p><span className="text-subtle">Invalidación:</span> {formatPrice(asset.setup.invalidation)}</p>
+            <p><span className="text-subtle">Falta para entrada:</span> {asset.setup.missingForEntry ?? "Nada adicional indicado"}</p>
+            {asset.setup.warnings.length > 0 && <p className="text-subtle">⚠ {asset.setup.warnings.join(" · ")}</p>}
+          </div>
+        ) : (
+          <p className="text-sm text-subtle">No hay setup activo. {asset.waitReason ?? "No existe confirmación suficiente ahora mismo."}</p>
+        )}
+      </DetailSection>
+
+      <DetailSection title="V1 ahora mismo">
+        <div className="grid grid-cols-2 gap-2">
+          <Metric label="Señal" value={asset.signal.toUpperCase()} />
+          <Metric label="Estado" value={asset.setupState.toUpperCase()} />
+          <Metric label="Confianza V1" value={`${asset.confidence}%`} />
+          <Metric label="Operable" value={asset.wouldTrade === "yes" ? "SÍ" : asset.wouldTrade === "wait" ? "ESPERAR" : "NO"} />
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-subtle">{asset.wouldTradeReason}</p>
+      </DetailSection>
+
+      <DetailSection title="Noticias">
+        {asset.news.length ? (
+          <div className="space-y-2">
+            {asset.news.slice(0, 6).map((news) => (
+              <div key={news.id} className="rounded-[var(--radius-md)] bg-surface px-3 py-2">
+                <p className="text-xs font-medium">{news.title}</p>
+                <p className="mt-1 text-[10px] text-subtle">{news.source} · {news.impact} · importancia {news.importance}</p>
+                {news.summary ? <p className="mt-1 text-[11px] leading-relaxed text-subtle">{news.summary}</p> : null}
+              </div>
+            ))}
+          </div>
+        ) : <p className="text-sm text-subtle">Sin noticias relevantes disponibles.</p>}
+      </DetailSection>
+
+      <p className="px-1 text-[10px] leading-relaxed text-subtle">
+        Shadow V2 · lectura experimental. No genera ENTRADAS ni modifica V1. La confianza no está calibrada con TRAIN/TEST.
+      </p>
+    </section>
+  );
+}
+
+function DetailSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]">
+      <h4 className="text-sm font-semibold">{title}</h4>
+      <div className="mt-2">{children}</div>
+    </section>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[var(--radius-md)] bg-surface px-3 py-2">
+      <p className="text-[10px] text-subtle">{label}</p>
+      <p className="mt-0.5 text-xs font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function LevelList({ title, values }: { title: string; values: number[] }) {
+  return (
+    <div className="rounded-[var(--radius-md)] bg-surface px-3 py-2">
+      <p className="text-[10px] text-subtle">{title}</p>
+      <p className="mt-1 text-xs font-mono">{values.length ? values.map(formatPrice).join(" · ") : "—"}</p>
+    </div>
+  );
+}
+
+function Tag({ children }: { children: ReactNode }) {
+  return <span className="inline-block rounded-full bg-surface px-2 py-1 text-[11px] text-subtle">{children}</span>;
+}
+
+function formatPrice(value: number | null): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat("es-ES", { maximumFractionDigits: 2 }).format(value);
 }
 
 function MoreRow({
