@@ -66,9 +66,7 @@ function validPushEndpoint(endpoint: string): boolean {
 
 export const savePushSubscription = createServerFn({ method: "POST" })
   .validator((input: { endpoint: string; p256dh: string; auth: string; userAgent?: string; pin?: string }) => {
-    if (!input || !validPushEndpoint(input.endpoint) || !input.p256dh || !input.auth) {
-      throw new Error("Suscripción no válida.");
-    }
+    if (!input || !validPushEndpoint(input.endpoint) || !input.p256dh || !input.auth) throw new Error("Suscripción no válida.");
     return input;
   })
   .handler(async ({ data }) => {
@@ -79,16 +77,10 @@ export const savePushSubscription = createServerFn({ method: "POST" })
     const store = createPgStore(sql);
     const stored = await store.getAlertPinHash();
     const required = envAlertPin() != null || stored != null;
-    if (required && !pinMatches(data.pin ?? "", stored)) {
-      throw new Error("PIN incorrecto.");
-    }
-    await store.upsertPushSub(
-      { endpoint: data.endpoint, p256dh: data.p256dh, auth: data.auth },
-      data.userAgent ?? null,
-    );
+    if (required && !pinMatches(data.pin ?? "", stored)) throw new Error("PIN incorrecto.");
+    await store.upsertPushSub({ endpoint: data.endpoint, p256dh: data.p256dh, auth: data.auth }, data.userAgent ?? null);
     const counts = await store.countPushSubs();
-    const registered = await store.hasPushSub(data.endpoint);
-    return { ok: true, thisDeviceRegistered: registered, activeSubscriptions: counts.active };
+    return { ok: true, thisDeviceRegistered: await store.hasPushSub(data.endpoint), activeSubscriptions: counts.active };
   });
 
 export const deletePushSubscription = createServerFn({ method: "POST" })
@@ -122,10 +114,7 @@ export const getPushStatus = createServerFn({ method: "POST" })
     const hosts = [...new Set(subs.map((s) => pushEndpointHost(s.endpoint)))];
     const vapid = inspectVapidEnv();
     const keys = await loadVapidKeys(sql);
-    const sample =
-      subs.find((s) => pushEndpointHost(s.endpoint).includes("push.apple.com"))?.endpoint ??
-      subs[0]?.endpoint ??
-      "https://web.push.apple.com/x";
+    const sample = subs.find((s) => pushEndpointHost(s.endpoint).includes("push.apple.com"))?.endpoint ?? subs[0]?.endpoint ?? "https://web.push.apple.com/x";
     const jwt = keys ? vapidJwtPreview(sample, keys.subject) : null;
     return {
       vapidConfigured: vapid.configured,
@@ -134,34 +123,12 @@ export const getPushStatus = createServerFn({ method: "POST" })
       vapidKeyPairMatch: vapid.keyPairMatch,
       vapidPublicCorrected: vapid.publicCorrected,
       vapidPublicFingerprint: vapid.publicFingerprint,
-      vapidJwt: jwt
-        ? {
-            alg: jwt.alg,
-            typ: jwt.typ,
-            kid: jwt.kid,
-            aud: jwt.aud,
-            sub: jwt.sub,
-            iat: jwt.iat,
-            exp: jwt.exp,
-            secondsUntilExp: jwt.secondsUntilExp,
-            appleHost: jwt.appleHost,
-          }
-        : null,
+      vapidJwt: jwt ? { alg: jwt.alg, typ: jwt.typ, kid: jwt.kid, aud: jwt.aud, sub: jwt.sub, iat: jwt.iat, exp: jwt.exp, secondsUntilExp: jwt.secondsUntilExp, appleHost: jwt.appleHost } : null,
       activeSubscriptions: counts.active,
       disabledSubscriptions: counts.disabled,
       subscriptionHosts: hosts,
       thisDeviceRegistered,
-      lastEvents: events.map((e) => ({
-        assetId: e.assetId,
-        fromState: e.fromState,
-        toState: e.toState,
-        atMs: e.atMs,
-        notified: e.notified,
-        notifyStatus: e.notifyStatus,
-        notifyAttempts: e.notifyAttempts,
-        notifyLastError: e.notifyLastError,
-        pushable: shouldPushState(e.toState),
-      })),
+      lastEvents: events.map((e) => ({ assetId: e.assetId, fromState: e.fromState, toState: e.toState, atMs: e.atMs, notified: e.notified, notifyStatus: e.notifyStatus, notifyAttempts: e.notifyAttempts, notifyLastError: e.notifyLastError, pushable: shouldPushState(e.toState) })),
     };
   });
 
@@ -177,38 +144,17 @@ export const sendTestPush = createServerFn({ method: "POST" })
     const store = createPgStore(sql);
     const stored = await store.getAlertPinHash();
     const required = envAlertPin() != null || stored != null;
-    if (required && !pinMatches(data.pin ?? "", stored)) {
-      throw new Error("PIN incorrecto.");
-    }
+    if (required && !pinMatches(data.pin ?? "", stored)) throw new Error("PIN incorrecto.");
     const subs = await store.listActivePushSubs();
-    if (subs.length === 0) {
-      return {
-        sent: 0,
-        failed: 0,
-        subs: 0,
-        error: "Ningún dispositivo registrado en Neon. Activa avisos en este dispositivo.",
-      };
-    }
+    if (!subs.length) return { sent: 0, failed: 0, subs: 0, error: "Ningún dispositivo registrado en Neon. Activa avisos en este dispositivo." };
     const payload = buildTestPushPayload();
-    let sent = 0;
-    let failed = 0;
-    let lastError: string | null = null;
+    let sent = 0; let failed = 0; let lastError: string | null = null;
     for (const sub of subs) {
       const status = await sendWebPush(sub, payload);
       if (status === "ok") sent += 1;
-      else {
-        failed += 1;
-        lastError = status;
-        if (status === "gone") await store.disablePushSub(sub.endpoint, "gone");
-      }
+      else { failed += 1; lastError = status; if (status === "gone") await store.disablePushSub(sub.endpoint, "gone"); }
     }
-    return {
-      sent,
-      failed,
-      subs: subs.length,
-      appleAccepted: sent > 0,
-      error: sent > 0 ? null : lastError ?? "El proveedor no aceptó el envío.",
-    };
+    return { sent, failed, subs: subs.length, appleAccepted: sent > 0, error: sent > 0 ? null : lastError ?? "El proveedor no aceptó el envío." };
   });
 
 export interface WatchEpisodeView {
@@ -335,9 +281,7 @@ export const getPushPrefs = createServerFn({ method: "POST" }).handler(async () 
 });
 
 export const savePushPrefs = createServerFn({ method: "POST" })
-  .validator((input: unknown) => {
-    return input;
-  })
+  .validator((input: unknown) => input)
   .handler(async ({ data }) => {
     const { getSql } = await import("@/lib/db");
     const { createPgStore } = await import("./store");
@@ -347,3 +291,16 @@ export const savePushPrefs = createServerFn({ method: "POST" })
     await createPgStore(sql).setPushPrefs(prefs);
     return { ok: true, prefs };
   });
+
+export const getDailyForecastTracking = createServerFn({ method: "POST" }).handler(async () => {
+  const { getSql } = await import("@/lib/db");
+  const { getDailyForecastTracking: readTracking } = await import("@/lib/learn/day-forecast-store");
+  return readTracking(await getSql());
+});
+
+export const getDailyForecastHistory = createServerFn({ method: "POST" }).handler(async () => {
+  const { getSql } = await import("@/lib/db");
+  const { getDailyForecastHistory: readHistory, summariseForecasts } = await import("@/lib/learn/day-forecast-store");
+  const rows = await readHistory(await getSql());
+  return { rows, stats: summariseForecasts(rows) };
+});
