@@ -304,3 +304,10 @@ export const getDailyForecastHistory = createServerFn({ method: "POST" }).handle
   const rows = await readHistory(await getSql());
   return { rows, stats: summariseForecasts(rows) };
 });
+
+export const getShadowRadar = createServerFn({ method: "POST" }).handler(async () => {
+  const { getSql } = await import("@/lib/db");
+  const { createPgStore } = await import("./store");
+  const { buildShadowRadar } = await import("@/lib/learn/shadow-radar");
+  return buildShadowRadar(await createPgStore(await getSql()).listHistory(200));
+});
