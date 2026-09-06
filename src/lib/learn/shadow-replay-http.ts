@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import type { SqlQuery } from "../watch/store";
 import { loadShadowEpisodes } from "./shadow-db";
 import { analyzeShadowReplay } from "./shadow-analysis";
+import { saveShadowReplayReport } from "./shadow-replay-store";
 
 export const SHADOW_REPLAY_HOST = "atalaya-dev.vercel.app";
 const MIN_TOKEN_LEN = 16;
@@ -57,7 +58,7 @@ export function authorizeShadowReplay(request: Request):
   return { ok: true };
 }
 
-async function withReadOnlySql<T>(fn: (sql: SqlQuery) => Promise<T>): Promise<T> {
+async function withSql<T>(fn: (sql: SqlQuery) => Promise<T>): Promise<T> {
   const databaseUrl = typeof process === "undefined" ? undefined : process.env.DATABASE_URL?.trim();
   if (!databaseUrl) {
     throw new Error("DATABASE_URL missing");
@@ -69,7 +70,7 @@ async function withReadOnlySql<T>(fn: (sql: SqlQuery) => Promise<T>): Promise<T>
   const pool = new Pool({ connectionString: databaseUrl, max: 1 });
   const client = await pool.connect();
   try {
-    await client.query("BEGIN READ ONLY");
+    await client.query("BEGIN");
     const sql: SqlQuery = {
       query: async <R = Record<string, unknown>>(text: string, params: unknown[] = []) => {
         const res = await client.query(text, params);
@@ -77,7 +78,7 @@ async function withReadOnlySql<T>(fn: (sql: SqlQuery) => Promise<T>): Promise<T>
       },
     };
     const out = await fn(sql);
-    await client.query("ROLLBACK");
+    await client.query("COMMIT");
     return out;
   } catch (err) {
     try {
@@ -101,12 +102,28 @@ export async function handleShadowReplay(request: Request): Promise<Response> {
   }
 
   try {
-    const analysis = await withReadOnlySql((sql) => loadShadowEpisodes(sql).then(analyzeShadowReplay));
+    const generatedAt = new Date().toISOString();
+    const analysis = await withSql(async (sql) => {
+      const episodes = await loadShadowEpisodes(sql);
+      const report = analyzeShadowReplay(episodes);
+      await saveShadowReplayReport(sql, report, generatedAt);
+      return report;
+    });
+
+    const extraTestN = Math.max(0, ...analysis.comparisons.map((c) => c.extraTestN));
+    const evidenceLabel = analysis.comparisons.length
+      ? analysis.comparisons.reduce((best, c) => c.extraTestN > best.extraTestN ? c : best).evidenceLabel
+      : "INSUFFICIENT";
+
     return Response.json({
       ok: true,
-      readOnly: true,
+      readOnly: false,
+      persisted: true,
       host: SHADOW_REPLAY_HOST,
+      generatedAt,
       episodesAnalyzed: analysis.replay.episodesAnalyzed,
+      extraTestN,
+      evidenceLabel,
       report: analysis,
     });
   } catch {
