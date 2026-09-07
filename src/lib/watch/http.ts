@@ -5,6 +5,28 @@ import { authorizeWatchRequest } from "./secret";
 import { createPgStore } from "./store";
 import { runWatchTick } from "./tick";
 
+async function runShadowReplaySidecar(sql: Awaited<ReturnType<typeof getSql>>, generatedAt: string): Promise<void> {
+  if ((process.env.SHADOW_REPLAY_ENABLED?.trim() ?? "") !== "true") return;
+
+  try {
+    const { loadShadowEpisodes } = await import("@/lib/learn/shadow-db");
+    const { analyzeShadowReplay } = await import("@/lib/learn/shadow-analysis");
+    const { saveShadowReplayReport } = await import("@/lib/learn/shadow-replay-store");
+    const episodes = await loadShadowEpisodes(sql);
+    const report = analyzeShadowReplay(episodes);
+    await saveShadowReplayReport(sql, report, generatedAt);
+    console.info("[shadow] replay", {
+      status: "ok",
+      episodesAnalyzed: report.replay.episodesAnalyzed,
+      comparisons: report.comparisons.length,
+    });
+  } catch (e) {
+    console.error("[shadow] replay failed", {
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
 export async function handleWatchTick(request: Request): Promise<Response> {
   const auth = authorizeWatchRequest(request);
   if (!auth.ok) {
@@ -33,6 +55,12 @@ export async function handleWatchTick(request: Request): Promise<Response> {
         await writeTerminalPostMortems(sql, work.touched, nowMs);
       },
     });
+
+    // Shadow V2 is a research sidecar. It runs only after a successful Watch
+    // cycle and can never alter the V1 result or HTTP status.
+    if (result.status === "ok") {
+      await runShadowReplaySidecar(sql, new Date(nowMs).toISOString());
+    }
 
     const status =
       result.status === "failed" ? 500 : result.status === "too_early" ? 425 : 200;
