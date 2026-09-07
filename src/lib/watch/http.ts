@@ -5,7 +5,9 @@ import { authorizeWatchRequest } from "./secret";
 import { createPgStore } from "./store";
 import { runWatchTick } from "./tick";
 
-async function runShadowReplaySidecar(sql: Awaited<ReturnType<typeof getSql>>, generatedAt: string): Promise<void> {
+type WatchSql = Awaited<ReturnType<typeof getSql>>;
+
+async function runShadowReplaySidecar(sql: WatchSql, generatedAt: string): Promise<void> {
   if ((process.env.SHADOW_REPLAY_ENABLED?.trim() ?? "") !== "true") return;
 
   try {
