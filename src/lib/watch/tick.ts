@@ -34,17 +34,14 @@ export interface TickResult {
     state: FoldInput["setupState"];
     episodeId: string | null;
     events: number;
+    waitReason: string | null;
+    missingForEntry: string | null;
+    direction: "buy" | "sell" | null;
+    quality: string | null;
+    riskReward: number | null;
   }>;
   retryCount: number;
   pushed: number;
-}
-
-export interface MemoryTickWork {
-  slot: number;
-  nowMs: number;
-  loaded: WatchLoad;
-  born: EpisodeDraft[];
-  touched: EpisodeDraft[];
 }
 
 function emptyTick(
@@ -185,7 +182,6 @@ export async function runWatchTick(args: {
           candles,
         });
         await args.store.upsertOutcome(ep.episodeId, args.nowMs, resolved);
-        // postEntry only when a real V1 ENTRY event exists. MAP/PENDING never.
         const entryEv =
           folded.events.find((e) => e.episodeId === ep.episodeId && e.toState === "entry") ??
           (await args.store.findEntryEvent(ep.episodeId));
@@ -213,6 +209,11 @@ export async function runWatchTick(args: {
         state: folded.snapshot.state,
         episodeId: folded.snapshot.episodeId,
         events: written,
+        waitReason: asset.waitReason ?? null,
+        missingForEntry: asset.freeze?.missingForEntry ?? null,
+        direction: asset.setup?.direction ?? asset.freeze?.direction ?? null,
+        quality: asset.setup?.quality ?? asset.freeze?.quality ?? null,
+        riskReward: asset.setup?.riskReward ?? asset.freeze?.riskReward ?? null,
       });
     }
 
@@ -246,7 +247,15 @@ export async function runWatchTick(args: {
       status: "ok",
       durationMs,
       retryCount: claim.retryCount,
-      assets: assets.map((a) => `${a.id}:${a.state}`),
+      assets: assets.map((a) => ({
+        id: a.id,
+        state: a.state,
+        waitReason: a.waitReason,
+        missingForEntry: a.missingForEntry,
+        direction: a.direction,
+        quality: a.quality,
+        riskReward: a.riskReward,
+      })),
       pushed,
       errors: loaded.errors,
     });
