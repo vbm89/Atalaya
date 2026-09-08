@@ -6,7 +6,7 @@ Research-only replay over the frozen V1 history. This document is not a producti
 
 - V1 remains the source of truth for live signals.
 - No import from `engine.ts`, `signals.ts`, `structure.ts`, `risk.ts`, `outcome.ts` or `xau-spot.ts` is used by the Shadow replay.
-- No Shadow module is imported by the watch tick.
+- The Watch tick may invoke Shadow V2 only as a **post-success research sidecar**. Shadow cannot alter the V1 result or HTTP status.
 - `MAPA → PENDING → ENTRADA` remains an observed V1 state machine. Shadow candidates are labels in the research layer and never become live signals.
 - Candidate generation has no access to stored outcomes, first-touch labels, MFE/MAE, post-mortems or journal data.
 
@@ -58,6 +58,6 @@ Run with a configured research database:
 npm run shadow:replay
 ```
 
-The runner is read-only. It does not insert or update any database table.
+The CLI replay runner is read-only. The Watch integration is different: after a successful Watch cycle, when `SHADOW_REPLAY_ENABLED=true`, it runs the same analysis and persists a bounded replay report for the lab. Replay failures are caught and cannot turn a successful V1 Watch cycle into a failed response.
 
 Phase B (sweep/reclaim and FVG retest on the same frozen maps) is documented in [SHADOW_V2_PHASE_B.md](./SHADOW_V2_PHASE_B.md). It does not change these invariants.
