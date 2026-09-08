@@ -13,6 +13,14 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+function pct(value: number | null | undefined) {
+  return value == null ? LAB_UNAVAILABLE : `${value.toFixed(1)}%`;
+}
+
+function rr(value: number | null | undefined) {
+  return value == null ? LAB_UNAVAILABLE : `${value.toFixed(2)}R`;
+}
+
 export function ShadowRadarPanel() {
   const q = useQuery<RadarProps>({
     queryKey: ["shadow-radar"],
@@ -24,8 +32,16 @@ export function ShadowRadarPanel() {
   if (q.isLoading) return <p className="text-sm text-subtle">Calculando radar de oportunidades…</p>;
   if (q.isError || !q.data) return <p className="text-sm text-subtle">Radar no disponible. No se inventan resultados.</p>;
 
-  const { stats, cases, rule } = q.data;
+  const { radar, latestReplay } = q.data;
+  const { stats, cases, rule } = radar;
   const top = cases.slice(0, 8);
+  const comparisons = latestReplay?.report.comparisons ?? [];
+  const ranked = [...comparisons].sort((a, b) => {
+    const ae = a.evidenceLabel === "INSUFFICIENT" ? -1 : 0;
+    const be = b.evidenceLabel === "INSUFFICIENT" ? -1 : 0;
+    if (be !== ae) return be - ae;
+    return (b.test.successRate ?? -1) - (a.test.successRate ?? -1);
+  });
 
   return (
     <section className="space-y-3" data-shadow-radar>
@@ -61,6 +77,61 @@ export function ShadowRadarPanel() {
       ) : (
         <p className="text-sm text-subtle">Todavía no hay oportunidades ≥ 1R para mostrar.</p>
       )}
+
+      <div className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated shadow-[var(--shadow-border)]" data-shadow-comparator>
+        <div className="border-b border-border px-4 py-3">
+          <h3 className="text-base font-semibold tracking-tight">Comparador Shadow</h3>
+          <p className="mt-0.5 text-xs text-subtle">Métodos probados sobre los mismos episodios congelados. V1 sigue siendo el baseline.</p>
+        </div>
+        {!latestReplay ? (
+          <div className="px-4 py-4 text-sm text-subtle">Aún no hay un replay automático guardado. Aparecerá tras el próximo ciclo de Watch.</div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-px border-b border-border bg-border">
+              <div className="bg-elevated px-4 py-3">
+                <div className="text-[11px] uppercase tracking-wide text-subtle">Episodios</div>
+                <div className="mt-1 font-mono text-lg font-semibold">{latestReplay.episodesAnalyzed}</div>
+              </div>
+              <div className="bg-elevated px-4 py-3">
+                <div className="text-[11px] uppercase tracking-wide text-subtle">Casos EXTRA TEST</div>
+                <div className="mt-1 font-mono text-lg font-semibold">{latestReplay.extraTestN}</div>
+              </div>
+            </div>
+            <div className="divide-y divide-border">
+              {ranked.map((c, i) => (
+                <div key={c.variant} className="px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-sm font-medium">
+                        <span className="font-mono text-xs text-subtle">#{i + 1}</span>
+                        <span className="truncate">{c.variant}</span>
+                        {c.variant === "BASELINE_V1" ? <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-subtle shadow-[var(--shadow-border)]">V1</span> : null}
+                      </div>
+                      <div className="mt-1 text-xs text-subtle">
+                        TEST: {c.test.n} casos · éxito {pct(c.test.successRate)} · {c.evidenceLabel}
+                      </div>
+                    </div>
+                    <div className="text-right font-mono text-xs tabular">
+                      <div>{c.decided} decididos</div>
+                      <div>{rr(c.meanOutcomeRr)}</div>
+                    </div>
+                  </div>
+                  <div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-subtle">
+                    <span>TP1 {c.tp1}</span>
+                    <span>TP2 {c.tp2}</span>
+                    <span>SL {c.sl}</span>
+                    <span>EXTRA {c.additionalOpportunities}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-border px-4 py-3 text-[11px] leading-relaxed text-subtle">
+              Último replay: {new Date(latestReplay.generatedAt).toLocaleString("es-ES")}. Una ventaja con pocos casos no se considera evidencia suficiente: el laboratorio mantiene el estado INSUFFICIENT hasta alcanzar el tamaño mínimo definido.
+            </div>
+          </>
+        )}
+      </div>
+
       <p className="text-[11px] leading-relaxed text-subtle">{rule} Solo investigación; no genera señales.</p>
     </section>
   );
