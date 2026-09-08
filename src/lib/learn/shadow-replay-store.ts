@@ -3,6 +3,9 @@ import type { ShadowAnalysisReport } from "./shadow-analysis";
 
 export const SHADOW_REPLAY_METHODOLOGY = "shadow-v2-phase-a-1";
 
+/** Keep enough replay history for diagnostics without unbounded growth. */
+export const SHADOW_REPLAY_REPORT_RETENTION = 200;
+
 export interface StoredShadowReplayReport {
   id: number;
   methodologyVersion: string;
@@ -39,6 +42,19 @@ export async function saveShadowReplayReport(
       evidenceLabel,
       JSON.stringify(report),
     ],
+  );
+
+  // Watch invokes replay periodically. Keep only the newest bounded history;
+  // the latest report remains untouched and old rows cannot grow forever.
+  await sql.query(
+    `delete from shadow_replay_reports
+     where id not in (
+       select id
+       from shadow_replay_reports
+       order by generated_at desc, id desc
+       limit $1
+     )`,
+    [SHADOW_REPLAY_REPORT_RETENTION],
   );
 }
 
