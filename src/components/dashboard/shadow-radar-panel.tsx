@@ -23,7 +23,7 @@ function rr(value: number | null | undefined) {
 
 export function ShadowRadarPanel() {
   const q = useQuery<RadarProps>({
-    queryKey: ["shadow-radar"],
+    queryKey: ["shadow-radar", "v2"],
     queryFn: () => getShadowRadar(),
     staleTime: 30_000,
     retry: 0,
@@ -32,16 +32,25 @@ export function ShadowRadarPanel() {
   if (q.isLoading) return <p className="text-sm text-subtle">Calculando radar de oportunidades…</p>;
   if (q.isError || !q.data) return <p className="text-sm text-subtle">Radar no disponible. No se inventan resultados.</p>;
 
-  const { radar, latestReplay } = q.data;
-  const { stats, cases, rule } = radar;
+  // Backward-compatible with a cached client/server response from the previous
+  // radar shape. This prevents the lab page from crashing during deployment
+  // propagation while the new { radar, latestReplay } response is cached in.
+  const payload = q.data as RadarProps & { radar?: RadarProps; latestReplay?: RadarProps extends { latestReplay: infer T } ? T : never };
+  const radar = payload.radar ?? (q.data as unknown as { stats?: RadarProps["radar"]["stats"]; cases?: RadarProps["radar"]["cases"]; rule?: string });
+  const stats = radar.stats;
+  const cases = radar.cases ?? [];
+  const rule = radar.rule ?? "Solo investigación; no genera señales.";
+  const latestReplay = payload.radar ? payload.latestReplay : undefined;
   const top = cases.slice(0, 8);
-  const comparisons = latestReplay?.report.comparisons ?? [];
+  const comparisons = latestReplay?.report?.comparisons ?? [];
   const ranked = [...comparisons].sort((a, b) => {
     const ae = a.evidenceLabel === "INSUFFICIENT" ? -1 : 0;
     const be = b.evidenceLabel === "INSUFFICIENT" ? -1 : 0;
     if (be !== ae) return be - ae;
     return (b.test.successRate ?? -1) - (a.test.successRate ?? -1);
   });
+
+  if (!stats) return <p className="text-sm text-subtle">Radar no disponible. La respuesta no contiene estadísticas válidas.</p>;
 
   return (
     <section className="space-y-3" data-shadow-radar>
