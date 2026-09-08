@@ -29,7 +29,9 @@ Each card shows `ENTRY V1: SÍ` or `NO`. Shadow EXTRA candidates are not listed 
 
 ## Estado del laboratorio (Más)
 
-Read-only SELECT on existing tables. Missing fields render **No disponible**. Does not generate signals, write Neon, or run Shadow replay. Last replay / extraTestN stay unavailable until a persisted replay exists (it does not).
+Read-only SELECT on existing tables, plus the persisted derived replay report in `shadow_replay_reports`. Missing fields render **No disponible**. The Watch sidecar does not generate signals or alter V1; it only analyzes persisted episodes after a successful tick and stores the derived report. Replay reports are bounded to the newest 200 rows.
+
+The lab's replay status is therefore independent from the V1 learning evidence counters: `0/20` means V1 trade cases decided for the evidence gate; it does **not** mean Shadow replay has processed zero episodes.
 
 ## Guardas contra sesgo
 
