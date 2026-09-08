@@ -8,10 +8,10 @@ Phase A asked whether relaxing V1 volume/trigger gates on persisted maps adds en
 
 - V1 remains the live source of truth.
 - Shadow does not import `engine.ts`, `signals.ts`, `structure.ts`, `risk.ts`, `outcome.ts` or `xau-spot.ts`.
-- Watch tick does not import Shadow.
+- Watch may invoke Shadow only as a post-success research sidecar; the sidecar cannot alter the V1 result or HTTP status.
 - `BASELINE_V1` is the first `signal_events.to_state = 'entry'`. MAP/PENDING outcomes are not trades.
 - Candidate generation is outcome-blind. SL/TP/MFE/MAE are computed after the decision close.
-- Neon access is SELECT + `BEGIN READ ONLY` / `ROLLBACK`.
+- Neon access for replay analysis is SELECT/read-only; persistence of the derived replay report is isolated to `shadow_replay_reports`.
 
 ## Universes
 
@@ -72,3 +72,7 @@ Stored `signal_outcomes` of MAP/PENDING are never the Shadow outcome.
 ## TRAIN / TEST / evidence
 
 Chronological 70/30 on episode `openedAtMs`. TRAIN does not pick thresholds. `extraTestN >= 30` remains the sufficiency floor. Below that the recommendation is `INSUFFICIENT`, including a 100% WR on a handful of extras.
+
+## Automatic replay
+
+When `SHADOW_REPLAY_ENABLED=true`, every successful Watch cycle runs the replay sidecar after V1 processing. The sidecar persists the derived report to `shadow_replay_reports` and retains only the newest 200 reports. Replay errors are logged and swallowed so they cannot change V1 Watch status.
