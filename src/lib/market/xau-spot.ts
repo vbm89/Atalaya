@@ -13,8 +13,6 @@ export interface XauSpotQuote {
   note: string;
 }
 
-const CONSENSUS_PCT = 0.15;
-
 function num(v: unknown): number | null {
   const x = Number(v);
   return Number.isFinite(x) && x > 0 ? x : null;
@@ -32,27 +30,14 @@ async function fetchGoldApi(): Promise<{ price: number | null; at: string | null
   return { price, at: res.data?.updatedAt ?? new Date().toISOString(), error: null };
 }
 
-async function fetchOandaSpot(): Promise<{ price: number | null; error: string | null }> {
-  const url =
-    "https://scanner.tradingview.com/symbol?symbol=" +
-    encodeURIComponent("OANDA:XAUUSD") +
-    "&fields=" +
-    encodeURIComponent("close,bid,ask,update_mode");
-  const res = await fetchJson<{ close?: number; bid?: number; ask?: number }>(url, {
-    timeoutMs: 8000,
-    retries: 1,
-  });
-  const price = num(res.data?.close) ?? num(res.data?.bid);
-  if (!res.ok || price == null) {
-    return { price: null, error: res.error ?? `HTTP ${res.status}` };
-  }
-  return { price, error: null };
-}
-
+/**
+ * XAUUSD SPOT uses one authoritative source: gold-api.
+ * OANDA is intentionally not consulted or required for availability.
+ */
 export async function loadXauSpotQuote(): Promise<XauSpotQuote> {
-  const [gold, oanda] = await Promise.all([fetchGoldApi(), fetchOandaSpot()]);
+  const gold = await fetchGoldApi();
 
-  if (gold.price == null && oanda.price == null) {
+  if (gold.price == null) {
     return {
       priceSpot: null,
       goldApi: null,
@@ -60,53 +45,17 @@ export async function loadXauSpotQuote(): Promise<XauSpotQuote> {
       source: null,
       status: "unavailable",
       at: null,
-      note: "DATOS NO DISPONIBLES — precio XAUUSD spot (gold-api y OANDA).",
-    };
-  }
-
-  if (gold.price != null && oanda.price != null) {
-    const deltaPct = (Math.abs(gold.price - oanda.price) / oanda.price) * 100;
-    if (deltaPct > CONSENSUS_PCT) {
-      return {
-        priceSpot: null,
-        goldApi: gold.price,
-        oanda: oanda.price,
-        source: null,
-        status: "unreliable",
-        at: gold.at,
-        note: `DATOS NO DISPONIBLES — gold-api ${gold.price.toFixed(2)} y OANDA ${oanda.price.toFixed(2)} difieren ${deltaPct.toFixed(3)} %.`,
-      };
-    }
-    return {
-      priceSpot: gold.price,
-      goldApi: gold.price,
-      oanda: oanda.price,
-      source: "gold-api XAU",
-      status: "ok",
-      at: gold.at,
-      note: `SPOT XAUUSD gold-api ${gold.price.toFixed(2)} cruzado con OANDA ${oanda.price.toFixed(2)} (Δ ${deltaPct.toFixed(3)} %).`,
-    };
-  }
-
-  if (gold.price != null) {
-    return {
-      priceSpot: gold.price,
-      goldApi: gold.price,
-      oanda: null,
-      source: "gold-api XAU",
-      status: "unconfirmed",
-      at: gold.at,
-      note: `SPOT XAUUSD gold-api ${gold.price.toFixed(2)} (OANDA no disponible; cruce incompleto).`,
+      note: "DATOS NO DISPONIBLES — precio XAUUSD spot (gold-api).",
     };
   }
 
   return {
-    priceSpot: oanda.price,
-    goldApi: null,
-    oanda: oanda.price,
-    source: "OANDA XAUUSD",
-    status: "unconfirmed",
-    at: new Date().toISOString(),
-    note: `SPOT XAUUSD OANDA ${oanda.price!.toFixed(2)} (gold-api no disponible; cruce incompleto).`,
+    priceSpot: gold.price,
+    goldApi: gold.price,
+    oanda: null,
+    source: "gold-api XAU",
+    status: "ok",
+    at: gold.at,
+    note: `SPOT XAUUSD gold-api ${gold.price.toFixed(2)}.`,
   };
 }
