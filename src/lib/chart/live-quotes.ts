@@ -30,8 +30,8 @@ const BINANCE_WS = [
 
 /** Public gold-api spot. CORS *, no WS. Visual-only — V1 still uses attachXauSpot. */
 export const GOLD_API_XAU_URL = "https://api.gold-api.com/price/XAU";
-/** Check interval. gold-api CDN max-age ≈ 30s; we do not cache-bust. */
-export const XAU_SPOT_POLL_MS = 12_000;
+/** gold-api is polled frequently; CDN/provider caching may still limit effective freshness. */
+export const XAU_SPOT_POLL_MS = 3_000;
 
 let quotes: LiveQuoteMap = {};
 let sources: LiveQuoteSources = {};
@@ -135,7 +135,7 @@ function ingestBinance(raw: string) {
     const t = parseBinanceAggTrade(unwrapBinancePayload(JSON.parse(raw)));
     if (t) applyLiveQuote("BTCUSD", t.price, "ws");
   } catch {
-    /* ignore */
+    /* ignore malformed */
   }
 }
 
@@ -176,10 +176,13 @@ async function fetchGoldApiSpot(): Promise<number | null> {
   const ctrl = typeof AbortController === "function" ? new AbortController() : null;
   const timer =
     typeof window !== "undefined" && ctrl
-      ? window.setTimeout(() => ctrl.abort(), 4000)
+      ? window.setTimeout(() => ctrl.abort(), 2500)
       : 0;
   try {
-    const res = await fetch(GOLD_API_XAU_URL, { signal: ctrl?.signal });
+    const res = await fetch(`${GOLD_API_XAU_URL}?_=${Date.now()}`, {
+      signal: ctrl?.signal,
+      cache: "no-store",
+    });
     if (!res.ok) return null;
     return parseGoldApiSpot(await res.json());
   } catch {
@@ -234,8 +237,8 @@ async function pullRestTickers() {
   try {
     const { getVisualTickers } = await import("@/lib/market/live-ticker.fn");
     const pack = await getVisualTickers();
-    const rows = pack.tickers ?? {};
     seedXauSpotIfEmpty(pack.xauSpot);
+    const rows = pack.tickers ?? {};
     const at = Date.now();
     for (const id of ASSET_IDS) {
       if (id === "BTCUSD" && wsTickIsFresh(lastWsAt[id], at)) continue;
@@ -261,7 +264,7 @@ function startWatch() {
   watchId = window.setInterval(() => {
     void pullXauSpot();
     void pullRestTickers();
-  }, 2_000);
+  }, 500);
 }
 
 function connectBitget() {
