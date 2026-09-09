@@ -5,6 +5,7 @@ import type {
   ShadowReplayReport,
 } from "./shadow-replay";
 import { SHADOW_VARIANTS, replayCandidates, buildShadowReplayReport, slotToMs } from "./shadow-replay";
+import { buildShadowHorizonReport, type ShadowHorizonReport } from "./shadow-horizon";
 
 export type ShadowEvidenceLabel = "INSUFFICIENT" | "DESCRIPTIVE" | "EXPLORATORY" | "CONFIRMATORY";
 
@@ -46,6 +47,8 @@ export interface ShadowAnalysisReport {
   walkForward: WalkForwardWindow[];
   variantsEvaluated: number;
   confirmatoryAllowed: false;
+  /** Same candidates, different holding horizons. Research only; never changes V1. */
+  horizons: ShadowHorizonReport;
 }
 
 export const MIN_TEST_N = 30;
@@ -161,5 +164,6 @@ export function analyzeShadowReplay(episodes: readonly ShadowEpisode[]): ShadowA
     walkForward,
     variantsEvaluated: SHADOW_VARIANTS.length,
     confirmatoryAllowed: false,
+    horizons: buildShadowHorizonReport(episodes, rows),
   };
 }
