@@ -39,7 +39,6 @@ function ratio(bars: Bar[], i: number): number | null {
   const avg = values.reduce((a, b) => a + b, 0) / values.length;
   return avg > 0 ? v / avg : null;
 }
-
 function overlaps(b: Bar, low: number, high: number): boolean { return b.h >= low && b.l <= high; }
 function third(b: Bar, upper: boolean): boolean {
   const range = b.h - b.l;
@@ -71,8 +70,7 @@ function invalidated(b: Bar, ep: ShadowEpisode): boolean {
 
 function candidate(ep: ShadowEpisode, tf: Tf, bars: Bar[], nowSec: number): { bar: Bar; index: number } | null {
   const c = ep.case;
-  const opened = c.openedSlot;
-  const usable = bars.filter((b) => b.t + STEP[tf] <= nowSec && b.t + STEP[tf] >= opened).sort((a, b) => a.t - b.t);
+  const usable = bars.filter((b) => b.t + STEP[tf] <= nowSec && b.t + STEP[tf] >= c.openedSlot).sort((a, b) => a.t - b.t);
   if (!usable.length) return null;
   let armed = c.openedState === "pending" || c.openedState === "entry";
   for (let i = 0; i < usable.length; i += 1) {
@@ -83,16 +81,15 @@ function candidate(ep: ShadowEpisode, tf: Tf, bars: Bar[], nowSec: number): { ba
       if (c.direction === "buy" && b.c > c.zoneHigh) armed = true;
       continue;
     }
-    if ((failAccept(b, ep) || reject(b, ep)) && (ratio(usable, i) == null || (ratio(usable, i) as number) >= 1)) {
-      return { bar: b, index: i };
-    }
+    const vr = ratio(usable, i);
+    if ((failAccept(b, ep) || reject(b, ep)) && vr != null && vr >= 1) return { bar: b, index: i };
   }
   return null;
 }
 
-function resolve(ep: ShadowEpisode, candidateBar: Bar, bars: Bar[], nowSec: number): "tp1" | "tp2" | "sl" | "pending" {
+function resolve(ep: ShadowEpisode, tf: Tf, candidateBar: Bar, bars: Bar[], nowSec: number): "tp1" | "tp2" | "sl" | "pending" {
   const c = ep.case;
-  const after = bars.filter((b) => b.t >= candidateBar.t && b.t + 60 <= nowSec).sort((a, b) => a.t - b.t);
+  const after = bars.filter((b) => b.t >= candidateBar.t && b.t + STEP[tf] <= nowSec).sort((a, b) => a.t - b.t);
   for (const b of after) {
     const sl = c.direction === "sell" ? b.h >= c.sl : b.l <= c.sl;
     const tp1 = c.direction === "sell" ? b.l <= c.tp1 : b.h >= c.tp1;
@@ -145,7 +142,7 @@ export async function buildShadowIntrabarReport(sql: SqlQuery, episodes: readonl
       const base = v1EntrySlot(ep);
       if (base == null) extra += 1;
       else { overlap += 1; if (found.bar.t + STEP[tf] < base) earlierThanV1 += 1; }
-      const outcome = resolve(ep, found.bar, bars, nowSec);
+      const outcome = resolve(ep, tf, found.bar, bars, nowSec);
       if (outcome === "tp1") tp1 += 1;
       else if (outcome === "tp2") tp2 += 1;
       else if (outcome === "sl") sl += 1;
@@ -160,13 +157,13 @@ export async function buildShadowIntrabarReport(sql: SqlQuery, episodes: readonl
   return {
     generatedAt: new Date().toISOString(),
     episodesAnalyzed: episodes.length,
-    bars1m: grouped.get("XAUUSD:1m")?.length ?? 0,
-    bars5m: grouped.get("XAUUSD:5m")?.length ?? 0,
+    bars1m: assets.length ? Math.max(...assets.map((a) => grouped.get(`${a}:1m`)?.length ?? 0)) : 0,
+    bars5m: assets.length ? Math.max(...assets.map((a) => grouped.get(`${a}:5m`)?.length ?? 0)) : 0,
     methods,
     limitations: [
       "La comparación 1M/5M usa la zona y niveles V1 congelados; no modifica V1.",
       "La captura intrabar empieza desde la implantación; no se inventa histórico 1M/5M que Atalaya no hubiera guardado.",
-      "El último candle incompleto se excluye de la decisión.",
+      "Solo se consideran velas intrabar cerradas y con volumen comparable disponible (ratio >= 1).",
       "Si una misma vela toca SL y TP, se contabiliza SL por criterio conservador.",
     ],
   };
