@@ -8,11 +8,13 @@ export const getShadowRadar = createServerFn({ method: "POST" }).handler(async (
   const { buildShadowIntrabarReport } = await import("./shadow-intrabar");
   const { getLatestShadowReplayReport } = await import("./shadow-replay-store");
   const { buildXauFeedComparator } = await import("./xau-feed-comparator");
+  const { buildShadowAssetRanking } = await import("./shadow-asset-ranking");
   const sql = await getSql();
   const history = await createPgStore(sql).listHistory(200);
   const episodes = await loadShadowEpisodes(sql);
   const latestReplay = await getLatestShadowReplayReport(sql);
   const intrabar = await buildShadowIntrabarReport(sql, episodes);
   const xauFeeds = await buildXauFeedComparator(sql);
-  return { radar: buildShadowRadar(history), latestReplay, intrabar, xauFeeds };
+  const assetRanking = buildShadowAssetRanking(episodes);
+  return { radar: buildShadowRadar(history), latestReplay, intrabar, xauFeeds, assetRanking };
 });
