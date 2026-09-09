@@ -67,6 +67,10 @@ function outcomeFor(candidate: ShadowCandidateResult, ep: ShadowEpisode, horizon
     const hitTp1 = c.direction === "sell" ? b.l <= c.tp1 : b.h >= c.tp1;
     const hitTp2 = c.tp2 != null && (c.direction === "sell" ? b.l <= c.tp2 : b.h >= c.tp2);
     const risk = Math.abs(c.entry - c.sl);
+
+    // A level being reached is a real observed outcome even when the full
+    // holding horizon is not yet available. `complete` only describes whether
+    // the entire horizon is covered by tape; it must not erase a TP/SL hit.
     if (hitSl) return { outcome: "sl", rr: -1, mfeR: risk > 0 ? mfe / risk : null, maeR: risk > 0 ? mae / risk : null, complete };
     if (hitTp1) {
       const reward = Math.abs(c.tp1 - c.entry);
@@ -77,10 +81,11 @@ function outcomeFor(candidate: ShadowCandidateResult, ep: ShadowEpisode, horizon
       return { outcome: "tp2", rr: risk > 0 ? reward / risk : null, mfeR: risk > 0 ? mfe / risk : null, maeR: risk > 0 ? mae / risk : null, complete };
     }
   }
+
   const risk = Math.abs(c.entry - c.sl);
   return {
     outcome: complete ? "open" : "pending",
-    rr: complete && bars.length ? 0 : null,
+    rr: null,
     mfeR: bars.length && risk > 0 ? mfe / risk : null,
     maeR: bars.length && risk > 0 ? mae / risk : null,
     complete,
@@ -122,6 +127,6 @@ export function buildShadowHorizonReport(
         };
       }),
     })),
-    rule: "Comparación de horizonte sobre la misma señal candidata y la misma cinta 15M. 6H representa intradía; 1D/2D/3D representan mantener hasta ese horizonte. Sin cinta completa, el caso queda pendiente y no entra en el porcentaje de éxito.",
+    rule: "Comparación de horizonte sobre la misma señal candidata y la misma cinta 15M. Un TP/SL se cuenta en cuanto se observa, aunque el horizonte completo aún no haya terminado. 6H representa intradía; 1D/2D/3D representan mantener hasta ese horizonte. Los casos sin toque y sin cinta completa quedan pendientes.",
   };
 }
