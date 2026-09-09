@@ -17,6 +17,7 @@ import {
 
 const CHUNK = 80;
 const TERMINAL = new Set(["tp1", "tp2", "sl", "expired"]);
+const HORIZON_TAPE_MS = 72 * 60 * 60 * 1000;
 
 function parseJsonField<T>(v: unknown, fallback: T): T {
   if (v == null) return fallback;
@@ -210,6 +211,27 @@ export async function persistTapeForEpisode(
   }
 }
 
+/**
+ * Extend the forward 15M tape for every episode opened in the last 72h.
+ * `market_m15` is the immutable Watch archive; this only copies already-seen
+ * candles into the episode tape and never changes V1 state or outcomes.
+ */
+export async function persistHorizonTape72h(sql: SqlQuery, nowMs: number): Promise<void> {
+  await sql.query(
+    `insert into episode_tape_bars (
+       episode_id, tf, t, o, h, l, c, v, role, ingested_at
+     )
+     select e.episode_id, '15m', m.t, m.o, m.h, m.l, m.c, m.v, 'forward', $1::timestamptz
+       from signal_episodes e
+       join market_m15 m on m.asset_id = e.asset_id
+      where e.opened_at >= $2::timestamptz
+        and m.t > e.opened_slot
+        and m.t <= floor(extract(epoch from $1::timestamptz))::bigint
+      on conflict do nothing`,
+    [iso(nowMs), iso(nowMs - HORIZON_TAPE_MS)],
+  );
+}
+
 export async function persistContextOnce(sql: SqlQuery, ctx: EpisodeContext): Promise<boolean> {
   const rows = await sql.query(
     `insert into episode_context (
@@ -313,6 +335,8 @@ export async function rememberAfterTick(sql: SqlQuery, work: MemoryTickWork): Pr
       );
     });
   }
+
+  await step("horizon-tape-72h", () => persistHorizonTape72h(sql, work.nowMs));
 
   for (const ep of work.touched) {
     await step(`tape-${ep.episodeId}`, () =>
@@ -424,123 +448,45 @@ export async function loadJournal(sql: SqlQuery, episodeId: string): Promise<Jou
     lots: r.lots == null ? null : Number(r.lots),
     entryPrice: r.entry_price == null ? null : Number(r.entry_price),
     exitPrice: r.exit_price == null ? null : Number(r.exit_price),
-    note: (r.note as string) ?? null,
+    note: (r.note as string | null) ?? null,
     updatedAtMs: new Date(String(r.updated_at)).getTime(),
   };
 }
 
-export async function loadPostMortem(sql: SqlQuery, episodeId: string): Promise<PostMortem | null> {
-  const rows = await sql.query<Record<string, unknown>>(
-    `select body from episode_postmortem where episode_id = $1`,
-    [episodeId],
-  );
-  const body = rows[0]?.body;
-  if (body == null) return null;
-  return parseJsonField<PostMortem | null>(body, null);
-}
-
-async function loadHistoryRow(sql: SqlQuery, episodeId: string): Promise<HistoryRow | null> {
-  const rows = await sql.query<Record<string, unknown>>(
-    `select e.episode_id, e.asset_id, e.direction, e.kind, e.zone_low, e.zone_high, e.sl, e.tp1, e.tp2,
-            e.opened_at, e.opened_state, e.current_state, e.closed_at, e.levels_key, e.opened_slot, e.episode_freeze,
-            o.outcome, o.first_touch, o.first_touch_at, o.mfe, o.mae
-     from signal_episodes e
-     left join signal_outcomes o on o.episode_id = e.episode_id
-     where e.episode_id = $1`,
-    [episodeId],
-  );
-  const r = rows[0];
-  if (!r) return null;
-  const openedAt = new Date(String(r.opened_at)).getTime();
-  const closedAt = r.closed_at == null ? null : new Date(String(r.closed_at)).getTime();
-  const freeze = parseJsonField<EpisodeDraft["freeze"]>(r.episode_freeze, null);
-  return {
-    episode: {
-      episodeId: String(r.episode_id),
-      assetId: r.asset_id as EpisodeDraft["assetId"],
-      direction: r.direction as "buy" | "sell",
-      kind: String(r.kind),
-      zoneLow: Number(r.zone_low),
-      zoneHigh: Number(r.zone_high),
-      sl: Number(r.sl),
-      tp1: Number(r.tp1),
-      tp2: r.tp2 == null ? null : Number(r.tp2),
-      openedAtMs: openedAt,
-      openedState: r.opened_state as EpisodeDraft["openedState"],
-      currentState: r.current_state as EpisodeDraft["currentState"],
-      closedAtMs: closedAt,
-      levelsKey: String(r.levels_key),
-      openedSlot: Number(r.opened_slot),
-      freeze,
-    },
-    outcome: r.outcome == null ? null : String(r.outcome),
-    firstTouch: r.first_touch == null ? null : String(r.first_touch),
-    firstTouchAtMs: r.first_touch_at == null ? null : new Date(String(r.first_touch_at)).getTime(),
-    mfe: r.mfe == null ? null : Number(r.mfe),
-    mae: r.mae == null ? null : Number(r.mae),
-  };
-}
-
-export async function loadHistoryRowForMemory(sql: SqlQuery, episodeId: string): Promise<HistoryRow | null> {
-  return loadHistoryRow(sql, episodeId);
-}
-
-async function writeOnePostMortem(
-  sql: SqlQuery,
-  episodeId: string,
-  nowMs: number,
-  freeze: EpisodeDraft["freeze"] | undefined,
-): Promise<void> {
-  const existing = await loadPostMortem(sql, episodeId);
-  if (existing) return;
-  const row = await loadHistoryRow(sql, episodeId);
-  if (!row) return;
-  const outcome = row.outcome;
-  if (!outcome || !TERMINAL.has(outcome)) return;
-  const tape = await loadTape(sql, episodeId);
-  const context = await loadContext(sql, episodeId);
-  const journal = await loadJournal(sql, episodeId);
-  const body = buildPostMortem({
-    row,
-    context,
-    tape,
-    journal,
-    freeze: freeze ?? row.episode.freeze,
-  });
-  await persistPostMortemOnce(sql, body, nowMs);
-}
-
 export async function writeTerminalPostMortems(
   sql: SqlQuery,
-  touched: EpisodeDraft[],
+  episodes: EpisodeDraft[],
   nowMs: number,
 ): Promise<void> {
-  const seen = new Set<string>();
-  for (const ep of touched) {
-    if (seen.has(ep.episodeId)) continue;
-    seen.add(ep.episodeId);
-    await step(`postmortem-${ep.episodeId}`, () => writeOnePostMortem(sql, ep.episodeId, nowMs, ep.freeze));
-  }
-  try {
-    const pending = await sql.query<{ episode_id: string }>(
-      `select e.episode_id
-         from signal_episodes e
-         join signal_outcomes o on o.episode_id = e.episode_id
-         left join episode_postmortem p on p.episode_id = e.episode_id
-        where o.outcome in ('tp1', 'tp2', 'sl', 'expired')
-          and p.episode_id is null
-        limit 20`,
+  for (const ep of episodes) {
+    const rows = await sql.query<Record<string, unknown>>(
+      `select e.*, o.outcome, o.first_touch, o.first_touch_at, o.mfe, o.mae,
+              exists (
+                select 1 from signal_events ev
+                where ev.episode_id = e.episode_id and ev.to_state = 'entry'
+              ) as had_v1_entry
+       from signal_episodes e
+       left join signal_outcomes o on o.episode_id = e.episode_id
+       where e.episode_id = $1
+       limit 1`,
+      [ep.episodeId],
     );
-    for (const row of pending) {
-      if (seen.has(row.episode_id)) continue;
-      seen.add(row.episode_id);
-      await step(`postmortem-sweep-${row.episode_id}`, () =>
-        writeOnePostMortem(sql, row.episode_id, nowMs, undefined),
-      );
-    }
-  } catch (e) {
-    console.info("[memory] postmortem sweep failed", {
-      error: e instanceof Error ? e.message : "error",
-    });
+    const row = rows[0];
+    if (!row || !TERMINAL.has(String(row.outcome ?? ""))) continue;
+    const history: HistoryRow = {
+      episode: {
+        ...ep,
+        openedAtMs: new Date(String(row.opened_at)).getTime(),
+        closedAtMs: row.closed_at == null ? null : new Date(String(row.closed_at)).getTime(),
+      },
+      outcome: row.outcome == null ? null : String(row.outcome),
+      firstTouch: row.first_touch == null ? null : String(row.first_touch),
+      firstTouchAtMs: row.first_touch_at == null ? null : new Date(String(row.first_touch_at)).getTime(),
+      mfe: row.mfe == null ? null : Number(row.mfe),
+      mae: row.mae == null ? null : Number(row.mae),
+      hadV1Entry: row.had_v1_entry === true,
+    };
+    const body = buildPostMortem(history);
+    await step(`postmortem-${ep.episodeId}`, () => persistPostMortemOnce(sql, body, nowMs).then(() => undefined));
   }
 }
