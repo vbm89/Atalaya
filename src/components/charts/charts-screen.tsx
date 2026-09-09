@@ -366,7 +366,7 @@ function ChartWorkspace({
   const live = useChartLive(series);
   useEffect(() => {
     return subscribeLiveQuotes(() => {
-      const p = liveQuotesSnapshot()[assetId];
+      const p = assetId === "XAUUSD" ? liveXauSpot() : liveQuotesSnapshot()[assetId];
       if (p != null) live.nudgeLast(p);
     });
   }, [assetId, live.nudgeLast]);
