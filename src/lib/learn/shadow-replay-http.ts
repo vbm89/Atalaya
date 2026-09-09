@@ -5,6 +5,7 @@ import { analyzeShadowReplay } from "./shadow-analysis";
 import { saveShadowReplayReport } from "./shadow-replay-store";
 import { captureShadowIntrabar } from "./shadow-intrabar-capture";
 import { buildShadowIntrabarReport } from "./shadow-intrabar";
+import { captureXauFeedComparator } from "./xau-feed-comparator";
 
 export const SHADOW_REPLAY_HOST = "atalaya-dev.vercel.app";
 const MIN_TOKEN_LEN = 16;
@@ -90,11 +91,12 @@ export async function handleShadowReplay(request: Request): Promise<Response> {
       // Capture native 1M/5M research tape before replay so the next report can
       // compare decision cadence without changing V1 or fabricating intrabar data.
       await captureShadowIntrabar(sql);
+      const xauFeeds = await captureXauFeedComparator(sql);
       const episodes = await loadShadowEpisodes(sql);
       const report = analyzeShadowReplay(episodes);
       await saveShadowReplayReport(sql, report, generatedAt);
       const intrabar = await buildShadowIntrabarReport(sql, episodes);
-      return { report, intrabar };
+      return { report, intrabar, xauFeeds };
     });
 
     const extraTestN = Math.max(0, ...analysis.report.comparisons.map((c) => c.extraTestN));
@@ -112,6 +114,7 @@ export async function handleShadowReplay(request: Request): Promise<Response> {
       extraTestN,
       evidenceLabel,
       intrabar: analysis.intrabar,
+      xauFeeds: analysis.xauFeeds,
       report: analysis.report,
     });
   } catch {
