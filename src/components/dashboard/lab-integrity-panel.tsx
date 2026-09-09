@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getLabIntegrity } from "@/lib/watch/watch.fn";
 import { getShadowRadar } from "@/lib/learn/shadow-radar.fn";
 import { displayLabValue, LAB_UNAVAILABLE, type LabIntegrity } from "@/lib/watch/lab-integrity";
+import { XauFeedComparator, type XauFeedComparatorData } from "./xau-feed-comparator";
 
 function Row({ label, value }: { label: string; value: string }) {
   return <div className="flex items-baseline justify-between gap-3 py-2 text-sm"><dt className="text-subtle">{label}</dt><dd className="min-w-0 text-right font-medium leading-snug break-words font-mono tabular">{value}</dd></div>;
@@ -23,14 +24,10 @@ export function LabIntegrityPanel() {
   const shadowRadar=(payload && "radar" in payload && payload.radar) ? payload.radar : (payload && "stats" in payload ? payload : undefined);
   const latestReplay=(payload && "radar" in payload) ? payload.latestReplay : undefined;
   const intrabar=(payload && "radar" in payload) ? payload.intrabar : undefined;
+  const xauFeeds=(payload && "radar" in payload) ? payload.xauFeeds : undefined;
   const comparisons=latestReplay?.report?.comparisons ?? [];
   const replayVariants=latestReplay?.report?.replay?.variants ?? [];
-  const ranked=[...comparisons].sort((a,b)=>{
-    const ae=a.evidenceLabel==="INSUFFICIENT"?-1:0;
-    const be=b.evidenceLabel==="INSUFFICIENT"?-1:0;
-    if(be!==ae) return be-ae;
-    return (b.testDeltaVsBaselinePp??-Infinity)-(a.testDeltaVsBaselinePp??-Infinity);
-  });
+  const ranked=[...comparisons].sort((a,b)=>{ const ae=a.evidenceLabel==="INSUFFICIENT"?-1:0; const be=b.evidenceLabel==="INSUFFICIENT"?-1:0; if(be!==ae) return be-ae; return (b.testDeltaVsBaselinePp??-Infinity)-(a.testDeltaVsBaselinePp??-Infinity); });
   const horizons=latestReplay?.report?.horizons?.horizons ?? [];
   return <section className="mt-2 space-y-3" data-lab-integrity>
     <div><h2 className="text-xl font-semibold tracking-tight">Estado del laboratorio</h2><p className="mt-0.5 text-sm text-subtle">Diagnóstico de captura. No genera señales ni cambia V1.</p></div>
@@ -38,6 +35,9 @@ export function LabIntegrityPanel() {
       <dl className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]"><Row label="Tick" value={v.tick}/><Row label="Persistencia" value={v.persistence}/><Row label="SHA V1" value={v.v1Sha}/><Row label="Git SHA (último tick)" value={v.gitSha}/></dl>
       <dl className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]"><Row label="Episodios acumulados" value={v.episodes}/><Row label="ENTRY V1 reales" value={v.v1Entries}/><Row label="ENTRY con cinta 15M" value={v.entriesWithTape}/><Row label="Tape gaps" value={v.tapeGaps}/><Row label="Con entryGates" value={v.withEntryGates}/><Row label="Sin entryGates" value={v.withoutEntryGates}/><Row label="Con postEntry" value={v.withPostEntry}/><Row label="Sin postEntry" value={v.withoutPostEntry}/><Row label="Outcomes técnicos sin ENTRY" value={v.technical}/></dl>
       <dl className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]"><Row label="Último replay Shadow" value={v.lastReplay}/><Row label="Resultado del replay" value={v.lastReplayResult}/><Row label="extraTestN" value={v.extraTestN}/><Row label="Evidencia" value={v.insufficient}/></dl>
+
+      <XauFeedComparator data={xauFeeds as XauFeedComparatorData | undefined} />
+
       <div className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated shadow-[var(--shadow-border)]" data-shadow-comparator>
         <div className="border-b border-border px-4 py-3"><div className="flex items-center justify-between gap-3"><h3 className="font-semibold">Comparador Shadow</h3><span className="text-xs font-mono text-subtle">V1 + métodos alternativos</span></div><p className="mt-1 text-xs text-subtle">Misma muestra de episodios congelados. El ranking es descriptivo y no modifica V1.</p></div>
         {radar.isLoading?<p className="px-4 py-4 text-sm text-subtle">Calculando comparación…</p>:radar.isError||!shadowRadar?<p className="px-4 py-4 text-sm text-subtle">Comparador no disponible. No se inventan resultados.</p>:<>
@@ -46,6 +46,7 @@ export function LabIntegrityPanel() {
           {latestReplay?<p className="border-t border-border px-4 py-3 text-[11px] leading-relaxed text-subtle">Último replay: {new Date(latestReplay.generatedAt).toLocaleString("es-ES")}. El laboratorio mantiene INSUFFICIENT hasta alcanzar el tamaño mínimo de evidencia.</p>:null}
         </>}
       </div>
+
       <div className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated shadow-[var(--shadow-border)]" data-shadow-intrabar>
         <div className="border-b border-border px-4 py-3"><div className="flex items-center justify-between gap-3"><h3 className="font-semibold">Cadencia de decisión</h3><span className="text-xs font-mono text-subtle">Shadow · 1M / 5M</span></div><p className="mt-1 text-xs text-subtle">Misma zona y niveles V1, pero buscando el primer trigger confirmado en cierres de 1 o 5 minutos. No modifica V1.</p></div>
         {!intrabar?<p className="px-4 py-4 text-sm text-subtle">Aún no hay cinta 1M/5M capturada. El próximo ciclo de Shadow empezará a medirla.</p>:<>
@@ -54,10 +55,12 @@ export function LabIntegrityPanel() {
           <p className="border-t border-border px-4 py-3 text-[11px] leading-relaxed text-subtle">La captura empieza ahora: no se fabrica histórico 1M/5M. Si una vela toca SL y TP a la vez, se cuenta SL.</p>
         </>}
       </div>
+
       <div className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated shadow-[var(--shadow-border)]" data-shadow-horizons>
         <div className="border-b border-border px-4 py-3"><div className="flex items-center justify-between gap-3"><h3 className="font-semibold">Horizonte de operación</h3><span className="text-xs font-mono text-subtle">Shadow · 15M</span></div><p className="mt-1 text-xs text-subtle">Misma señal, pero probada con 6 h, 1 día, 2 días y 3 días de mantenimiento. No modifica V1.</p></div>
         {horizons.length===0?<p className="px-4 py-4 text-sm text-subtle">Aún no hay datos suficientes de cinta para comparar horizontes.</p>:<div className="divide-y divide-border">{horizons.map((h)=><div key={h.id} className="px-4 py-3"><div className="flex items-center justify-between gap-3"><div><div className="text-sm font-medium">{h.label}</div><div className="mt-1 text-[11px] text-subtle">Horizonte {h.hours} h</div></div><span className="text-[11px] text-subtle">muestra por método</span></div><div className="mt-3 space-y-2">{h.variants.map((c)=><div key={c.variant} className="grid grid-cols-[1fr_auto] gap-2 text-xs"><div className="min-w-0 truncate"><span className="font-medium">{c.variant}</span><span className="text-subtle"> · {c.candidates} casos · {c.dataComplete} completos · {c.openAtHorizon} abiertos</span></div><div className="font-mono text-right">{pct(c.successPct)} · {c.decided} dec.</div></div>)}</div></div>)}</div>}
       </div>
+
       <div className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated px-4 py-3 shadow-[var(--shadow-border)]"><div className="flex items-center justify-between gap-3"><h3 className="font-semibold">Radar de oportunidades perdidas</h3><span className="text-xs font-mono text-subtle">Shadow · descriptivo</span></div>{radar.isLoading?<p className="mt-2 text-sm text-subtle">Analizando historial…</p>:radar.isError||!shadowRadar?<p className="mt-2 text-sm text-subtle">Radar no disponible.</p>:<><div className="mt-2 grid grid-cols-3 gap-2 text-center"><div><div className="text-lg font-semibold">{shadowRadar.stats.evaluated}</div><div className="text-[11px] text-subtle">evaluados</div></div><div><div className="text-lg font-semibold">{shadowRadar.stats.missed}</div><div className="text-[11px] text-subtle">≥1R</div></div><div><div className="text-lg font-semibold">{shadowRadar.stats.favorableRate==null?"—":`${shadowRadar.stats.favorableRate}%`}</div><div className="text-[11px] text-subtle">tasa</div></div></div>{shadowRadar.cases.slice(0,5).map(c=><div key={c.episodeId} className="mt-2 rounded-md border border-current/10 px-3 py-2 text-sm"><div className="flex justify-between gap-3"><span className="font-semibold">{c.assetId} · {c.direction.toUpperCase()}</span><span className="font-mono">{c.mfeR==null?"—":`${c.mfeR.toFixed(2)}R`}</span></div><p className="mt-1 text-xs text-subtle">{c.firstTouch?c.firstTouch.toUpperCase():"Sin toque final"}{c.missingForEntry?` · faltaba: ${c.missingForEntry}`:""}{c.highImpact?" · noticia alta":""}</p></div>)}</>}</div>
       <p className="text-[11px] leading-relaxed text-subtle">Replay Shadow se persiste automáticamente. Si falta un dato se muestra «No disponible». Ausencia de entryGates en episodios antiguos significa «no capturado entonces», no false.</p>
     </>}
