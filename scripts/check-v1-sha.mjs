@@ -25,7 +25,7 @@ export const V1_SHA256 = Object.freeze({
   "src/lib/watch/outcome.ts":
     "fdad185119978866d6bec772091e2d6d0d0af49a5207a7bae061d2d840453c90",
   "src/lib/market/xau-spot.ts":
-    "393d01945077190a7745ad7cabc3b87bfb170f55fad82a4189a5ee661c678068",
+    "ea239c5ca6deb13fb49f28c3f68631d4a81f33f0d3962008352e41eec4fcc685",
 });
 
 export function sha256File(absPath) {
