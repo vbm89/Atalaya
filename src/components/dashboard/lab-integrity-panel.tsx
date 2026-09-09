@@ -12,13 +12,8 @@ function values(data: LabIntegrity | undefined) {
   return { tick:d?.tick??LAB_UNAVAILABLE,persistence:d?.persistence??LAB_UNAVAILABLE,v1Sha:d?.v1Sha??LAB_UNAVAILABLE,episodes:displayLabValue(d?.episodes),v1Entries:displayLabValue(d?.v1Entries),entriesWithTape:displayLabValue(d?.entriesWithTape),tapeGaps:displayLabValue(d?.tapeGaps),withEntryGates:displayLabValue(d?.withEntryGates),withoutEntryGates:displayLabValue(d?.withoutEntryGates),withPostEntry:displayLabValue(d?.withPostEntry),withoutPostEntry:displayLabValue(d?.withoutPostEntry),technical:displayLabValue(d?.technicalOutcomesWithoutEntry),lastReplay:displayLabValue(d?.lastShadowReplayAt),lastReplayResult:displayLabValue(d?.lastShadowReplayResult),extraTestN:displayLabValue(d?.extraTestN),insufficient:d?.lastReplayInsufficient==null?LAB_UNAVAILABLE:d.lastReplayInsufficient?"INSUFFICIENT":"suficiente",gitSha:displayLabValue(d?.gitSha)};
 }
 
-function pct(value: number | null | undefined) {
-  return value == null ? LAB_UNAVAILABLE : `${value.toFixed(1)}%`;
-}
-
-function rr(value: number | null | undefined) {
-  return value == null ? LAB_UNAVAILABLE : `${value.toFixed(2)}R`;
-}
+function pct(value: number | null | undefined) { return value == null ? LAB_UNAVAILABLE : `${value.toFixed(1)}%`; }
+function rr(value: number | null | undefined) { return value == null ? LAB_UNAVAILABLE : `${value.toFixed(2)}R`; }
 
 export function LabIntegrityPanel() {
   const q=useQuery({queryKey:["lab-integrity"],queryFn:()=>getLabIntegrity(),staleTime:30_000,retry:0});
@@ -28,11 +23,12 @@ export function LabIntegrityPanel() {
   const shadowRadar=(payload && "radar" in payload && payload.radar) ? payload.radar : (payload && "stats" in payload ? payload : undefined);
   const latestReplay=(payload && "radar" in payload) ? payload.latestReplay : undefined;
   const comparisons=latestReplay?.report?.comparisons ?? [];
+  const replayVariants=latestReplay?.report?.replay?.variants ?? [];
   const ranked=[...comparisons].sort((a,b)=>{
     const ae=a.evidenceLabel==="INSUFFICIENT"?-1:0;
     const be=b.evidenceLabel==="INSUFFICIENT"?-1:0;
     if(be!==ae) return be-ae;
-    return (b.test?.successRate??-1)-(a.test?.successRate??-1);
+    return (b.testDeltaVsBaselinePp??-Infinity)-(a.testDeltaVsBaselinePp??-Infinity);
   });
   const horizons=latestReplay?.report?.horizons?.horizons ?? [];
   return <section className="mt-2 space-y-3" data-lab-integrity>
@@ -45,7 +41,7 @@ export function LabIntegrityPanel() {
         <div className="border-b border-border px-4 py-3"><div className="flex items-center justify-between gap-3"><h3 className="font-semibold">Comparador Shadow</h3><span className="text-xs font-mono text-subtle">V1 + métodos alternativos</span></div><p className="mt-1 text-xs text-subtle">Misma muestra de episodios congelados. El ranking es descriptivo y no modifica V1.</p></div>
         {radar.isLoading?<p className="px-4 py-4 text-sm text-subtle">Calculando comparación…</p>:radar.isError||!shadowRadar?<p className="px-4 py-4 text-sm text-subtle">Comparador no disponible. No se inventan resultados.</p>:<>
           <div className="grid grid-cols-2 gap-px border-b border-border bg-border"><div className="bg-elevated px-4 py-3"><div className="text-[11px] uppercase tracking-wide text-subtle">Episodios</div><div className="mt-1 font-mono text-lg font-semibold">{latestReplay?.episodesAnalyzed ?? LAB_UNAVAILABLE}</div></div><div className="bg-elevated px-4 py-3"><div className="text-[11px] uppercase tracking-wide text-subtle">EXTRA TEST</div><div className="mt-1 font-mono text-lg font-semibold">{latestReplay?.extraTestN ?? LAB_UNAVAILABLE}</div></div></div>
-          {ranked.length>0?<div className="divide-y divide-border">{ranked.map((c,i)=><div key={c.variant} className="px-4 py-3"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2 text-sm font-medium"><span className="font-mono text-xs text-subtle">#{i+1}</span><span className="truncate">{c.variant}</span>{c.variant==="BASELINE_V1"?<span className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-subtle shadow-[var(--shadow-border)]">V1</span>:null}</div><div className="mt-1 text-xs text-subtle">TEST: {c.test?.n ?? "—"} casos · éxito {pct(c.test?.successRate)} · {c.evidenceLabel}</div></div><div className="text-right font-mono text-xs tabular"><div>{c.decided} decididos</div><div>{rr(c.meanOutcomeRr)}</div></div></div><div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-subtle"><span>TP1 {c.tp1}</span><span>TP2 {c.tp2}</span><span>SL {c.sl}</span><span>EXTRA {c.additionalOpportunities}</span></div></div>)}</div>:<div className="px-4 py-4 text-sm text-subtle">Aún no hay un replay automático guardado. El comparador se rellenará con el próximo ciclo de Watch.</div>}
+          {ranked.length>0?<div className="divide-y divide-border">{ranked.map((c,i)=>{ const r=replayVariants.find(x=>x.variant===c.variant); const testPct=r?.test?.success?.pct==null?null:r.test.success.pct*100; return <div key={c.variant} className="px-4 py-3"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2 text-sm font-medium"><span className="font-mono text-xs text-subtle">#{i+1}</span><span className="truncate">{c.variant}</span>{c.variant==="BASELINE_V1"?<span className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-subtle shadow-[var(--shadow-border)]">V1</span>:null}</div><div className="mt-1 text-xs text-subtle">TEST: {c.testN} casos · éxito {pct(testPct)} · {c.evidenceLabel}</div></div><div className="text-right font-mono text-xs tabular"><div>{c.extraDecided} EXTRA decididos</div><div>Δ test {c.testDeltaVsBaselinePp==null?LAB_UNAVAILABLE:`${c.testDeltaVsBaselinePp.toFixed(1)} pp`}</div></div></div><div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-subtle"><span>TP1 {r?.tp1 ?? "—"}</span><span>TP2 {r?.tp2 ?? "—"}</span><span>SL {r?.sl ?? "—"}</span><span>EXTRA {c.additionalOpportunities}</span></div><div className="mt-1 grid grid-cols-3 gap-2 text-[11px] text-subtle"><span>Decididos {r?.decided ?? c.extraDecided}</span><span>Éxito {pct(r?.success?.pct==null?null:r.success.pct*100)}</span><span>R medio {rr(r?.meanOutcomeRr)}</span></div></div>;})}</div>:<div className="px-4 py-4 text-sm text-subtle">Aún no hay un replay automático guardado. El comparador se rellenará con el próximo ciclo de Watch.</div>}
           {latestReplay?<p className="border-t border-border px-4 py-3 text-[11px] leading-relaxed text-subtle">Último replay: {new Date(latestReplay.generatedAt).toLocaleString("es-ES")}. El laboratorio mantiene INSUFFICIENT hasta alcanzar el tamaño mínimo de evidencia.</p>:null}
         </>}
       </div>
