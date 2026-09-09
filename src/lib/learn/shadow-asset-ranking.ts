@@ -36,8 +36,8 @@ function meanR(rows: readonly ShadowCandidateResult[]) {
   return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
 }
 
-function isV1Entry(ep: ShadowEpisode) {
-  return ep.events.some((e) => e.toState === "entry");
+function isV1Entry(ep: ShadowEpisode | undefined) {
+  return ep?.events.some((e) => e.toState === "entry") ?? false;
 }
 
 /**
@@ -55,11 +55,10 @@ export function buildShadowAssetRanking(episodes: readonly ShadowEpisode[]) {
   const rankings: ShadowAssetRanking[] = assets.map((assetId) => {
     const methods = variants.map((variant) => {
       const all = rows.filter((r) => r.variant === variant && r.features.assetId === assetId);
-      const extra = all.filter((r) => !isV1Entry(episodeById.get(r.episodeId)!));
-      const overlap = all.filter((r) => isV1Entry(episodeById.get(r.episodeId)!));
+      const extra = all.filter((r) => !isV1Entry(episodeById.get(r.episodeId)));
+      const overlap = all.filter((r) => isV1Entry(episodeById.get(r.episodeId)));
       const extraTest = extra.filter((r) => r.decisionSlot * 1000 > cutMs);
-      const extraTestDecided = decided(extraTest);
-      const extraTestN = extraTestDecided.length;
+      const extraTestN = decided(extraTest).length;
       const evidence = extraTestN >= MIN_TEST_N ? "EXPLORATORY" : "INSUFFICIENT";
       return {
         assetId,
