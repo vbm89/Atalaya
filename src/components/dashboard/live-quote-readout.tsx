@@ -31,10 +31,15 @@ export function LiveQuoteReadout({
   const delayRef = useRef<HTMLSpanElement>(null);
   const isXau = id === "XAUUSD";
 
-  const liveFor = () => (isXau ? liveXauSpot() : liveQuotesSnapshot()[id] ?? null);
+  // XAU icon/card price is the fast Bitget WebSocket quote. GoldAPI SPOT remains
+  // the authoritative reference exposed separately by the live spot layer.
+  const liveFor = () =>
+    isXau ? liveQuotesSnapshot().XAUUSD ?? liveXauSpot() : liveQuotesSnapshot()[id] ?? null;
 
   const isDelayed = () => {
     if (isXau) {
+      const fastSource = liveQuoteSources()[id];
+      if (fastSource === "ws") return false;
       const at = liveXauSpotAt();
       if (!at) return false;
       return !xauSpotIsFresh(at, Date.now());
@@ -75,11 +80,11 @@ export function LiveQuoteReadout({
         align === "right" ? "text-right" : "text-left",
       )}
       data-live-price={id}
-      data-live-kind={isXau ? "spot" : "last"}
+      data-live-kind={isXau ? "live" : "last"}
     >
       <span ref={mainRef}>{initial.main == null ? "—" : formatPrice(initial.main, digits)}</span>
       {isXau && showSpotLabel ? (
-        <span className="mt-1 block text-[10px] font-medium tracking-wide text-subtle uppercase">SPOT</span>
+        <span className="mt-1 block text-[10px] font-medium tracking-wide text-subtle uppercase">LIVE</span>
       ) : null}
       <span ref={delayRef} hidden={!delayed0} className="mt-1 block text-[10px] font-medium tracking-wide text-wait">
         RETRASADO
