@@ -29,6 +29,8 @@ async function runShadowReplaySidecar(sql: WatchSql, generatedAt: string): Promi
   }
 }
 
+const RETRY_DELAY_MS = 750;
+
 export async function handleWatchTick(request: Request): Promise<Response> {
   const auth = authorizeWatchRequest(request);
   if (!auth.ok) {
@@ -36,43 +38,61 @@ export async function handleWatchTick(request: Request): Promise<Response> {
   }
 
   const nowMs = Date.now();
-  try {
-    const sql = await getSql();
-    const store = createPgStore(sql);
-    const result = await runWatchTick({
-      nowMs,
-      store,
-      load: () => loadWatchMarket(nowMs),
-      notify: async (events) => {
-        try {
-          const out = await dispatchEventPushes(store, events, sendWebPush);
-          return out.sent;
-        } catch {
-          return 0;
-        }
-      },
-      remember: async (work) => {
-        const { rememberAfterTick, writeTerminalPostMortems } = await import("@/lib/memory/persist");
-        await rememberAfterTick(sql, work);
-        await writeTerminalPostMortems(sql, work.touched, nowMs);
-      },
-    });
+  let lastError: unknown = null;
 
-    // Shadow V2 is a research sidecar. It runs only after a successful Watch
-    // cycle and can never alter the V1 result or HTTP status.
-    if (result.status === "ok") {
-      await runShadowReplaySidecar(sql, new Date(nowMs).toISOString());
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const sql = await getSql();
+      const store = createPgStore(sql);
+      const result = await runWatchTick({
+        nowMs,
+        store,
+        load: () => loadWatchMarket(nowMs),
+        notify: async (events) => {
+          try {
+            const out = await dispatchEventPushes(store, events, sendWebPush);
+            return out.sent;
+          } catch {
+            return 0;
+          }
+        },
+        remember: async (work) => {
+          const { rememberAfterTick, writeTerminalPostMortems } = await import("@/lib/memory/persist");
+          await rememberAfterTick(sql, work);
+          await writeTerminalPostMortems(sql, work.touched, nowMs);
+        },
+      });
+
+      // Shadow V2 is a research sidecar. It runs only after a successful Watch
+      // cycle and can never alter the V1 result or HTTP status.
+      if (result.status === "ok") {
+        await runShadowReplaySidecar(sql, new Date(nowMs).toISOString());
+      }
+
+      const status =
+        result.status === "failed" ? 500 : result.status === "too_early" ? 425 : 200;
+      return Response.json(result, { status });
+    } catch (e) {
+      lastError = e;
+      console.error("[watch] tick infrastructure failure", {
+        attempt: attempt + 1,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      if (attempt === 0) {
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+      }
     }
-
-    const status =
-      result.status === "failed" ? 500 : result.status === "too_early" ? 425 : 200;
-    return Response.json(result, { status });
-  } catch {
-    return Response.json(
-      { error: "Tick no disponible. No se ha inventado ninguna señal.", status: "failed" },
-      { status: 503 },
-    );
   }
+
+  return Response.json(
+    {
+      error: "Tick no disponible. No se ha inventado ninguna señal.",
+      status: "failed",
+      retryable: true,
+      detail: lastError instanceof Error ? lastError.message : null,
+    },
+    { status: 503 },
+  );
 }
 
 export async function handleWatchHealth(): Promise<Response> {
