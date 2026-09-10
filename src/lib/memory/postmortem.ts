@@ -67,15 +67,20 @@ function tapeStats(bars: TapeBar[], tf: TapeTf): { count: number; gaps: number }
   return { count: times.length, gaps: detectGaps(times, tf).length };
 }
 
-export function buildPostMortem(args: {
+type PostMortemArgs = {
   row: HistoryRow;
   context: EpisodeContext | null;
   tape: TapeBar[];
   journal: JournalEntry | null;
   freeze?: EpisodeFreeze | null;
-}): PostMortem {
-  const ep = args.row.episode;
-  const outcome = args.row.outcome;
+};
+
+export function buildPostMortem(args: PostMortemArgs | HistoryRow): PostMortem {
+  const full = "row" in args
+    ? args
+    : { row: args, context: null, tape: [] as TapeBar[], journal: null, freeze: null };
+  const ep = full.row.episode;
+  const outcome = full.row.outcome;
   const terminal = outcome === "tp1" || outcome === "tp2" || outcome === "sl" || outcome === "expired";
   const pending: string[] = [];
   const facts: PostMortemFact[] = [];
@@ -92,19 +97,19 @@ export function buildPostMortem(args: {
   push(fact("duration", "Duración", fmtMs(duration)));
 
   const touchMs =
-    args.row.firstTouchAtMs != null ? args.row.firstTouchAtMs - ep.openedAtMs : null;
+    full.row.firstTouchAtMs != null ? full.row.firstTouchAtMs - ep.openedAtMs : null;
   push(
     fact(
       "timeToTouch",
       "Tiempo hasta primer toque",
-      args.row.firstTouch ? fmtMs(touchMs) : terminal ? "Sin toque de SL/TP" : null,
-      !args.row.firstTouch && !terminal,
+      full.row.firstTouch ? fmtMs(touchMs) : terminal ? "Sin toque de SL/TP" : null,
+      !full.row.firstTouch && !terminal,
     ),
   );
 
   const r = riskUnit(ep);
-  const mfe = args.row.mfe;
-  const mae = args.row.mae;
+  const mfe = full.row.mfe;
+  const mae = full.row.mae;
   push(fact("mfe", "MFE", fmtNum(mfe, 2)));
   push(fact("mae", "MAE", fmtNum(mae, 2)));
   push(
@@ -122,7 +127,7 @@ export function buildPostMortem(args: {
     ),
   );
 
-  const ctx = args.context;
+  const ctx = full.context;
   push(fact("session", "Sesión", ctx?.session ? sessionLabel(ctx.session) : null));
   push(
     fact(
@@ -132,8 +137,8 @@ export function buildPostMortem(args: {
     ),
   );
   push(fact("weekday", "Día", ctx?.weekday ?? null));
-  push(fact("dataStatus", "Estado de datos", ctx?.dataStatus ?? args.freeze?.dataStatus ?? null));
-  push(fact("basis", "Basis XAU", fmtNum(ctx?.basis ?? args.freeze?.basis ?? null, 2)));
+  push(fact("dataStatus", "Estado de datos", ctx?.dataStatus ?? full.freeze?.dataStatus ?? null));
+  push(fact("basis", "Basis XAU", fmtNum(ctx?.basis ?? full.freeze?.basis ?? null, 2)));
 
   if (!ctx) pending.push("Contexto histórico");
   if (ctx && ctx.calendar.length) {
@@ -149,16 +154,16 @@ export function buildPostMortem(args: {
     push(fact("calendar", "Eventos ±2 h", ctx ? "Ninguno en ventana" : null, !ctx));
   }
 
-  const look15 = tapeStats(args.tape.filter((b) => b.role === "lookback"), "15m");
-  const fwd15 = tapeStats(args.tape.filter((b) => b.role === "forward"), "15m");
-  const look1h = tapeStats(args.tape.filter((b) => b.role === "lookback"), "1h");
-  const look4h = tapeStats(args.tape.filter((b) => b.role === "lookback"), "4h");
+  const look15 = tapeStats(full.tape.filter((b) => b.role === "lookback"), "15m");
+  const fwd15 = tapeStats(full.tape.filter((b) => b.role === "forward"), "15m");
+  const look1h = tapeStats(full.tape.filter((b) => b.role === "lookback"), "1h");
+  const look4h = tapeStats(full.tape.filter((b) => b.role === "lookback"), "4h");
 
   push(
     fact(
       "tape15",
       "Cinta 15m",
-      args.tape.length
+      full.tape.length
         ? `lookback ${look15.count} · forward ${fwd15.count}${look15.gaps + fwd15.gaps ? ` · huecos ${look15.gaps + fwd15.gaps}` : ""}`
         : null,
     ),
@@ -166,18 +171,18 @@ export function buildPostMortem(args: {
   push(fact("tape1h", "Cinta 1h lookback", look1h.count ? String(look1h.count) : null));
   push(fact("tape4h", "Cinta 4h lookback", look4h.count ? String(look4h.count) : null));
 
-  const warnings = ctx?.warnings ?? args.freeze?.warnings ?? null;
+  const warnings = ctx?.warnings ?? full.freeze?.warnings ?? null;
   push(
     fact(
       "warnings",
       "Avisos V1 en freeze",
-      warnings && warnings.length ? warnings.join(" · ") : ctx || args.freeze ? "Ninguno" : null,
-      !(ctx || args.freeze),
+      warnings && warnings.length ? warnings.join(" · ") : ctx || full.freeze ? "Ninguno" : null,
+      !(ctx || full.freeze),
     ),
   );
 
-  if (args.journal) {
-    push(fact("journal", "Diario humano", JOURNAL_LABEL[args.journal.action], false));
+  if (full.journal) {
+    push(fact("journal", "Diario humano", JOURNAL_LABEL[full.journal.action], false));
   } else {
     push(fact("journal", "Diario humano", "Sin anotar", false));
   }
