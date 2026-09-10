@@ -22,11 +22,9 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",
-    "@eslint/js": "^9.20.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.9",
-    "@radix-ui/react-alert-dialog": "^1.1.9",
-    "@radix-ui/react-avatar": "^1.1.11",
+    "@radix-ui/avatar": "^1.1.11",
     "@radix-ui/react-collapsible": "^1.2.12",
     "@radix-ui/react-dialog": "^1.1.7",
     "@radix-ui/react-label": "^2.1.1",
@@ -50,15 +48,10 @@
     "date-fns": "^4.0.0",
     "jose": "6.2.9",
     "kysely": "^0.28.5",
-    "lightweight-charts": "^5.2.1",
     "lucide-react": "^0.510.0",
     "pg": "^8.16.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-day-picker": "^9.14.0",
-    "react-hook-form": "^7.54.0",
-    "react-resizable-panels": "^4.6.5",
-    "react": "^19.2.0",
     "react-day-picker": "^9.14.0",
     "react-hook-form": "^7.54.0",
     "react-resizable-panels": "^4.6.5",
@@ -68,8 +61,7 @@
     "tailwindcss": "^4.3.0",
     "vaul": "^1.1.2",
     "web-push": "^3.6.7",
-    "zod": "^4.4.0",
-    "zustand": "^5.0.0"
+    "zod": "^4.4.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.20.0",
@@ -88,7 +80,6 @@
     "nitro": "3.0.260610-beta",
     "playwright": "^1.62.0",
     "prettier": "^3.4.0",
-    "tailwind-merge": "^3.5.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.56.1",
     "vite": "^8.2.0"
