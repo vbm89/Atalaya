@@ -4,6 +4,7 @@ import { getShadowRadar } from "@/lib/learn/shadow-radar.fn";
 import { displayLabValue, LAB_UNAVAILABLE, type LabIntegrity } from "@/lib/watch/lab-integrity";
 import { XauFeedComparator, type XauFeedComparatorData } from "./xau-feed-comparator";
 import { ShadowAssetRankingPanel } from "./shadow-asset-ranking-panel";
+import { ShadowFrequencyPanel } from "./shadow-frequency-panel";
 
 function Row({ label, value }: { label: string; value: string }) {
   return <div className="flex items-baseline justify-between gap-3 py-2 text-sm"><dt className="text-subtle">{label}</dt><dd className="min-w-0 text-right font-medium leading-snug break-words font-mono tabular">{value}</dd></div>;
@@ -72,7 +73,7 @@ export function LabIntegrityPanel() {
             <span>Exp. {s.expired}</span>
             <span>Pend. {s.pending}</span>
           </div>
-        </div>)}<p className="px-4 py-3 text-[11px] leading-relaxed text-subtle">{payload.frequency.lowerTf.reason} Live: no. Promoción automática: no.</p></div>}
+        </div>)}<div className="px-4 py-3"><ShadowFrequencyPanel report={payload.frequencyDensity ?? null} /></div><p className="px-4 py-3 text-[11px] leading-relaxed text-subtle">{payload.frequency.lowerTf.reason} Live: no. Promoción automática: no.</p></div>}
       </div>
 
       <div className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated shadow-[var(--shadow-border)]"><div className="border-b border-border px-4 py-3"><h3 className="font-semibold">Mejor método por activo</h3><p className="mt-1 text-xs text-subtle">Cada mercado se analiza por separado. Es un ranking provisional de Shadow; no cambia V1 ni selecciona una estrategia automáticamente.</p></div><div className="p-4"><ShadowAssetRankingPanel /></div></div>

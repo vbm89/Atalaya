@@ -6,6 +6,7 @@ import { shadowCandidateForTest, shadowOutcomeForTest, SHADOW_VARIANTS } from ".
 import {
   FREQUENCY_STRATEGIES,
   SHADOW_FREQUENCY_PLAN,
+  buildShadowFrequencyDensity,
   buildShadowFrequencyReport,
   evaluateFrequencyPromotion,
   opportunitiesPerDay,
@@ -252,5 +253,23 @@ describe("frequency metrics", () => {
     assert.equal(promo.status, "DISCARD");
     assert.equal(promo.frequencyInBand, true);
     assert.equal(promo.live, false);
+  });
+
+  it("daily density separates V1 ENTRY from EXTRA and excludes expired from decided", () => {
+    const day = "2026-09-10";
+    const episodes = [
+      { case: { episodeId: "a", openedAtMs: Date.parse(`${day}T10:00:00Z`) }, events: [{ toState: "entry", slot: 1 }], bars: [] },
+      { case: { episodeId: "b", openedAtMs: Date.parse(`${day}T11:00:00Z`) }, events: [], bars: [] },
+    ] as any;
+    const results = [
+      { episodeId: "a", outcome: "tp1" },
+      { episodeId: "b", outcome: "expired" },
+    ] as any;
+    const report = buildShadowFrequencyDensity(episodes, results);
+    assert.equal(report.days[0]?.v1Entries, 1);
+    assert.equal(report.days[0]?.shadowCandidates, 2);
+    assert.equal(report.days[0]?.shadowDecided, 1);
+    assert.equal(report.days[0]?.extraCandidates, 1);
+    assert.equal(report.days[0]?.extraDecided, 0);
   });
 });

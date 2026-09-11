@@ -9,6 +9,7 @@ import {
   shadowOutcomeForTest,
   slotToMs,
   v1EntryByEpisode,
+  v1EntrySlot,
 } from "./shadow-replay";
 import { MIN_TEST_N } from "./shadow-analysis";
 
@@ -334,3 +335,100 @@ export const SHADOW_FREQUENCY_PLAN = Object.freeze({
   synthesizesLowerTf: false as const,
   optimizesOnTest: false as const,
 });
+
+export const SHADOW_FREQUENCY_TARGET = Object.freeze({ minPerDay: 5, maxPerDay: 10 });
+
+export interface ShadowFrequencyDay {
+  day: string;
+  episodes: number;
+  v1Entries: number;
+  shadowCandidates: number;
+  shadowDecided: number;
+  shadowWins: number;
+  shadowLosses: number;
+  extraCandidates: number;
+  extraDecided: number;
+  extraWins: number;
+  extraLosses: number;
+}
+
+export interface ShadowFrequencyDensityReport {
+  days: ShadowFrequencyDay[];
+  averageCandidatesPerDay: number | null;
+  averageExtraCandidatesPerDay: number | null;
+  targetMin: number;
+  targetMax: number;
+  targetReached: boolean;
+  limitation: string;
+}
+
+function dayOf(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/** Daily density of already-generated Shadow candidates. Never authorizes live trades. */
+export function buildShadowFrequencyDensity(
+  episodes: readonly ShadowEpisode[],
+  results: readonly ShadowCandidateResult[],
+): ShadowFrequencyDensityReport {
+  const byDay = new Map<string, ShadowFrequencyDay>();
+  for (const ep of episodes) {
+    const day = dayOf(ep.case.openedAtMs);
+    const row = byDay.get(day) ?? {
+      day,
+      episodes: 0,
+      v1Entries: 0,
+      shadowCandidates: 0,
+      shadowDecided: 0,
+      shadowWins: 0,
+      shadowLosses: 0,
+      extraCandidates: 0,
+      extraDecided: 0,
+      extraWins: 0,
+      extraLosses: 0,
+    };
+    row.episodes += 1;
+    if (v1EntrySlot(ep) != null) row.v1Entries += 1;
+    byDay.set(day, row);
+  }
+
+  for (const r of results) {
+    const ep = episodes.find((e) => e.case.episodeId === r.episodeId);
+    if (!ep) continue;
+    const row = byDay.get(dayOf(ep.case.openedAtMs));
+    if (!row) continue;
+    row.shadowCandidates += 1;
+    const decided = r.outcome === "tp1" || r.outcome === "tp2" || r.outcome === "sl";
+    if (decided) row.shadowDecided += 1;
+    if (r.outcome === "tp1" || r.outcome === "tp2") row.shadowWins += 1;
+    if (r.outcome === "sl") row.shadowLosses += 1;
+    if (v1EntrySlot(ep) == null) {
+      row.extraCandidates += 1;
+      if (decided) row.extraDecided += 1;
+      if (r.outcome === "tp1" || r.outcome === "tp2") row.extraWins += 1;
+      if (r.outcome === "sl") row.extraLosses += 1;
+    }
+  }
+
+  const days = [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
+  const avg = days.length ? days.reduce((s, d) => s + d.shadowCandidates, 0) / days.length : null;
+  const avgExtra = days.length ? days.reduce((s, d) => s + d.extraCandidates, 0) / days.length : null;
+  return {
+    days,
+    averageCandidatesPerDay: avg,
+    averageExtraCandidatesPerDay: avgExtra,
+    targetMin: SHADOW_FREQUENCY_TARGET.minPerDay,
+    targetMax: SHADOW_FREQUENCY_TARGET.maxPerDay,
+    targetReached: avg != null && avg >= SHADOW_FREQUENCY_TARGET.minPerDay,
+    limitation:
+      "La densidad está limitada al universo de episodios V1 persistidos; no autoriza operaciones ni inventa mapas.",
+  };
+}
+
+/** Compat: existing panel/tests called this with (episodes, results). */
+export function buildShadowFrequencyDensityReport(
+  episodes: readonly ShadowEpisode[],
+  results: readonly ShadowCandidateResult[],
+): ShadowFrequencyDensityReport {
+  return buildShadowFrequencyDensity(episodes, results);
+}
