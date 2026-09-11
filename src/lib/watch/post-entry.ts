@@ -2,6 +2,14 @@ import type { Candle } from "../trading/types";
 import type { EpisodeDraft, SignalEventDraft } from "./episode";
 import { resolveOutcome, type OutcomeKind } from "./outcome";
 
+/** Clock for persisted Watch outcomes. V1 trades start at ENTRY; MAP/PENDING keep episode birth. */
+export function watchOutcomeOpenedSlot(
+  episodeOpenedSlot: number,
+  entrySlot: number | null | undefined,
+): number {
+  return typeof entrySlot === "number" && Number.isFinite(entrySlot) ? entrySlot : episodeOpenedSlot;
+}
+
 /** Research metrics from the real V1 ENTRY event. Does not replace signal_outcomes. */
 export interface PostEntryMetrics {
   entryAtMs: number;

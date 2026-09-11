@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Candle } from "../trading/types.ts";
 import { foldEpisode } from "./episode.ts";
-import { computePostEntryMetrics, mergePostEntry, parsePostEntry, v1EntryPrice, type PostEntryMetrics } from "./post-entry.ts";
+import { computePostEntryMetrics, mergePostEntry, parsePostEntry, v1EntryPrice, watchOutcomeOpenedSlot, type PostEntryMetrics } from "./post-entry.ts";
 import { resolveOutcome } from "./outcome.ts";
 import { createMemoryStore } from "./store-memory.ts";
 import { slotOpenSec, slotSecFromNow } from "./identity.ts";
@@ -329,5 +329,75 @@ describe("post-entry tick persistence", () => {
     assert.equal(afterSecond.entryAtMs, identity.entryAtMs);
     assert.equal(afterSecond.entrySlot, identity.entrySlot);
     assert.equal(afterSecond.entryPrice, identity.entryPrice);
+  });
+});
+
+describe("watch outcome clock", () => {
+  it("MAP/PENDING use episode birth; V1 ENTRY uses the entry slot", () => {
+    assert.equal(watchOutcomeOpenedSlot(1_000, null), 1_000);
+    assert.equal(watchOutcomeOpenedSlot(1_000, undefined), 1_000);
+    assert.equal(watchOutcomeOpenedSlot(1_000, 5_000), 5_000);
+  });
+
+  it("a MAP-era SL wick is not the V1 trade outcome after ENTRY", async () => {
+    const store = createMemoryStore();
+    const nowMap = Date.parse("2026-08-29T08:15:08.001Z");
+    const nowEntry = Date.parse("2026-08-29T08:30:08.001Z");
+    const mapSlot = slotSecFromNow(nowMap);
+    const entrySlot = slotSecFromNow(nowEntry);
+    const mapCover: Candle = { time: slotOpenSec(mapSlot), open: 90, high: 91, low: 89, close: 90, volume: 1 };
+    const mapSl: Candle = { time: mapSlot, open: 90, high: 101, low: 89, close: 95, volume: 1 };
+    const entryCover: Candle = { time: slotOpenSec(entrySlot), open: 90, high: 91, low: 89, close: 90, volume: 1 };
+    const entryTp1: Candle = { time: entrySlot, open: 90, high: 91, low: 79, close: 85, volume: 1 };
+
+    const mapTick = await runWatchTick({
+      nowMs: nowMap,
+      store,
+      load: async () => ({
+        assets: [
+          {
+            id: "BTCUSD",
+            setupState: "map",
+            setup: { ...setup, state: "map", missingForEntry: "Falta: salida 15M de la zona a favor." },
+            waitReason: null,
+            digits: 2,
+          },
+        ],
+        m15ByAsset: { BTCUSD: [mapCover] },
+        errors: [],
+      }),
+    });
+    assert.equal(mapTick.status, "ok");
+    const id = mapTick.assets.find((a) => a.id === "BTCUSD")?.episodeId;
+    assert.ok(id);
+    const afterMap = (await store.listHistory(1))[0];
+    assert.equal(afterMap?.hadV1Entry, false);
+    assert.equal(afterMap?.outcome, "pending");
+
+    const entryTick = await runWatchTick({
+      nowMs: nowEntry,
+      store,
+      load: async () => ({
+        assets: [
+          {
+            id: "BTCUSD",
+            setupState: "entry",
+            setup,
+            waitReason: null,
+            digits: 2,
+          },
+        ],
+        m15ByAsset: { BTCUSD: [mapCover, mapSl, entryCover, entryTp1] },
+        errors: [],
+      }),
+    });
+    assert.equal(entryTick.status, "ok");
+    const afterEntry = (await store.listHistory(1))[0];
+    assert.equal(afterEntry?.hadV1Entry, true);
+    assert.equal(afterEntry?.outcome, "tp1");
+    assert.equal(afterEntry?.firstTouch, "tp1");
+    const post = (await store.getOutcomeDetails(id))?.postEntry as PostEntryMetrics;
+    assert.equal(post.outcome, "tp1");
+    assert.equal(post.entrySlot, entrySlot);
   });
 });
