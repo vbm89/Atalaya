@@ -6,7 +6,7 @@ type Tf = "1m" | "5m";
 const STEP: Record<Tf, number> = { "1m": 60, "5m": 300 };
 
 export interface ShadowIntrabarMethod {
-  method: "TRIGGER_1M" | "TRIGGER_5M";
+  method: "TRIGGER_1M" | "TRIGGER_5M" | "TRIGGER_5M_FLEX";
   candidates: number;
   extra: number;
   overlap: number;
@@ -63,14 +63,23 @@ function reject(b: Bar, ep: ShadowEpisode): boolean {
   const reached = b.l <= c.zoneHigh - 0.5 * depth || b.l <= c.zoneLow;
   return b.c >= mid && third(b, true) && b.c > b.o && b.c > c.invalidation && reached;
 }
+function flexTrigger(b: Bar, ep: ShadowEpisode): boolean {
+  const c = ep.case;
+  if (!overlaps(b, c.zoneLow, c.zoneHigh)) return false;
+  const mid = (c.zoneLow + c.zoneHigh) / 2;
+  return c.direction === "sell"
+    ? b.c < b.o && b.c <= mid
+    : b.c > b.o && b.c >= mid;
+}
 function invalidated(b: Bar, ep: ShadowEpisode): boolean {
   const c = ep.case;
   return c.invalidation != null && (c.direction === "sell" ? b.h >= c.invalidation : b.l <= c.invalidation);
 }
 
-function candidate(ep: ShadowEpisode, tf: Tf, bars: Bar[], nowSec: number): { bar: Bar; index: number } | null {
+function candidate(ep: ShadowEpisode, tf: Tf, bars: Bar[], nowSec: number, flex = false): { bar: Bar; index: number } | null {
   const c = ep.case;
-  const usable = bars.filter((b) => b.t + STEP[tf] <= nowSec && b.t + STEP[tf] >= c.openedSlot).sort((a, b) => a.t - b.t);
+  const startSlot = v1EntrySlot(ep) ?? c.openedSlot;
+  const usable = bars.filter((b) => b.t + STEP[tf] <= nowSec && b.t + STEP[tf] >= startSlot).sort((a, b) => a.t - b.t);
   if (!usable.length) return null;
   let armed = c.openedState === "pending" || c.openedState === "entry";
   for (let i = 0; i < usable.length; i += 1) {
@@ -82,7 +91,9 @@ function candidate(ep: ShadowEpisode, tf: Tf, bars: Bar[], nowSec: number): { ba
       continue;
     }
     const vr = ratio(usable, i);
-    if ((failAccept(b, ep) || reject(b, ep)) && vr != null && vr >= 1) return { bar: b, index: i };
+    const trigger = flex ? flexTrigger(b, ep) : failAccept(b, ep) || reject(b, ep);
+    const minVolume = flex ? 0.5 : 1;
+    if (trigger && vr != null && vr >= minVolume) return { bar: b, index: i };
   }
   return null;
 }
@@ -130,13 +141,19 @@ export async function buildShadowIntrabarReport(sql: SqlQuery, episodes: readonl
     grouped.set(key, list);
   }
 
-  const methods = (["1m", "5m"] as const).map((tf): ShadowIntrabarMethod => {
+  const specs: Array<{ tf: Tf; flex: boolean; method: ShadowIntrabarMethod["method"] }> = [
+    { tf: "1m", flex: false, method: "TRIGGER_1M" },
+    { tf: "5m", flex: false, method: "TRIGGER_5M" },
+    { tf: "5m", flex: true, method: "TRIGGER_5M_FLEX" },
+  ];
+
+  const methods = specs.map(({ tf, flex, method }): ShadowIntrabarMethod => {
     let candidates = 0, extra = 0, overlap = 0, earlierThanV1 = 0, tp1 = 0, tp2 = 0, sl = 0, pending = 0, dataEpisodes = 0;
     const rs: number[] = [];
     for (const ep of episodes) {
       const bars = grouped.get(`${ep.case.assetId}:${tf}`) ?? [];
       if (bars.length) dataEpisodes += 1;
-      const found = candidate(ep, tf, bars, nowSec);
+      const found = candidate(ep, tf, bars, nowSec, flex);
       if (!found) continue;
       candidates += 1;
       const base = v1EntrySlot(ep);
@@ -151,7 +168,7 @@ export async function buildShadowIntrabarReport(sql: SqlQuery, episodes: readonl
       if (r != null) rs.push(r);
     }
     const decided = tp1 + tp2 + sl;
-    return { method: tf === "1m" ? "TRIGGER_1M" : "TRIGGER_5M", candidates, extra, overlap, earlierThanV1, tp1, tp2, sl, pending, decided, successPct: decided ? ((tp1 + tp2) / decided) * 100 : null, meanR: rs.length ? rs.reduce((a, b) => a + b, 0) / rs.length : null, dataEpisodes };
+    return { method, candidates, extra, overlap, earlierThanV1, tp1, tp2, sl, pending, decided, successPct: decided ? ((tp1 + tp2) / decided) * 100 : null, meanR: rs.length ? rs.reduce((a, b) => a + b, 0) / rs.length : null, dataEpisodes };
   });
 
   return {
@@ -162,8 +179,10 @@ export async function buildShadowIntrabarReport(sql: SqlQuery, episodes: readonl
     methods,
     limitations: [
       "La comparación 1M/5M usa la zona y niveles V1 congelados; no modifica V1.",
+      "El reloj de las oportunidades que sí tuvieron ENTRY V1 empieza en la vela de ENTRY; los episodios sin ENTRY parten del MAP.",
       "La captura intrabar empieza desde la implantación; no se inventa histórico 1M/5M que Atalaya no hubiera guardado.",
-      "Solo se consideran velas intrabar cerradas y con volumen comparable disponible (ratio >= 1).",
+      "Solo se consideran velas intrabar cerradas y con volumen comparable disponible.",
+      "TRIGGER_5M_FLEX es una hipótesis de investigación fija: retesteo dentro de zona, cierre direccional y volumen >= 0.5; no es una señal V1 ni una promoción.",
       "Si una misma vela toca SL y TP, se contabiliza SL por criterio conservador.",
     ],
   };
