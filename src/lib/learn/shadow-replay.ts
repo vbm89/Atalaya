@@ -11,7 +11,9 @@ export type ShadowCandidateReason =
   | "ZONE_SWEEP_RECLAIM_WIDE"
   | "FVG_RETEST_FULL"
   | "FVG_RETEST_PARTIAL"
-  | "FVG_RETEST_STRICT";
+  | "FVG_RETEST_STRICT"
+  | "BREAKOUT_RETEST"
+  | "MOMENTUM_PULLBACK";
 
 export const SHADOW_PHASE_A_VARIANTS: readonly ShadowCandidateReason[] = [
   "BASELINE_V1",
@@ -32,6 +34,12 @@ export const SHADOW_PHASE_B_VARIANTS: readonly ShadowCandidateReason[] = [
 export const SHADOW_VARIANTS: readonly ShadowCandidateReason[] = [
   ...SHADOW_PHASE_A_VARIANTS,
   ...SHADOW_PHASE_B_VARIANTS,
+] as const;
+
+/** Frequency-research geometries. Not in SHADOW_VARIANTS: they never alter Phase A/B replay. */
+export const SHADOW_FREQUENCY_VARIANTS: readonly ShadowCandidateReason[] = [
+  "BREAKOUT_RETEST",
+  "MOMENTUM_PULLBACK",
 ] as const;
 
 /** Sweep depth beyond the zone edge, as a fraction of zone width. Frozen before TEST. */
@@ -74,7 +82,7 @@ export interface ShadowCandidate {
   variant: ShadowCandidateReason;
   decisionSlot: number;
   decisionBarTime: number;
-  trigger: "fail_accept" | "reject" | "retest" | "none" | "sweep_reclaim" | "fvg_retest";
+  trigger: "fail_accept" | "reject" | "retest" | "none" | "sweep_reclaim" | "fvg_retest" | "breakout_retest" | "momentum_pullback";
   triggerVolumeRatio: number | null;
   triggerVolumeAvailable: boolean;
   features: ShadowFeatureVector;
@@ -558,7 +566,61 @@ function bars15FromOpen(ep: ShadowEpisode): ShadowTapeBar[] {
     .sort((a, b) => a.t - b.t);
 }
 
+function isMomentumDisplacement(b: ShadowTapeBar, c: ShadowCaseInput): boolean {
+  if (c.direction === "sell") return b.c < b.o && b.c < c.zoneLow;
+  return b.c > b.o && b.c > c.zoneHigh;
+}
+
+function isPullbackIntoZone(b: ShadowTapeBar, c: ShadowCaseInput): boolean {
+  if (!overlaps(b, c.zoneLow, c.zoneHigh)) return false;
+  const mid = (c.zoneLow + c.zoneHigh) / 2;
+  if (c.direction === "sell") return b.h >= c.zoneLow && b.c <= mid;
+  return b.l <= c.zoneHigh && b.c >= mid;
+}
+
+/** Frozen 15M breakout then first retest of the V1 zone. Does not relax volume/news/4H. */
+function breakoutRetestCandidate(ep: ShadowEpisode): ShadowCandidate | null {
+  const bars15 = bars15FromOpen(ep);
+  if (!bars15.length) return null;
+  const c = ep.case;
+  let broken = false;
+  for (let i = 0; i < bars15.length; i += 1) {
+    const b = bars15[i]!;
+    if (invalidatedBy(bars15, i, c)) return null;
+    if (!broken) {
+      if (c.direction === "sell" && b.c < c.zoneLow) broken = true;
+      if (c.direction === "buy" && b.c > c.zoneHigh) broken = true;
+      continue;
+    }
+    if (!overlaps(b, c.zoneLow, c.zoneHigh)) continue;
+    const mid = (c.zoneLow + c.zoneHigh) / 2;
+    const closeOk = c.direction === "sell" ? b.c <= mid : b.c >= mid;
+    if (!closeOk) continue;
+    if (!contextGatesPass(ep, bars15, i)) continue;
+    return emitCandidate(ep, "BREAKOUT_RETEST", b, bars15, i, "breakout_retest");
+  }
+  return null;
+}
+
+/** Frozen 15M momentum displacement then pullback into the V1 zone. Does not relax V1 gates. */
+function momentumPullbackCandidate(ep: ShadowEpisode): ShadowCandidate | null {
+  const bars15 = bars15FromOpen(ep);
+  if (bars15.length < 2) return null;
+  const c = ep.case;
+  for (let i = 1; i < bars15.length; i += 1) {
+    if (invalidatedBy(bars15, i, c)) return null;
+    const prev = bars15[i - 1]!;
+    const b = bars15[i]!;
+    if (!isMomentumDisplacement(prev, c) || !isPullbackIntoZone(b, c)) continue;
+    if (!contextGatesPass(ep, bars15, i)) continue;
+    return emitCandidate(ep, "MOMENTUM_PULLBACK", b, bars15, i, "momentum_pullback");
+  }
+  return null;
+}
+
 function candidateForVariant(ep: ShadowEpisode, variant: ShadowCandidateReason): ShadowCandidate | null {
+  if (variant === "BREAKOUT_RETEST") return breakoutRetestCandidate(ep);
+  if (variant === "MOMENTUM_PULLBACK") return momentumPullbackCandidate(ep);
   if (isSweepVariant(variant)) return sweepReclaimCandidate(ep, variant);
   if (isFvgVariant(variant)) return fvgRetestCandidate(ep, variant);
 

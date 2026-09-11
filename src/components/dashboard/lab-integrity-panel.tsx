@@ -46,6 +46,35 @@ export function LabIntegrityPanel() {
         </>}
       </div>
 
+      <div className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated shadow-[var(--shadow-border)]" data-shadow-frequency>
+        <div className="border-b border-border px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="font-semibold">Frecuencia V2</h3>
+            <span className="text-xs font-mono text-subtle">investigación · no live</span>
+          </div>
+          <p className="mt-1 text-xs text-subtle">Universo independiente de ENTRY V1 (EXTRA vs OVERLAP). 5–10/día es un objetivo, no una obligación. No relaja V1 ni sintetiza 5M/1M.</p>
+        </div>
+        {radar.isLoading?<p className="px-4 py-4 text-sm text-subtle">Midiendo frecuencia…</p>:radar.isError||!payload?.frequency?<p className="px-4 py-4 text-sm text-subtle">Frecuencia no disponible. No se inventan resultados.</p>:<div className="divide-y divide-border">{payload.frequency.strategies.map((s:any)=><div key={s.strategy} className="px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm font-medium truncate">{s.label}</div>
+              <div className="mt-1 text-[11px] text-subtle">{s.promotion.status} · EXTRA {s.extra} · OVERLAP {s.overlap} · {s.opportunitiesPerDay==null?"—":`${s.opportunitiesPerDay.toFixed(2)}/día`}</div>
+            </div>
+            <div className="text-right font-mono text-xs tabular">
+              <div>Éxito {pct(s.successPct)}</div>
+              <div>R {rr(s.expectancyR)}</div>
+            </div>
+          </div>
+          <div className="mt-2 grid grid-cols-5 gap-2 text-[11px] text-subtle">
+            <span>TP1 {s.tp1}</span>
+            <span>TP2 {s.tp2}</span>
+            <span>SL {s.sl}</span>
+            <span>Exp. {s.expired}</span>
+            <span>Pend. {s.pending}</span>
+          </div>
+        </div>)}<p className="px-4 py-3 text-[11px] leading-relaxed text-subtle">{payload.frequency.lowerTf.reason} Live: no. Promoción automática: no.</p></div>}
+      </div>
+
       <div className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated shadow-[var(--shadow-border)]"><div className="border-b border-border px-4 py-3"><h3 className="font-semibold">Mejor método por activo</h3><p className="mt-1 text-xs text-subtle">Cada mercado se analiza por separado. Es un ranking provisional de Shadow; no cambia V1 ni selecciona una estrategia automáticamente.</p></div><div className="p-4"><ShadowAssetRankingPanel /></div></div>
 
       <div className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated shadow-[var(--shadow-border)]" data-shadow-intrabar><div className="border-b border-border px-4 py-3"><div className="flex items-center justify-between gap-3"><h3 className="font-semibold">Cadencia de decisión</h3><span className="text-xs font-mono text-subtle">Shadow · 1M / 5M</span></div><p className="mt-1 text-xs text-subtle">Misma zona y niveles V1, buscando el primer trigger confirmado en cierres de 1 o 5 minutos. No modifica V1.</p></div>{!intrabar?<p className="px-4 py-4 text-sm text-subtle">Aún no hay cinta 1M/5M capturada.</p>:<div className="divide-y divide-border">{intrabar.methods.map((m:any)=><div key={m.method} className="px-4 py-3"><div className="grid grid-cols-4 gap-2 text-[11px] text-subtle"><span>TP1 {m.tp1}</span><span>TP2 {m.tp2}</span><span>SL {m.sl}</span><span>Pend. {m.pending}</span></div><div className="mt-2 grid grid-cols-3 gap-2 text-xs"><span>Decididos <b>{m.decided}</b></span><span>Éxito <b>{pct(m.successPct)}</b></span><span>R medio <b>{rr(m.meanR)}</b></span></div><div className="mt-1 text-[11px] text-subtle">{m.earlierThanV1} más rápidos que V1 · {m.extra} EXTRA · cinta {m.dataEpisodes}</div></div>)}</div>}</div>
