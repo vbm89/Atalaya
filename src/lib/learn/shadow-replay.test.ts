@@ -146,6 +146,31 @@ test("outcome is evaluated only after the candidate decision slot and SL wins sa
   assert.equal(result.rrAtOutcome, -1);
   assert.equal(candidate.decisionBarTime, 2800);
   assert.ok((result.firstTouchAtSec ?? 0) >= candidate.decisionSlot);
+  assert.equal(result.path?.sameBarAmbiguous, true);
+  assert.equal(result.path?.reachedTp1, true);
+  assert.equal(result.path?.terminal, "sl");
+});
+
+test("path TP1 then SL does not rewrite the first-touch outcome", () => {
+  const id = "XAUUSD-path-tp1-sl";
+  const trigger = bar(id, 2800, 106, 110, 100, 102, 2);
+  const tp = bar(id, 3700, 102, 103, 79, 80);
+  const slLater = bar(id, 4600, 80, 116, 95, 100);
+  const e: ShadowEpisode = {
+    case: { ...baseCase(id), episodeId: id },
+    events: [],
+    bars: [...volumeHistory(id), trigger, tp, slLater],
+    observedOutcome: null,
+  };
+  const candidate = shadowCandidateForTest(e, "TRIGGER_RELAXED");
+  assert.ok(candidate);
+  const result = shadowOutcomeForTest(candidate, e);
+  assert.equal(result.outcome, "tp1");
+  assert.equal(result.firstTouchAtSec, 3700);
+  assert.equal(result.path?.reachedTp1, true);
+  assert.equal(result.path?.firstTouch, "tp1");
+  assert.equal(result.path?.terminal, "sl");
+  assert.equal(result.path?.sameBarAmbiguous, false);
 });
 
 test("MAPA -> PENDING -> ENTRADA remains observed-only for baseline", () => {

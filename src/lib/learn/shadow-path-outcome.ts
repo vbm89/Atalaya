@@ -3,7 +3,7 @@ import type { ShadowCandidateResult, ShadowEpisode, ShadowTapeBar } from "./shad
 export type ShadowFirstTouch = "sl" | "tp1" | "tp2" | null;
 export type ShadowPathTerminal = "sl" | "tp1" | "tp2" | "expired" | "pending";
 
-export interface ShadowPathOutcome extends ShadowCandidateResult {
+export interface ShadowPathSnapshot {
   firstTouch: ShadowFirstTouch;
   reachedTp1: boolean;
   reachedTp2: boolean;
@@ -12,6 +12,19 @@ export interface ShadowPathOutcome extends ShadowCandidateResult {
   timeToTp1Sec: number | null;
   timeToSlSec: number | null;
   sameBarAmbiguous: boolean;
+}
+
+export function pathSnapshotOf(path: ShadowPathOutcome): ShadowPathSnapshot {
+  return {
+    firstTouch: path.firstTouch,
+    reachedTp1: path.reachedTp1,
+    reachedTp2: path.reachedTp2,
+    terminal: path.terminal,
+    mfeBeforeSl: path.mfeBeforeSl,
+    timeToTp1Sec: path.timeToTp1Sec,
+    timeToSlSec: path.timeToSlSec,
+    sameBarAmbiguous: path.sameBarAmbiguous,
+  };
 }
 
 function excursion(direction: ShadowEpisode["case"]["direction"], entry: number, bar: ShadowTapeBar) {

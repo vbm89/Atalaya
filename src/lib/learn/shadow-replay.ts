@@ -1,6 +1,7 @@
 import type { ShadowCaseInput, ShadowFeatureVector } from "./shadow-features";
 import { toShadowFeatures } from "./shadow-features";
 import { decisionCutMs, decisionTimesFromSlots, SHADOW_TRAIN_CUT_BASIS } from "./shadow-lab-clock";
+import { buildShadowPathOutcome, pathSnapshotOf, type ShadowPathSnapshot } from "./shadow-path-outcome";
 
 export type ShadowCandidateReason =
   | "BASELINE_V1"
@@ -100,6 +101,8 @@ export interface ShadowCandidateResult extends ShadowCandidate {
   mae: number | null;
   mfeR: number | null;
   maeR: number | null;
+  /** Path reconstruction. Never replaces `outcome` (first-touch, SL wins same bar). */
+  path?: ShadowPathSnapshot;
 }
 
 export interface RateSummary {
@@ -148,6 +151,14 @@ export interface ShadowCohort {
   test: ShadowBreakdown;
 }
 
+export interface ShadowPathTally {
+  reachedTp1: number;
+  reachedTp2: number;
+  terminalSlAfterTp1: number;
+  sameBarAmbiguous: number;
+  outcomeEqualsPathTerminal: number;
+}
+
 export interface ShadowVariantReport {
   variant: ShadowCandidateReason;
   candidates: number;
@@ -181,6 +192,7 @@ export interface ShadowVariantReport {
   total: ShadowCohort;
   overlap: ShadowCohort;
   extra: ShadowCohort;
+  path: ShadowPathTally;
 }
 
 export interface ShadowReplayReport {
@@ -723,12 +735,16 @@ function resolveShadowOutcome(candidate: ShadowCandidate, ep: ShadowEpisode): Sh
   const mfeOut = path ? mfe : null;
   const maeOut = path ? mae : null;
   if (first) {
-    return { ...candidate, outcome: first, firstTouchAtSec: at, rrAtOutcome: outcomeRr(first, c), dataComplete: complete, mfe: mfeOut, mae: maeOut, mfeR, maeR };
+    return attachPath({ ...candidate, outcome: first, firstTouchAtSec: at, rrAtOutcome: outcomeRr(first, c), dataComplete: complete, mfe: mfeOut, mae: maeOut, mfeR, maeR }, ep);
   }
   if (c.closedAtMs != null) {
-    return { ...candidate, outcome: "expired", firstTouchAtSec: null, rrAtOutcome: 0, dataComplete: complete, mfe: mfeOut, mae: maeOut, mfeR, maeR };
+    return attachPath({ ...candidate, outcome: "expired", firstTouchAtSec: null, rrAtOutcome: 0, dataComplete: complete, mfe: mfeOut, mae: maeOut, mfeR, maeR }, ep);
   }
-  return { ...candidate, outcome: "pending", firstTouchAtSec: null, rrAtOutcome: null, dataComplete: false, mfe: mfeOut, mae: maeOut, mfeR, maeR };
+  return attachPath({ ...candidate, outcome: "pending", firstTouchAtSec: null, rrAtOutcome: null, dataComplete: false, mfe: mfeOut, mae: maeOut, mfeR, maeR }, ep);
+}
+
+function attachPath(result: ShadowCandidateResult, ep: ShadowEpisode): ShadowCandidateResult {
+  return { ...result, path: pathSnapshotOf(buildShadowPathOutcome(result, ep)) };
 }
 
 export function replayCandidates(episodes: readonly ShadowEpisode[]): ShadowCandidateResult[] {
@@ -816,6 +832,16 @@ function cohortOf(
   };
 }
 
+function pathTally(rows: readonly ShadowCandidateResult[]): ShadowPathTally {
+  return {
+    reachedTp1: rows.filter((r) => r.path?.reachedTp1).length,
+    reachedTp2: rows.filter((r) => r.path?.reachedTp2).length,
+    terminalSlAfterTp1: rows.filter((r) => r.path?.reachedTp1 && r.path.terminal === "sl").length,
+    sameBarAmbiguous: rows.filter((r) => r.path?.sameBarAmbiguous).length,
+    outcomeEqualsPathTerminal: rows.filter((r) => r.path != null && r.outcome === r.path.terminal).length,
+  };
+}
+
 function variantReport(
   variant: ShadowCandidateReason,
   rows: readonly ShadowCandidateResult[],
@@ -865,6 +891,7 @@ function variantReport(
     total,
     overlap,
     extra,
+    path: pathTally(vr),
   };
 }
 
@@ -896,7 +923,8 @@ export function buildShadowReplayReport(
   limitations.push("EXTRA es un candidato Shadow en un episodio sin evento V1 ENTRY. OVERLAP comparte episodeId con una ENTRADA V1; no se cuenta como extra.");
   limitations.push("ZONE_SWEEP_RECLAIM y FVG_RETEST no relajan volumen/noticias/late/sesgo 4H; solo sustituyen la geometría del trigger. Los umbrales de profundidad/FVG están fijados antes de TEST.");
   limitations.push("La entrada Shadow usa el precio de zona V1 congelado para R/SL/TP; el close del reclaim/retest no redefine el riesgo.");
-  limitations.push("MFE/MAE se miden en velas 15M posteriores al cierre de decisión; la vela de decisión no entra en el desenlace.");
+  limitations.push("MFE/MAE de `outcome` se miden en velas 15M posteriores al cierre de decisión; la vela de decisión no entra en el desenlace.");
+  limitations.push("path.* no sustituye outcome: outcome sigue siendo primer toque (SL gana la misma vela). path.terminal puede ser SL después de TP1.");
   return {
     episodesAnalyzed: episodes.length,
     episodesWith15mTape: episodes.filter((e) => e.bars.some((b) => b.tf === "15m")).length,

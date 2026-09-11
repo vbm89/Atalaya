@@ -52,7 +52,7 @@ test("path excludes the decision candle and preserves TP1 before later SL", () =
   assert.equal(result.terminal, "sl");
   assert.equal(result.timeToTp1Sec, 0);
   assert.equal(result.timeToSlSec, 900);
-  assert.equal(result.mfeBeforeSl, 1.2);
+  assert.ok(Math.abs((result.mfeBeforeSl ?? 0) - 1.2) < 1e-9);
 });
 
 test("same-bar SL and TP1 is conservatively SL and explicitly ambiguous", () => {
