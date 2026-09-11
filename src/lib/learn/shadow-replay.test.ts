@@ -202,7 +202,7 @@ test("replay is deterministic", () => {
   assert.deepEqual(buildShadowReplayReport([e]), buildShadowReplayReport([e]));
 });
 
-test("train/test split compares decisionSlot seconds with openedAtMs", () => {
+test("train/test split uses decisionSlot, not openedAtMs", () => {
   const episodes: ShadowEpisode[] = [];
   for (let i = 0; i < 10; i += 1) {
     const id = `XAUUSD-${i}`;

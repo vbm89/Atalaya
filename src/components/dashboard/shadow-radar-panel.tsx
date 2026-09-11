@@ -43,11 +43,10 @@ export function ShadowRadarPanel() {
   const latestReplay = payload.radar ? payload.latestReplay : undefined;
   const top = cases.slice(0, 8);
   const comparisons = latestReplay?.report?.comparisons ?? [];
-  const ranked = [...comparisons].sort((a, b) => {
-    const ae = a.evidenceLabel === "INSUFFICIENT" ? -1 : 0;
-    const be = b.evidenceLabel === "INSUFFICIENT" ? -1 : 0;
-    if (be !== ae) return be - ae;
-    return (b.test.successRate ?? -1) - (a.test.successRate ?? -1);
+  const listed = [...comparisons].sort((a, b) => {
+    if (a.variant === "BASELINE_V1") return -1;
+    if (b.variant === "BASELINE_V1") return 1;
+    return String(a.variant).localeCompare(String(b.variant));
   });
 
   if (!stats) return <p className="text-sm text-subtle">Radar no disponible. La respuesta no contiene estadísticas válidas.</p>;
@@ -90,7 +89,7 @@ export function ShadowRadarPanel() {
       <div className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated shadow-[var(--shadow-border)]" data-shadow-comparator>
         <div className="border-b border-border px-4 py-3">
           <h3 className="text-base font-semibold tracking-tight">Comparador Shadow</h3>
-          <p className="mt-0.5 text-xs text-subtle">Métodos probados sobre los mismos episodios congelados. V1 sigue siendo el baseline.</p>
+          <p className="mt-0.5 text-xs text-subtle">Orden alfabético. TEST es juez, no leaderboard. V1 sigue siendo el baseline.</p>
         </div>
         {!latestReplay ? (
           <div className="px-4 py-4 text-sm text-subtle">Aún no hay un replay automático guardado. Aparecerá tras el próximo ciclo de Watch.</div>
@@ -107,12 +106,11 @@ export function ShadowRadarPanel() {
               </div>
             </div>
             <div className="divide-y divide-border">
-              {ranked.map((c, i) => (
+              {listed.map((c) => (
                 <div key={c.variant} className="px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 text-sm font-medium">
-                        <span className="font-mono text-xs text-subtle">#{i + 1}</span>
                         <span className="truncate">{c.variant}</span>
                         {c.variant === "BASELINE_V1" ? <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-subtle shadow-[var(--shadow-border)]">V1</span> : null}
                       </div>

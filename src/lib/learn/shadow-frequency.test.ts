@@ -104,6 +104,7 @@ describe("shadow frequency research plan", () => {
       sessionCoverage: 3,
     });
     assert.equal(hot.live, false);
+    assert.equal(hot.noLookahead, "demonstrated_by_tests");
     assert.equal(hot.status, "KEEP_RESEARCH");
     assert.equal(hot.frequencyInBand, false);
     assert.ok(hot.reasons.some((r) => /informativa/i.test(r)));

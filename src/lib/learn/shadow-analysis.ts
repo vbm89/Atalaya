@@ -4,7 +4,12 @@ import type {
   ShadowEpisode,
   ShadowReplayReport,
 } from "./shadow-replay";
-import { SHADOW_VARIANTS, replayCandidates, buildShadowReplayReport, slotToMs } from "./shadow-replay";
+import {
+  SHADOW_VARIANTS,
+  replayCandidates,
+  buildShadowReplayReport,
+  slotToMs,
+} from "./shadow-replay";
 import { buildShadowHorizonReport, type ShadowHorizonReport } from "./shadow-horizon";
 
 export type ShadowEvidenceLabel = "INSUFFICIENT" | "DESCRIPTIVE" | "EXPLORATORY" | "CONFIRMATORY";
@@ -82,17 +87,17 @@ function assetSuccessRange(rows: readonly ShadowCandidateResult[], variant: Shad
 }
 
 function makeWalkForward(episodes: readonly ShadowEpisode[], rows: readonly ShadowCandidateResult[]): WalkForwardWindow[] {
-  const ordered = [...episodes].sort((a, b) => a.case.openedAtMs - b.case.openedAtMs);
-  if (ordered.length < 10) return [];
-  const block = Math.max(1, Math.floor(ordered.length * 0.2));
+  const times = [...new Set(rows.map((r) => slotToMs(r.decisionSlot)))].sort((a, b) => a - b);
+  if (times.length < 10) return [];
+  const block = Math.max(1, Math.floor(times.length * 0.2));
   const trainSize = block * 3;
   const windows: WalkForwardWindow[] = [];
   let index = 0;
-  for (let trainEnd = trainSize; trainEnd + block <= ordered.length; trainEnd += block) {
-    const trainFromMs = ordered[0]!.case.openedAtMs;
-    const trainToMs = ordered[trainEnd - 1]!.case.openedAtMs;
-    const testFromMs = ordered[trainEnd]!.case.openedAtMs;
-    const testToMs = ordered[Math.min(trainEnd + block - 1, ordered.length - 1)]!.case.openedAtMs;
+  for (let trainEnd = trainSize; trainEnd + block <= times.length; trainEnd += block) {
+    const trainFromMs = times[0]!;
+    const trainToMs = times[trainEnd - 1]!;
+    const testFromMs = times[trainEnd]!;
+    const testToMs = times[Math.min(trainEnd + block - 1, times.length - 1)]!;
     const variants = SHADOW_VARIANTS.map((variant) => {
       const vr = rows.filter((r) => r.variant === variant);
       const train = vr.filter((r) => slotToMs(r.decisionSlot) >= trainFromMs && slotToMs(r.decisionSlot) <= trainToMs);
@@ -108,8 +113,7 @@ function makeWalkForward(episodes: readonly ShadowEpisode[], rows: readonly Shad
 export function analyzeShadowReplay(episodes: readonly ShadowEpisode[]): ShadowAnalysisReport {
   const replay = buildShadowReplayReport(episodes);
   const rows = replayCandidates(episodes);
-  const ordered = [...episodes].sort((a, b) => a.case.openedAtMs - b.case.openedAtMs);
-  const cutMs = ordered[Math.floor(ordered.length * 0.7) - 1]?.case.openedAtMs ?? Number.POSITIVE_INFINITY;
+  const cutMs = replay.trainCutMs;
   const baseline = rows.filter((r) => r.variant === "BASELINE_V1");
   const baselineAll = success(baseline);
   const baselineTest = success(baseline.filter((r) => slotToMs(r.decisionSlot) > cutMs));

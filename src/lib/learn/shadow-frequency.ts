@@ -12,6 +12,8 @@ import {
   v1EntrySlot,
 } from "./shadow-replay";
 import { MIN_TEST_N } from "./shadow-analysis";
+import { decisionCutMs, decisionTimesFromSlots } from "./shadow-lab-clock";
+import { concentrationVeto } from "./shadow-concentration";
 
 /**
  * Research-only V2 frequency layer.
@@ -70,8 +72,10 @@ export interface FrequencyPromotion {
   stableAssets: boolean | null;
   stableSessions: boolean | null;
   testConsistent: boolean | null;
-  noLookahead: true;
+  noLookahead: "demonstrated_by_tests";
   frequencyInBand: boolean | null;
+  concentrationVeto: boolean;
+  concentrationReason: string | null;
 }
 
 export interface FrequencyStrategyStats {
@@ -175,6 +179,8 @@ export function evaluateFrequencyPromotion(input: {
   sessionSuccessRangePp: number | null;
   assetCoverage: number;
   sessionCoverage: number;
+  concentrationVeto?: boolean;
+  concentrationReason?: string | null;
 }): FrequencyPromotion {
   const meetsSample = input.extraTestN >= MIN_TEST_N;
   const positiveExpectancy = (input.trainExpectancyR ?? 0) > 0;
@@ -197,10 +203,11 @@ export function evaluateFrequencyPromotion(input: {
   if (stableSessions === false) reasons.push("éxito inestable por sesión");
   reasons.push("frecuencia 5–10/día es informativa, no un criterio de promoción");
   reasons.push("Shadow no ejecuta ni autoriza operaciones");
+  if (input.concentrationVeto) reasons.push(input.concentrationReason ?? "concentración: el mejor día/trade invierte el signo");
 
   let status: FrequencyPromotionStatus = "NOT_A_V2_CANDIDATE";
   if (!meetsSample) status = "INSUFFICIENT";
-  else if (!positiveExpectancy || testConsistent === false) status = "DISCARD";
+  else if (!positiveExpectancy || testConsistent === false || input.concentrationVeto) status = "DISCARD";
   else if (positiveExpectancy && testConsistent) status = "KEEP_RESEARCH";
 
   return {
@@ -212,8 +219,10 @@ export function evaluateFrequencyPromotion(input: {
     stableAssets,
     stableSessions,
     testConsistent,
-    noLookahead: true,
+    noLookahead: "demonstrated_by_tests",
     frequencyInBand,
+    concentrationVeto: Boolean(input.concentrationVeto),
+    concentrationReason: input.concentrationReason ?? null,
   };
 }
 
@@ -249,8 +258,8 @@ export function replayFrequencyCandidates(
 
 export function buildShadowFrequencyReport(episodes: readonly ShadowEpisode[]): ShadowFrequencyReport {
   const v1Entries = v1EntryByEpisode(episodes);
-  const ordered = [...episodes].sort((a, b) => a.case.openedAtMs - b.case.openedAtMs);
-  const cutMs = ordered[Math.floor(ordered.length * 0.7) - 1]?.case.openedAtMs ?? Number.POSITIVE_INFINITY;
+  const probe = FREQUENCY_STRATEGIES.flatMap((strategy) => replayFrequencyCandidates(episodes, strategy));
+  const cutMs = decisionCutMs(decisionTimesFromSlots(probe.map((r) => r.decisionSlot)));
   const allDays = sampleDaysOf(
     episodes.flatMap((e) => [{ decisionSlot: e.case.openedSlot }]),
   );
@@ -302,6 +311,8 @@ export function buildShadowFrequencyReport(episodes: readonly ShadowEpisode[]): 
         sessionSuccessRangePp: sessions.range,
         assetCoverage: assets.coverage,
         sessionCoverage: sessions.coverage,
+        concentrationVeto: concentrationVeto(extraTestDecided).veto,
+        concentrationReason: concentrationVeto(extraTestDecided).reason,
       }),
     } satisfies FrequencyStrategyStats;
   });

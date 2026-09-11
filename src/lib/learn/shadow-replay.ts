@@ -1,5 +1,6 @@
 import type { ShadowCaseInput, ShadowFeatureVector } from "./shadow-features";
 import { toShadowFeatures } from "./shadow-features";
+import { decisionCutMs, decisionTimesFromSlots, SHADOW_TRAIN_CUT_BASIS } from "./shadow-lab-clock";
 
 export type ShadowCandidateReason =
   | "BASELINE_V1"
@@ -186,6 +187,8 @@ export interface ShadowReplayReport {
   episodesAnalyzed: number;
   episodesWith15mTape: number;
   episodesWithGaps: number;
+  trainCutMs: number;
+  trainCutBasis: typeof SHADOW_TRAIN_CUT_BASIS;
   variants: ShadowVariantReport[];
   limitations: string[];
 }
@@ -874,10 +877,8 @@ export function buildShadowReplayReport(
   config: ShadowReplayConfig = {},
 ): ShadowReplayReport {
   const results = replayCandidates(episodes);
-  const ordered = [...episodes].sort((a, b) => a.case.openedAtMs - b.case.openedAtMs);
   const fraction = Math.min(0.99, Math.max(0.01, config.trainFraction ?? 0.7));
-  const cutIndex = Math.floor(ordered.length * fraction);
-  const trainCutMs = ordered[Math.max(0, cutIndex - 1)]?.case.openedAtMs ?? Number.NEGATIVE_INFINITY;
+  const trainCutMs = decisionCutMs(decisionTimesFromSlots(results.map((r) => r.decisionSlot)), fraction);
   const v1Entries = v1EntryByEpisode(episodes);
   const limitations: string[] = [];
   if (!episodes.length) limitations.push("No hay episodios disponibles.");
@@ -889,7 +890,8 @@ export function buildShadowReplayReport(
   }
   limitations.push("El universo de Shadow está condicionado a oportunidades V1 persistidas; no inventa mapas que V1 nunca creó.");
   limitations.push("Noticias y mercado cerrado se usan desde la fotografía histórica almacenada; eventos externos no persistidos no pueden reconstruirse.");
-  limitations.push("Las hipótesis son reglas fijas: TRAIN no selecciona umbrales y TEST nunca alimenta la generación de candidatos.");
+  limitations.push("Las hipótesis son reglas fijas: TRAIN no selecciona umbrales. TEST es juez, no leaderboard.");
+  limitations.push("El corte TRAIN/TEST usa decisionSlot, no el nacimiento del episodio/MAP.");
   limitations.push("BASELINE_V1 es la primera transición observada a ENTRADA, no una reconstrucción de los umbrales internos de V1.");
   limitations.push("EXTRA es un candidato Shadow en un episodio sin evento V1 ENTRY. OVERLAP comparte episodeId con una ENTRADA V1; no se cuenta como extra.");
   limitations.push("ZONE_SWEEP_RECLAIM y FVG_RETEST no relajan volumen/noticias/late/sesgo 4H; solo sustituyen la geometría del trigger. Los umbrales de profundidad/FVG están fijados antes de TEST.");
@@ -907,6 +909,8 @@ export function buildShadowReplayReport(
         return sorted.some((t, i) => i > 0 && t - sorted[i - 1]! > step);
       });
     }).length,
+    trainCutMs,
+    trainCutBasis: SHADOW_TRAIN_CUT_BASIS,
     variants: SHADOW_VARIANTS.map((v) => variantReport(v, results, episodes, v1Entries, trainCutMs)),
     limitations,
   };
