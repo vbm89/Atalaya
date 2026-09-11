@@ -260,6 +260,17 @@ describe("post-entry merge is monotonic", () => {
     assert.equal(kept.outcome, "pending");
   });
 
+  it("ENTRY candle open is a valid firstTouch (open = slot - 900)", () => {
+    const open = slotOpenSec(2_000);
+    const kept = mergePostEntry(
+      null,
+      photo({ outcome: "tp1", firstTouch: "tp1", firstTouchAtSec: open, entrySlot: 2_000 }),
+    );
+    assert.equal(kept.firstTouch, "tp1");
+    assert.equal(kept.outcome, "tp1");
+    assert.equal(kept.firstTouchAtSec, open);
+  });
+
   it("parsePostEntry does not invent identity from junk", () => {
     assert.equal(parsePostEntry(null), null);
     assert.equal(parsePostEntry({ outcome: "sl" }), null);
@@ -333,10 +344,11 @@ describe("post-entry tick persistence", () => {
 });
 
 describe("watch outcome clock", () => {
-  it("MAP/PENDING use episode birth; V1 ENTRY uses the entry slot", () => {
+  it("MAP/PENDING use episode birth; V1 ENTRY uses the ENTRY candle open", () => {
     assert.equal(watchOutcomeOpenedSlot(1_000, null), 1_000);
     assert.equal(watchOutcomeOpenedSlot(1_000, undefined), 1_000);
-    assert.equal(watchOutcomeOpenedSlot(1_000, 5_000), 5_000);
+    assert.equal(watchOutcomeOpenedSlot(1_000, 5_000), slotOpenSec(5_000));
+    assert.equal(slotOpenSec(5_000), 4_100);
   });
 
   it("a MAP-era SL wick is not the V1 trade outcome after ENTRY", async () => {
@@ -346,9 +358,9 @@ describe("watch outcome clock", () => {
     const mapSlot = slotSecFromNow(nowMap);
     const entrySlot = slotSecFromNow(nowEntry);
     const mapCover: Candle = { time: slotOpenSec(mapSlot), open: 90, high: 91, low: 89, close: 90, volume: 1 };
-    const mapSl: Candle = { time: mapSlot, open: 90, high: 101, low: 89, close: 95, volume: 1 };
+    const mapSl: Candle = { time: slotOpenSec(mapSlot), open: 90, high: 101, low: 89, close: 95, volume: 1 };
     const entryCover: Candle = { time: slotOpenSec(entrySlot), open: 90, high: 91, low: 89, close: 90, volume: 1 };
-    const entryTp1: Candle = { time: entrySlot, open: 90, high: 91, low: 79, close: 85, volume: 1 };
+    const entryTp1: Candle = { time: slotOpenSec(entrySlot), open: 90, high: 91, low: 79, close: 85, volume: 1 };
 
     const mapTick = await runWatchTick({
       nowMs: nowMap,

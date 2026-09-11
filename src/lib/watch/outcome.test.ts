@@ -32,6 +32,16 @@ describe("desenlace M15 wick", () => {
     assert.equal(r.firstTouch, null);
   });
 
+  it("SL wick on the decision bar (open before slot close) does not count", () => {
+    const r = resolveOutcome({
+      ...sellBase,
+      closed: false,
+      candles: [bar(100, 90, 101, 89, 95)],
+    });
+    assert.equal(r.outcome, "pending");
+    assert.equal(r.firstTouch, null);
+  });
+
   it("SL wick after the slot", () => {
     const r = resolveOutcome({
       ...sellBase,

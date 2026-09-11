@@ -1,13 +1,26 @@
 import type { Candle } from "../trading/types";
 import type { EpisodeDraft, SignalEventDraft } from "./episode";
+import { slotOpenSec } from "./identity";
 import { resolveOutcome, type OutcomeKind } from "./outcome";
 
-/** Clock for persisted Watch outcomes. V1 trades start at ENTRY; MAP/PENDING keep episode birth. */
+/**
+ * Official V1 trade-outcome clock (Watch + postEntry, not MAP birth).
+ *
+ * - MAP/PENDING (no ENTRY): episode `openedSlot` (15M close). Technical wick only.
+ * - V1 ENTRY: open of the ENTRY candle (`slotOpenSec(entrySlot)`).
+ *   `resolveOutcome` keeps bars with `candle.time >= openedSlot`. Feed `time` is
+ *   bar OPEN and slots are bar CLOSE, so passing the ENTRY open includes that
+ *   candle — same window Shadow uses (`barClose >= entrySlot`).
+ * - Do not pass `entrySlot` (close) or use `time > slot`: the next bar's open
+ *   equals the previous close, and `>` would skip the first posterior 15M bar.
+ */
 export function watchOutcomeOpenedSlot(
   episodeOpenedSlot: number,
   entrySlot: number | null | undefined,
 ): number {
-  return typeof entrySlot === "number" && Number.isFinite(entrySlot) ? entrySlot : episodeOpenedSlot;
+  return typeof entrySlot === "number" && Number.isFinite(entrySlot)
+    ? slotOpenSec(entrySlot)
+    : episodeOpenedSlot;
 }
 
 /** Research metrics from the real V1 ENTRY event. Does not replace signal_outcomes. */
@@ -42,7 +55,7 @@ export function computePostEntryMetrics(
     tp2: episode.tp2,
     zoneLow: episode.zoneLow,
     zoneHigh: episode.zoneHigh,
-    openedSlot: entry.slot,
+    openedSlot: slotOpenSec(entry.slot),
     closed: episode.closedAtMs != null,
     candles: [...candles],
   });
@@ -88,7 +101,8 @@ function causalTouch(
   firstTouchAtSec: number | null,
 ): { firstTouch: PostEntryMetrics["firstTouch"]; firstTouchAtSec: number | null } {
   if (firstTouch == null) return { firstTouch: null, firstTouchAtSec: null };
-  if (firstTouchAtSec != null && firstTouchAtSec < entrySlot) {
+  // Feed bar.time is OPEN; entrySlot is CLOSE. The ENTRY candle open is valid.
+  if (firstTouchAtSec != null && firstTouchAtSec < slotOpenSec(entrySlot)) {
     return { firstTouch: null, firstTouchAtSec: null };
   }
   return { firstTouch, firstTouchAtSec };
