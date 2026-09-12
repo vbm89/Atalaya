@@ -13,7 +13,7 @@ export interface EvidenceDecision {
   reason: string;
 }
 
-/** Conservative gate: this module classifies evidence only; it never promotes a rule. */
+/** Conservative gate: evidence classification never authorizes promotion. */
 export function classifyShadowEvidence(input: EvidenceInput): EvidenceDecision {
   if (!Number.isFinite(input.cases) || input.cases < 1) {
     return { status: "INSUFFICIENT", reason: "No hay casos evaluables." };
@@ -24,5 +24,11 @@ export function classifyShadowEvidence(input: EvidenceInput): EvidenceDecision {
   if (!input.hasTrainTestSplit || !input.predefined || !input.contaminationFree) {
     return { status: "EXPLORATORY", reason: "Hay muestra suficiente, pero falta completar las garantías de TRAIN/TEST y/o predefinición." };
   }
-  return { status: "CONFIRMATORY", reason: "La muestra y las garantías metodológicas mínimas están presentes; requiere revisión humana antes de cualquier promoción." };
+  // CONFIRMATORY is deliberately unreachable for now. The project-level
+  // promotion protocol requires larger samples, walk-forward stability,
+  // net-of-cost expectancy and concentration/multiple-testing checks.
+  return {
+    status: "EXPLORATORY",
+    reason: "Garantías metodológicas básicas presentes, pero el protocolo de promoción todavía no permite CONFIRMATORY.",
+  };
 }
