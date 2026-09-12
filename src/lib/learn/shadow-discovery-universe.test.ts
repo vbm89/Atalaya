@@ -22,6 +22,8 @@ import {
   mtfLegsInValidWindows,
   mtfPairAvailability,
   nextDiscoveryTfToBackfill,
+  nextTfToCompleteCoverage,
+  assetsNeedingCoverage,
   tfUnlocksNext,
   type Common4Window,
   type DiscoveryAssetSpan,
@@ -130,6 +132,23 @@ describe("Discovery COMMON_MIN unlock vs exhausted", () => {
     assert.equal(common.available, true);
     assert.ok(common.days != null && common.days >= 30 && common.days < 32);
     assert.equal(common.inference, "INSUFFICIENT");
+  });
+
+  it("nextTfToCompleteCoverage is null once every archive TF meets COMMON_MIN", () => {
+    const spans = DISCOVERY_ARCHIVE_TFS.flatMap((tf) => four(31, false).map((s) => ({ ...s, tf })));
+    assert.equal(nextTfToCompleteCoverage(spans), null);
+    assert.equal(nextDiscoveryTfToBackfill(spans), "15m");
+  });
+
+  it("assets below COMMON_MIN on an incomplete TF are the only ones needing coverage", () => {
+    const spans = [
+      span("XAUUSD", 78, false),
+      span("BTCUSD", 260, false),
+      span("US100", 10, false),
+      span("WTI", 8, false),
+    ];
+    assert.equal(nextTfToCompleteCoverage(spans), "15m");
+    assert.deepEqual(assetsNeedingCoverage(spans, "15m"), ["US100", "WTI"]);
   });
 });
 

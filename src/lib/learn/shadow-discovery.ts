@@ -5,16 +5,21 @@
  *   Neon → coverage / universe / UI. No provider calls. No Neon writes.
  *
  * WRITE PATH → ingestDiscoveryCoverage
- *   UI "Actualizar cobertura" → paginateNativeSeries → Neon bars + cursors.
+ *   UI "Actualizar cobertura" → complete COMMON_MIN or refresh the tape tip.
+ *   Never auto-deepens ASSET_DEEP history.
  *
  * This step does not explore patterns, register k, or rank expectancy.
  */
 import type { AssetId } from "../trading/types";
 import type { SqlQuery } from "../watch/store";
-import { DISCOVERY_ASSETS, type DiscoveryTf } from "./shadow-discovery-types";
+import { DISCOVERY_ARCHIVE_TFS, DISCOVERY_ASSETS, type DiscoveryTf } from "./shadow-discovery-types";
 import { DISCOVERY_PAGES_PER_CALL, paginateNativeSeries, type BackfillResult } from "./shadow-discovery-ingest";
 import { buildCoverage, exploreDiscovery, type DiscoveryExploreReport } from "./shadow-discovery-explore";
-import { nextDiscoveryTfToBackfill, spansFromCoverage } from "./shadow-discovery-universe";
+import {
+  assetsNeedingCoverage,
+  nextTfToCompleteCoverage,
+  spansFromCoverage,
+} from "./shadow-discovery-universe";
 import {
   loadDiscoveryBars,
   loadDiscoveryCursors,
@@ -29,7 +34,7 @@ export { detectEvents } from "./shadow-discovery-events";
 export { detectSequences } from "./shadow-discovery-sequences";
 export { ingestNativeDiscovery, paginateNativeSeries } from "./shadow-discovery-ingest";
 export { DISCOVERY_TFS, DISCOVERY_ARCHIVE_TFS, DISCOVERY_ASSETS, DISCOVERY_COMMON_MIN_DAYS } from "./shadow-discovery-types";
-export { nextDiscoveryTfToBackfill } from "./shadow-discovery-universe";
+export { nextDiscoveryTfToBackfill, nextTfToCompleteCoverage } from "./shadow-discovery-universe";
 
 export const DISCOVERY_CODE_VERSION = "shadow-discovery-1";
 
@@ -41,6 +46,8 @@ export type DiscoveryPaginator = (args: {
   pages?: number;
 }) => Promise<BackfillResult>;
 
+export type DiscoveryIngestMode = "complete" | "tip" | "idle";
+
 export interface DiscoveryLabView {
   report: DiscoveryExploreReport;
   ingested: number;
@@ -49,6 +56,7 @@ export interface DiscoveryLabView {
   lastUpdatedAt: string | null;
   ingestRan: boolean;
   assetsProcessed: number | null;
+  ingestMode: DiscoveryIngestMode;
 }
 
 function latestCursorUpdate(cursors: readonly DiscoveryCursor[]): string | null {
@@ -84,10 +92,8 @@ function decorateReport(
   return report;
 }
 
-function nextTf(cursors: readonly DiscoveryCursor[], bars: readonly import("./shadow-discovery-types").DiscoveryBar[]): DiscoveryTf | null {
-  const coverageNow = buildCoverage(bars, cursors);
-  const spans = spansFromCoverage(coverageNow);
-  return nextDiscoveryTfToBackfill(spans);
+function spansOf(cursors: readonly DiscoveryCursor[], bars: readonly import("./shadow-discovery-types").DiscoveryBar[]) {
+  return spansFromCoverage(buildCoverage(bars, cursors));
 }
 
 /** READ ONLY. Opening the lab must call this. Never paginates or writes. */
@@ -95,20 +101,83 @@ export async function readDiscoveryLab(sql: SqlQuery | null, nowSec = Math.floor
   const bars = sql ? await loadDiscoveryBars(sql) : [];
   const cursors = sql ? await loadDiscoveryCursors(sql).catch(() => [] as DiscoveryCursor[]) : [];
   const report = decorateReport(bars, cursors, nowSec);
+  const completeTf = nextTfToCompleteCoverage(spansOf(cursors, bars));
   return {
     report,
     ingested: 0,
     fromStore: bars.length > 0,
-    backfillTf: bars.length || cursors.length ? nextTf(cursors, bars) : null,
+    backfillTf: completeTf,
     lastUpdatedAt: latestCursorUpdate(cursors),
     ingestRan: false,
     assetsProcessed: null,
+    ingestMode: "idle",
   };
+}
+
+async function persistCompletePage(
+  sql: SqlQuery,
+  paginate: DiscoveryPaginator,
+  assetId: AssetId,
+  tf: DiscoveryTf,
+  cur: DiscoveryCursor | undefined,
+  nowSec: number,
+): Promise<number> {
+  const page = await paginate({
+    assetId,
+    tf,
+    beforeOpenSec: cur?.oldestT ?? null,
+    nowSec,
+    pages: DISCOVERY_PAGES_PER_CALL,
+  });
+  const n = await persistDiscoveryBars(sql, page.bars);
+  await upsertDiscoveryCursor(sql, {
+    assetId,
+    tf,
+    oldestT: page.oldestT ?? cur?.oldestT ?? null,
+    newestT: page.newestT ?? cur?.newestT ?? null,
+    source: page.source,
+    instrument: page.instrument,
+    instrumentKind: page.kind,
+    exhausted: page.exhausted,
+    pages: page.pages,
+  });
+  return n;
+}
+
+async function persistTipPage(
+  sql: SqlQuery,
+  paginate: DiscoveryPaginator,
+  assetId: AssetId,
+  tf: DiscoveryTf,
+  cur: DiscoveryCursor | undefined,
+  nowSec: number,
+): Promise<number> {
+  const page = await paginate({
+    assetId,
+    tf,
+    beforeOpenSec: null,
+    nowSec,
+    pages: 1,
+  });
+  const n = await persistDiscoveryBars(sql, page.bars);
+  await upsertDiscoveryCursor(sql, {
+    assetId,
+    tf,
+    oldestT: cur?.oldestT ?? page.oldestT ?? null,
+    newestT: page.newestT ?? cur?.newestT ?? null,
+    source: page.source ?? cur?.source ?? null,
+    instrument: page.instrument ?? cur?.instrument ?? null,
+    instrumentKind: page.kind ?? cur?.instrumentKind ?? null,
+    exhausted: cur?.exhausted ?? page.exhausted,
+    pages: 0,
+  });
+  return n;
 }
 
 /**
  * WRITE. Explicit "Actualizar cobertura" only.
- * Continues from discovery_ingest_cursor. Does not reset pages/oldest_t.
+ * Completes TFs below COMMON_MIN. If every archive TF is unlocked, refreshes
+ * the newest page only. Never walks older ASSET_DEEP history.
  */
 export async function ingestDiscoveryCoverage(
   sql: SqlQuery | null,
@@ -117,52 +186,46 @@ export async function ingestDiscoveryCoverage(
 ): Promise<DiscoveryLabView> {
   if (!sql) {
     const empty = await readDiscoveryLab(null, nowSec);
-    return { ...empty, ingestRan: true, ingested: 0, assetsProcessed: 0 };
+    return { ...empty, ingestRan: true, ingested: 0, assetsProcessed: 0, ingestMode: "idle" };
   }
   const existing = await loadDiscoveryBars(sql);
   const cursors = await loadDiscoveryCursors(sql).catch(() => [] as DiscoveryCursor[]);
-  const backfillTf = nextTf(cursors, existing);
+  const spans = spansOf(cursors, existing);
+  const completeTf = nextTfToCompleteCoverage(spans);
   let ingested = 0;
   let assetsProcessed = 0;
-  if (backfillTf) {
-    const pending = DISCOVERY_ASSETS.filter((assetId) => {
-      const cur = cursors.find((c) => c.assetId === assetId && c.tf === backfillTf);
-      return !cur?.exhausted;
-    });
+  let ingestMode: DiscoveryIngestMode = "idle";
+  if (completeTf) {
+    ingestMode = "complete";
+    const pending = assetsNeedingCoverage(spans, completeTf);
     assetsProcessed = pending.length;
-    const jobs = pending.map(async (assetId: AssetId) => {
-      const cur = cursors.find((c) => c.assetId === assetId && c.tf === backfillTf);
-      const page = await paginate({
-        assetId,
-        tf: backfillTf,
-        beforeOpenSec: cur?.oldestT ?? null,
-        nowSec,
-        pages: DISCOVERY_PAGES_PER_CALL,
-      });
-      const n = await persistDiscoveryBars(sql, page.bars);
-      await upsertDiscoveryCursor(sql, {
-        assetId,
-        tf: backfillTf,
-        oldestT: page.oldestT ?? cur?.oldestT ?? null,
-        newestT: page.newestT ?? cur?.newestT ?? null,
-        source: page.source,
-        instrument: page.instrument,
-        instrumentKind: page.kind,
-        exhausted: page.exhausted,
-        pages: page.pages,
-      });
-      return n;
+    const jobs = pending.map((assetId) => {
+      const cur = cursors.find((c) => c.assetId === assetId && c.tf === completeTf);
+      return persistCompletePage(sql, paginate, assetId, completeTf, cur, nowSec);
     });
     ingested = (await Promise.all(jobs)).reduce((a, b) => a + b, 0);
+  } else {
+    ingestMode = "tip";
+    const tipJobs: Promise<number>[] = [];
+    for (const tf of DISCOVERY_ARCHIVE_TFS) {
+      for (const assetId of DISCOVERY_ASSETS) {
+        const cur = cursors.find((c) => c.assetId === assetId && c.tf === tf);
+        if (!cur && !existing.some((b) => b.assetId === assetId && b.tf === tf)) continue;
+        assetsProcessed += 1;
+        tipJobs.push(persistTipPage(sql, paginate, assetId, tf, cur, nowSec));
+      }
+    }
+    ingested = (await Promise.all(tipJobs)).reduce((a, b) => a + b, 0);
   }
   const view = await readDiscoveryLab(sql, nowSec);
   try { await persistDiscoveryJournal(sql, view.report.journal); } catch { /* best-effort */ }
   return {
     ...view,
     ingested,
-    backfillTf,
+    backfillTf: completeTf,
     ingestRan: true,
     assetsProcessed,
+    ingestMode,
   };
 }
 

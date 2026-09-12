@@ -77,6 +77,9 @@ export function tfUnlocksNext(spans: readonly DiscoveryAssetSpan[], tf: Discover
 /**
  * First archive TF that is not yet unlocked. After every TF is unlocked,
  * deepen the first TF that still has a live (!exhausted) cursor.
+ *
+ * Ingest of "Actualizar cobertura" must NOT use the deepen tail.
+ * Use nextTfToCompleteCoverage instead.
  */
 export function nextDiscoveryTfToBackfill(spans: readonly DiscoveryAssetSpan[]): DiscoveryTf {
   for (const tf of DISCOVERY_ARCHIVE_TFS) {
@@ -90,6 +93,18 @@ export function nextDiscoveryTfToBackfill(spans: readonly DiscoveryAssetSpan[]):
     if (live) return tf;
   }
   return DISCOVERY_ARCHIVE_TFS[DISCOVERY_ARCHIVE_TFS.length - 1]!;
+}
+
+/** First archive TF that has not reached COMMON_MIN (or exhausted) for all 4 assets. */
+export function nextTfToCompleteCoverage(spans: readonly DiscoveryAssetSpan[]): DiscoveryTf | null {
+  for (const tf of DISCOVERY_ARCHIVE_TFS) {
+    if (!tfUnlocksNext(spans, tf)) return tf;
+  }
+  return null;
+}
+
+export function assetsNeedingCoverage(spans: readonly DiscoveryAssetSpan[], tf: DiscoveryTf): AssetId[] {
+  return DISCOVERY_ASSETS.filter((id) => !assetReadyForTfUnlock(spans.find((s) => s.assetId === id && s.tf === tf)));
 }
 
 export function common4Window(spans: readonly DiscoveryAssetSpan[], tf: DiscoveryTf): Common4Window {

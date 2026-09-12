@@ -83,7 +83,7 @@ export function ShadowDiscoveryPanel() {
             ) : null}
             {ingest ? (
               <div className="text-[11px] text-subtle">
-                <p>TF procesado: {ingest.backfillTf ?? LAB_UNAVAILABLE}</p>
+                <p>TF procesado: {ingest.ingestMode === "tip" ? "cobertura común completa" : ingest.backfillTf ?? LAB_UNAVAILABLE}</p>
                 <p className="mt-0.5">
                   activos procesados: {ingest.assetsProcessed == null ? LAB_UNAVAILABLE : String(ingest.assetsProcessed)}
                 </p>
