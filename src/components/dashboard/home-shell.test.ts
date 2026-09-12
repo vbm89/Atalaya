@@ -44,6 +44,12 @@ describe("HOME shell contract", () => {
     assert.match(dash, /onLab=/);
   });
 
+  it("lab panel imports ShadowFrequencyPanel before using it", () => {
+    const lab = read("lab-integrity-panel.tsx");
+    assert.match(lab, /import \{ ShadowFrequencyPanel \} from "\.\/shadow-frequency-panel"/);
+    assert.match(lab, /<ShadowFrequencyPanel /);
+  });
+
   it("HOME chrome does not import Shadow replay or capture writers", () => {
     for (const name of ["dashboard.tsx", "home-feed.tsx", "more-panel.tsx", "asset-card.tsx", "marks.tsx"]) {
       const src = read(name);

@@ -5,6 +5,7 @@ import { displayLabValue, LAB_UNAVAILABLE, type LabIntegrity } from "@/lib/watch
 import { XauFeedComparator, type XauFeedComparatorData } from "./xau-feed-comparator";
 import { ShadowAssetRankingPanel } from "./shadow-asset-ranking-panel";
 import { ShadowDiscoveryPanel } from "./shadow-discovery-panel";
+import { ShadowFrequencyPanel } from "./shadow-frequency-panel";
 
 function Row({ label, value }: { label: string; value: string }) {
   return <div className="flex items-baseline justify-between gap-3 py-2 text-sm"><dt className="text-subtle">{label}</dt><dd className="min-w-0 text-right font-medium leading-snug break-words font-mono tabular">{value}</dd></div>;
