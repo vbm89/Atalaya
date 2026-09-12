@@ -59,6 +59,98 @@ describe("native pagination hygiene", () => {
     assert.equal(excludeOpenBars([open], 1900).length, 1);
   });
 
+  it("Binance 1000 raw with one forming bar is not exhausted (999 mapped)", async () => {
+    const step = 900;
+    const newest = 1_000_000;
+    const nowSec = newest + 60;
+    const raw = Array.from({ length: 1000 }, (_, i) => candle(newest - (999 - i) * step));
+    let calls = 0;
+    const fetchPage: NativePageFetcher = async ({ beforeOpenSec, limit }) => {
+      calls += 1;
+      assert.equal(limit, 1000);
+      const candles = beforeOpenSec == null
+        ? raw
+        : Array.from({ length: 1000 }, (_, i) => candle((beforeOpenSec - step) - (999 - i) * step));
+      return { candles, source: "Binance BTCUSDT", instrument: "BTCUSDT", kind: "proxy-usdt-kline" };
+    };
+    const got = await paginateNativeSeries({
+      assetId: "BTCUSD", tf: "15m", beforeOpenSec: null, nowSec, pages: 1, pageSize: 1000, fetchPage,
+    });
+    assert.equal(raw.length, 1000);
+    assert.equal(got.bars.length, 999);
+    assert.equal(got.exhausted, false);
+    assert.equal(calls, 1);
+  });
+
+  it("OKX 300 raw with one forming bar is not exhausted (299 mapped)", async () => {
+    const step = 900;
+    const newest = 2_000_000;
+    const nowSec = newest + 60;
+    const raw = Array.from({ length: 300 }, (_, i) => candle(newest - (299 - i) * step));
+    const fetchPage: NativePageFetcher = async () => ({
+      candles: raw, source: "OKX XAU-USDT-SWAP", instrument: "XAU-USDT-SWAP", kind: "proxy-swap",
+    });
+    const got = await paginateNativeSeries({
+      assetId: "XAUUSD", tf: "15m", beforeOpenSec: null, nowSec, pages: 1, pageSize: 300, fetchPage,
+    });
+    assert.equal(got.bars.length, 299);
+    assert.equal(got.exhausted, false);
+  });
+
+  it("Bitget 200 raw with one forming bar is not exhausted (199 mapped)", async () => {
+    const step = 900;
+    const newest = 3_000_000;
+    const nowSec = newest + 60;
+    const raw = Array.from({ length: 200 }, (_, i) => candle(newest - (199 - i) * step));
+    const fetchPage: NativePageFetcher = async () => ({
+      candles: raw, source: "Bitget NDX100USDT", instrument: "NDX100USDT", kind: "proxy-swap",
+    });
+    const got = await paginateNativeSeries({
+      assetId: "US100", tf: "15m", beforeOpenSec: null, nowSec, pages: 1, pageSize: 200, fetchPage,
+    });
+    assert.equal(got.bars.length, 199);
+    assert.equal(got.exhausted, false);
+  });
+
+  it("a genuinely short raw page marks exhausted (199 raw, limit 200)", async () => {
+    const step = 900;
+    const newest = 4_000_000;
+    const nowSec = newest + 10_000;
+    const raw = Array.from({ length: 199 }, (_, i) => candle(newest - (198 - i) * step));
+    const fetchPage: NativePageFetcher = async () => ({
+      candles: raw, source: "Bitget CLUSDT", instrument: "CLUSDT", kind: "proxy-swap",
+    });
+    const got = await paginateNativeSeries({
+      assetId: "WTI", tf: "15m", beforeOpenSec: null, nowSec, pages: 8, pageSize: 200, fetchPage,
+    });
+    assert.equal(raw.length, 199);
+    assert.equal(got.bars.length, 199);
+    assert.equal(got.exhausted, true);
+    assert.equal(got.pages, 1);
+  });
+
+  it("full raw page continues pagination after dropping the forming bar", async () => {
+    const step = 900;
+    const newest = 5_000_000;
+    const nowSec = newest + 60;
+    let calls = 0;
+    const fetchPage: NativePageFetcher = async ({ beforeOpenSec, limit }) => {
+      calls += 1;
+      const end = beforeOpenSec == null ? newest : beforeOpenSec - step;
+      return {
+        candles: Array.from({ length: limit }, (_, i) => candle(end - (limit - 1 - i) * step)),
+        source: "Binance BTCUSDT", instrument: "BTCUSDT", kind: "proxy-usdt-kline",
+      };
+    };
+    const got = await paginateNativeSeries({
+      assetId: "BTCUSD", tf: "15m", beforeOpenSec: null, nowSec, pages: 2, pageSize: 1000, fetchPage,
+    });
+    assert.equal(calls, 2);
+    assert.equal(got.pages, 2);
+    assert.equal(got.exhausted, false);
+    assert.ok(got.bars.length > 999);
+  });
+
   it("does not fill gaps", () => {
     const a: DiscoveryBar = { assetId: "XAUUSD", tf: "30m", t: 1800, o: 1, h: 2, l: 1, c: 1, v: 1, source: "t" };
     const c: DiscoveryBar = { ...a, t: 1800 + 3 * 1800 };

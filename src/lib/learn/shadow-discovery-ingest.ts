@@ -219,12 +219,13 @@ export async function paginateNativeSeries(args: {
   let pages = 0;
 
   for (let p = 0; p < maxPages; p++) {
-    const limit = args.pageSize ?? pageLimit(venue);
+    let limit = args.pageSize ?? pageLimit(venue);
     let page = await fetchPage({ venue, symbol, tf, limit, beforeOpenSec: before });
     if (!page.candles.length && spec.fallbackVenue && spec.fallbackSymbol && p === 0 && before == null) {
       venue = spec.fallbackVenue;
       symbol = spec.fallbackSymbol;
-      page = await fetchPage({ venue, symbol, tf, limit: pageLimit(venue), beforeOpenSec: before });
+      limit = args.pageSize ?? pageLimit(venue);
+      page = await fetchPage({ venue, symbol, tf, limit, beforeOpenSec: before });
     }
     const mapped = barsFromPage(args.assetId, tf, page, nowSec).filter((b) => b.t >= floor);
     const fresh = mapped.filter((b) => !all.some((x) => x.t === b.t));
@@ -239,7 +240,8 @@ export async function paginateNativeSeries(args: {
     all.push(...fresh);
     const oldestKnown = Math.min(...fresh.map((b) => b.t));
     before = oldestKnown;
-    if (mapped.length < limit || oldestKnown <= floor) {
+    // Short page = raw provider count. Dropping the forming bar must not exhaust the series.
+    if (page.candles.length < limit || oldestKnown <= floor) {
       exhausted = true;
       break;
     }
