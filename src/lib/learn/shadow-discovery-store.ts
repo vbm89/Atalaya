@@ -15,6 +15,15 @@ export interface DiscoveryCursor {
   instrumentKind: DiscoveryInstrumentKind | null;
   exhausted: boolean;
   pages: number;
+  updatedAt?: string | null;
+}
+
+function isoOrNull(v: unknown): string | null {
+  if (v == null) return null;
+  if (typeof v === "string") return v;
+  if (v instanceof Date) return v.toISOString();
+  const t = new Date(String(v)).getTime();
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
 }
 
 export async function persistDiscoveryBars(sql: SqlQuery, bars: readonly DiscoveryBar[]): Promise<number> {
@@ -57,8 +66,8 @@ export async function loadDiscoveryCursors(sql: SqlQuery): Promise<DiscoveryCurs
   const rows = await sql.query<{
     asset_id: string; tf: string; oldest_t: number | null; newest_t: number | null;
     source: string | null; instrument: string | null; instrument_kind: string | null;
-    exhausted: boolean; pages: number;
-  }>(`select asset_id, tf, oldest_t, newest_t, source, instrument, instrument_kind, exhausted, pages from discovery_ingest_cursor`);
+    exhausted: boolean; pages: number; updated_at: string | Date | null;
+  }>(`select asset_id, tf, oldest_t, newest_t, source, instrument, instrument_kind, exhausted, pages, updated_at from discovery_ingest_cursor`);
   return rows.map((r) => ({
     assetId: r.asset_id as AssetId,
     tf: r.tf as DiscoveryTf,
@@ -69,6 +78,7 @@ export async function loadDiscoveryCursors(sql: SqlQuery): Promise<DiscoveryCurs
     instrumentKind: (r.instrument_kind as DiscoveryInstrumentKind | null),
     exhausted: Boolean(r.exhausted),
     pages: Number(r.pages) || 0,
+    updatedAt: isoOrNull(r.updated_at),
   }));
 }
 

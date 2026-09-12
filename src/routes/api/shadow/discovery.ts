@@ -8,6 +8,11 @@ export const Route = createFileRoute("/api/shadow/discovery")({
         const payload = await getShadowDiscovery();
         return Response.json(payload, { headers: { "cache-control": "no-store" } });
       },
+      POST: async () => {
+        const { updateShadowDiscoveryCoverage } = await import("@/lib/learn/shadow-discovery.fn");
+        const payload = await updateShadowDiscoveryCoverage();
+        return Response.json(payload, { headers: { "cache-control": "no-store" } });
+      },
     },
   },
 });

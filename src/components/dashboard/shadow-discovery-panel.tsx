@@ -1,11 +1,26 @@
-import { useQuery } from "@tanstack/react-query";
-import { getShadowDiscovery } from "@/lib/learn/shadow-discovery.fn";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { getShadowDiscovery, updateShadowDiscoveryCoverage } from "@/lib/learn/shadow-discovery.fn";
 import { LAB_UNAVAILABLE } from "@/lib/watch/lab-integrity";
 
+function stamp(iso: string | null | undefined): string {
+  if (!iso) return LAB_UNAVAILABLE;
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return LAB_UNAVAILABLE;
+  return new Date(t).toLocaleString("es-ES");
+}
+
 export function ShadowDiscoveryPanel() {
+  const qc = useQueryClient();
   const q = useQuery({ queryKey: ["shadow-discovery"], queryFn: () => getShadowDiscovery(), staleTime: 60_000, retry: 0 });
+  const update = useMutation({
+    mutationFn: () => updateShadowDiscoveryCoverage(),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["shadow-discovery"] });
+    },
+  });
   const payload = q.data;
   const report = payload && "report" in payload ? payload.report : null;
+  const ingest = update.data && "ok" in update.data && update.data.ok === true ? update.data : null;
   return (
     <div className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated shadow-[var(--shadow-border)]" data-shadow-discovery>
       <div className="border-b border-border px-4 py-3">
@@ -43,9 +58,40 @@ export function ShadowDiscoveryPanel() {
               );
             })()}
           </div>
-          <div className="px-4 py-3 text-[11px] text-subtle">
-            Ingestado ahora: {"ingested" in payload! ? String(payload.ingested) : LAB_UNAVAILABLE}
-            {" · "}archivo {payload && "fromStore" in payload && payload.fromStore ? "persistido" : "feed / vacío"}
+          <div className="px-4 py-3 space-y-2">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-medium">Cobertura actual</h4>
+                <p className="mt-1 text-[11px] text-subtle">Solo lectura de Neon. Abrir el laboratorio no descarga ni escribe.</p>
+              </div>
+              <button
+                type="button"
+                data-discovery-update-coverage
+                className="shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium shadow-[var(--shadow-border)] disabled:opacity-50"
+                disabled={update.isPending}
+                onClick={() => update.mutate()}
+              >
+                🔄 Actualizar cobertura
+              </button>
+            </div>
+            <p className="text-[11px] text-subtle">
+              Última actualización: {stamp(ingest && "lastUpdatedAt" in ingest ? ingest.lastUpdatedAt : payload && "lastUpdatedAt" in payload ? payload.lastUpdatedAt : null)}
+            </p>
+            {update.isPending ? <p className="text-[11px] font-medium text-fg">Actualización en curso…</p> : null}
+            {update.isError || (update.data && update.data.ok === false) ? (
+              <p className="text-[11px] text-subtle">Actualización no disponible. No se inventan datos.</p>
+            ) : null}
+            {ingest ? (
+              <div className="text-[11px] text-subtle">
+                <p>TF procesado: {ingest.backfillTf ?? LAB_UNAVAILABLE}</p>
+                <p className="mt-0.5">
+                  activos procesados: {ingest.assetsProcessed == null ? LAB_UNAVAILABLE : String(ingest.assetsProcessed)}
+                </p>
+                <p className="mt-0.5">
+                  {ingest.ingested > 0 ? `nuevas velas añadidas: ${ingest.ingested}` : "Sin datos nuevos"}
+                </p>
+              </div>
+            ) : null}
           </div>
           <div className="px-4 py-3">
             <h4 className="text-sm font-medium">Cobertura</h4>

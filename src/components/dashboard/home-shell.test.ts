@@ -50,6 +50,10 @@ describe("HOME shell contract", () => {
     assert.match(panel, /ASSET_DEEP/);
     assert.match(panel, /descriptivo, no validación/);
     assert.match(panel, /EXPLORE \/ INSUFFICIENT/);
+    assert.match(panel, /Cobertura actual/);
+    assert.match(panel, /Actualizar cobertura/);
+    assert.match(panel, /getShadowDiscovery/);
+    assert.match(panel, /updateShadowDiscoveryCoverage/);
     assert.doesNotMatch(panel, /win-rate|expectancy|TEST de K1|k1Seal/i);
   });
 
