@@ -36,5 +36,9 @@ describe("K1 failed breakout / trap", () => {
     assert.equal(report.costsKnown, false);
     assert.equal(report.path.reachedTp1, 1);
     assert.equal(report.path.ambiguous, 0);
+    assert.equal(report.fillModels.touchDecided, 1);
+    assert.equal(report.fillModels.closeThroughDecided, 0);
+    assert.equal(report.fillModels.touchExpectancyR, 2);
+    assert.equal(report.fillModels.closeThroughExpectancyR, null);
   });
 });
