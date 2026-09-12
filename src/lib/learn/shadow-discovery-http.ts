@@ -1,8 +1,35 @@
+import { timingSafeEqual } from "node:crypto";
 import { authorizeWatchRequest, watchSecret } from "../watch/secret";
+import type { DiscoveryExploreOnceResult } from "./shadow-discovery-explore-once";
 
 const NO_STORE = { "cache-control": "no-store" } as const;
+const MIN_TOKEN_LEN = 16;
 
 export type DiscoveryWriteRunner = () => Promise<Record<string, unknown>>;
+export type DiscoveryExploreRunner = () => Promise<DiscoveryExploreOnceResult>;
+
+function equal(a: string, b: string): boolean {
+  const ba = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ba.length !== bb.length) {
+    timingSafeEqual(ba, ba);
+    return false;
+  }
+  return timingSafeEqual(ba, bb);
+}
+
+function bearerToken(request: Request): string {
+  const header = request.headers.get("authorization") ?? "";
+  return header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+}
+
+/** Server-only. Never log, never return, never send to the client. */
+export function discoveryExploreToken(): string | null {
+  const raw = typeof process === "undefined" ? undefined : process.env.DISCOVERY_EXPLORE_TOKEN;
+  const value = raw?.trim() ?? "";
+  if (value.length < MIN_TOKEN_LEN) return null;
+  return value;
+}
 
 async function defaultDiscoveryIngest(): Promise<Record<string, unknown>> {
   const { getSql } = await import("@/lib/db");
@@ -12,7 +39,33 @@ async function defaultDiscoveryIngest(): Promise<Record<string, unknown>> {
   return result as unknown as Record<string, unknown>;
 }
 
+async function defaultDiscoveryExplore(): Promise<DiscoveryExploreOnceResult> {
+  const { getSql } = await import("@/lib/db");
+  const { exploreDiscoveryOnce } = await import("./shadow-discovery-explore-once");
+  const sql = await getSql();
+  return exploreDiscoveryOnce(sql);
+}
+
 export function authorizeDiscoveryWrite(request: Request) {
+  return authorizeWatchRequest(request);
+}
+
+/**
+ * Temporary one-shot explore auth.
+ * Accepts DISCOVERY_EXPLORE_TOKEN (this route only) or WATCH_SECRET (unchanged).
+ * DISCOVERY_EXPLORE_TOKEN must not be used by ingest / other endpoints.
+ */
+export function authorizeDiscoveryExplore(request: Request):
+  | { ok: true }
+  | { ok: false; status: number; error: string } {
+  const explore = discoveryExploreToken();
+  const provided = bearerToken(request);
+  if (explore && provided && equal(provided, explore)) return { ok: true };
+  if (explore) {
+    const watch = authorizeWatchRequest(request);
+    if (watch.ok) return watch;
+    return { ok: false, status: 401, error: "No autorizado." };
+  }
   return authorizeWatchRequest(request);
 }
 
@@ -73,16 +126,14 @@ export async function handleDiscoveryUiWrite(
 /** Explicit one-shot explore. Never used by GET/lab/ingest/UI coverage button. */
 export async function handleDiscoveryExplore(
   request: Request,
+  run: DiscoveryExploreRunner = defaultDiscoveryExplore,
 ): Promise<Response> {
-  const auth = authorizeDiscoveryWrite(request);
+  const auth = authorizeDiscoveryExplore(request);
   if (!auth.ok) {
     return Response.json({ error: auth.error }, { status: auth.status, headers: NO_STORE });
   }
   try {
-    const { getSql } = await import("@/lib/db");
-    const { exploreDiscoveryOnce } = await import("./shadow-discovery-explore-once");
-    const sql = await getSql();
-    const result = await exploreDiscoveryOnce(sql);
+    const result = await run();
     const payload = {
       ok: true as const,
       journalId: result.journalId,
@@ -118,8 +169,9 @@ export async function handleDiscoveryExplore(
       );
     }
     const aborted = e instanceof Error && e.name === "DiscoveryExploreAbort";
+    const message = e instanceof Error ? e.message : "discovery explore unavailable";
     return Response.json(
-      { ok: false as const, error: e instanceof Error ? e.message : "discovery explore unavailable" },
+      { ok: false as const, error: message.startsWith("ALREADY_EXECUTED") ? "ALREADY_EXECUTED" : message },
       { status: aborted ? 409 : 500, headers: NO_STORE },
     );
   }

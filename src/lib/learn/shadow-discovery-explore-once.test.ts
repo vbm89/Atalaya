@@ -97,7 +97,11 @@ describe("discovery one-shot explore", () => {
     assert.doesNotMatch(panel, /exploreDiscoveryOnce|discovery-explore|handleDiscoveryExplore/);
     assert.match(http, /defaultDiscoveryIngest/);
     assert.match(http, /ALREADY_EXECUTED/);
-    assert.doesNotMatch(http.slice(0, http.indexOf("handleDiscoveryExplore")), /exploreDiscoveryOnce/);
+    const writeHttp = http.slice(
+      http.indexOf("export async function handleDiscoveryWrite"),
+      http.indexOf("export async function handleDiscoveryExplore"),
+    );
+    assert.doesNotMatch(writeHttp, /exploreDiscoveryOnce/);
   });
 
   it("one-shot module uses detectPatterns true and never outcome/ingest", () => {
@@ -115,6 +119,13 @@ describe("discovery one-shot explore", () => {
     assert.match(route, /Method not allowed/);
     assert.match(route, /handleDiscoveryExplore/);
     assert.doesNotMatch(route, /ingestDiscoveryCoverage/);
+    const http = src("shadow-discovery-http.ts");
+    assert.match(http, /authorizeDiscoveryExplore/);
+    assert.match(http, /DISCOVERY_EXPLORE_TOKEN/);
+    assert.match(
+      http,
+      /export function authorizeDiscoveryWrite\(request: Request\) \{\s*return authorizeWatchRequest\(request\);\s*\}/,
+    );
   });
 
   it("abort if outcome or ranking leaks", () => {

@@ -3,8 +3,10 @@ import { readdirSync, readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  authorizeDiscoveryExplore,
   authorizeDiscoveryWrite,
   discoveryUiOrigin,
+  handleDiscoveryExplore,
   handleDiscoveryUiWrite,
   handleDiscoveryWrite,
 } from "./shadow-discovery-http.ts";
@@ -207,5 +209,204 @@ describe("discovery UI origin + HTTP write auth", () => {
     assert.match(lab, /return readDiscoveryLab\(sql, nowSec\)/);
     assert.match(panel, /updateShadowDiscoveryCoverage/);
     assert.match(fn, /handleDiscoveryUiWrite/);
+  });
+});
+
+const EXPLORE_TOKEN = "discovery-explore-token-16";
+
+function exploreReq(headers?: Record<string, string>): Request {
+  return new Request("http://local/api/shadow/discovery-explore", {
+    method: "POST",
+    headers,
+  });
+}
+
+function withExploreEnv(opts: { explore?: string | null; watch?: string | null }, fn: () => Promise<void>): Promise<void> {
+  const prevE = process.env.DISCOVERY_EXPLORE_TOKEN;
+  const prevW = process.env.WATCH_SECRET;
+  if (opts.explore === null) delete process.env.DISCOVERY_EXPLORE_TOKEN;
+  else if (opts.explore !== undefined) process.env.DISCOVERY_EXPLORE_TOKEN = opts.explore;
+  if (opts.watch === null) delete process.env.WATCH_SECRET;
+  else if (opts.watch !== undefined) process.env.WATCH_SECRET = opts.watch;
+  return fn().finally(() => {
+    if (prevE === undefined) delete process.env.DISCOVERY_EXPLORE_TOKEN;
+    else process.env.DISCOVERY_EXPLORE_TOKEN = prevE;
+    if (prevW === undefined) delete process.env.WATCH_SECRET;
+    else process.env.WATCH_SECRET = prevW;
+  });
+}
+
+function stubExploreResult() {
+  return {
+    journalId: 7,
+    persisted: true,
+    nCommon4: [],
+    catalog: {
+      cells: [],
+      sequenceCells: [],
+      sequences: [],
+      catalogN: 0,
+      warmupExcludedN: 0,
+      warmupTaggedN: 0,
+      outsideWindowN: 0,
+      k1TestExcludedN: 0,
+      detectedN: 0,
+      report: {
+        outcomesSampled: 0,
+        rankingByExpectancy: false,
+        eventCounts: [],
+        sequenceCounts: [],
+        journal: {
+          universe: "COMMON_4",
+          outcomeConsulted: false,
+          candidates: [],
+          notes: "FIRST_ONESHOT_EXPLORE stub",
+        },
+      },
+    },
+  } as unknown as import("./shadow-discovery-explore-once.ts").DiscoveryExploreOnceResult;
+}
+
+describe("discovery-explore temporary token", () => {
+  it("A. POST with DISCOVERY_EXPLORE_TOKEN passes auth and does not run live detectors", async () => {
+    await withExploreEnv({ explore: EXPLORE_TOKEN, watch: null }, async () => {
+      let ran = 0;
+      const res = await handleDiscoveryExplore(
+        exploreReq({ authorization: `Bearer ${EXPLORE_TOKEN}` }),
+        async () => {
+          ran += 1;
+          return stubExploreResult();
+        },
+      );
+      assert.equal(authorizeDiscoveryExplore(exploreReq({ authorization: `Bearer ${EXPLORE_TOKEN}` })).ok, true);
+      assert.equal(res.status, 200);
+      assert.equal(ran, 1);
+    });
+  });
+
+  it("B. POST without token is 401", async () => {
+    await withExploreEnv({ explore: EXPLORE_TOKEN, watch: null }, async () => {
+      let ran = 0;
+      const auth = authorizeDiscoveryExplore(exploreReq());
+      assert.equal(auth.ok, false);
+      if (!auth.ok) assert.equal(auth.status, 401);
+      const res = await handleDiscoveryExplore(exploreReq(), async () => {
+        ran += 1;
+        return stubExploreResult();
+      });
+      assert.equal(res.status, 401);
+      assert.equal(ran, 0);
+    });
+  });
+
+  it("C/I. POST with wrong token is 401 and detectors do not run", async () => {
+    await withExploreEnv({ explore: EXPLORE_TOKEN, watch: null }, async () => {
+      let ran = 0;
+      const auth = authorizeDiscoveryExplore(exploreReq({ authorization: "Bearer wrong-explore-tokenxx" }));
+      assert.equal(auth.ok, false);
+      if (!auth.ok) assert.equal(auth.status, 401);
+      const res = await handleDiscoveryExplore(
+        exploreReq({ authorization: "Bearer wrong-explore-tokenxx" }),
+        async () => {
+          ran += 1;
+          return stubExploreResult();
+        },
+      );
+      assert.equal(res.status, 401);
+      assert.equal(ran, 0);
+    });
+  });
+
+  it("D. DISCOVERY_EXPLORE_TOKEN does not authorize ingest", async () => {
+    await withExploreEnv({ explore: EXPLORE_TOKEN, watch: SECRET }, async () => {
+      let ingest = 0;
+      const res = await handleDiscoveryWrite(
+        req({ authorization: `Bearer ${EXPLORE_TOKEN}` }),
+        async () => {
+          ingest += 1;
+          return { ingestRan: true };
+        },
+      );
+      assert.equal(res.status, 401);
+      assert.equal(ingest, 0);
+      assert.equal(authorizeDiscoveryWrite(req({ authorization: `Bearer ${EXPLORE_TOKEN}` })).ok, false);
+    });
+  });
+
+  it("E. WATCH_SECRET still authorizes ingest and explore", async () => {
+    await withExploreEnv({ explore: EXPLORE_TOKEN, watch: SECRET }, async () => {
+      let ingest = 0;
+      let explore = 0;
+      const write = await handleDiscoveryWrite(
+        req({ authorization: `Bearer ${SECRET}` }),
+        async () => {
+          ingest += 1;
+          return { ingestRan: true };
+        },
+      );
+      const exp = await handleDiscoveryExplore(
+        exploreReq({ authorization: `Bearer ${SECRET}` }),
+        async () => {
+          explore += 1;
+          return stubExploreResult();
+        },
+      );
+      assert.equal(write.status, 200);
+      assert.equal(ingest, 1);
+      assert.equal(exp.status, 200);
+      assert.equal(explore, 1);
+    });
+  });
+
+  it("F. FIRST_ONESHOT lock remains in explore-once (not removed)", () => {
+    const once = src("shadow-discovery-explore-once.ts");
+    const http = src("shadow-discovery-http.ts");
+    assert.match(once, /pg_advisory_xact_lock/);
+    assert.match(once, /FIRST_ONESHOT_EXPLORE/);
+    assert.match(http, /authorizeDiscoveryExplore/);
+    assert.match(http, /ALREADY_EXECUTED/);
+    const writeHttp = http.slice(
+      http.indexOf("export async function handleDiscoveryWrite"),
+      http.indexOf("export async function handleDiscoveryExplore"),
+    );
+    assert.doesNotMatch(writeHttp, /exploreDiscoveryOnce/);
+  });
+
+  it("G. GET/lab stay detectPatterns=false; token is server-only", () => {
+    const lab = src("shadow-discovery.ts");
+    const fn = src("shadow-discovery.fn.ts");
+    const panel = readFileSync(new URL("../../components/dashboard/shadow-discovery-panel.tsx", import.meta.url), "utf8");
+    const route = readFileSync(new URL("../../routes/api/shadow/discovery.ts", import.meta.url), "utf8");
+    const exploreRoute = readFileSync(new URL("../../routes/api/shadow/discovery-explore.ts", import.meta.url), "utf8");
+    assert.match(lab, /detectPatterns:\s*false/);
+    assert.doesNotMatch(lab, /detectPatterns:\s*true/);
+    assert.doesNotMatch(fn, /DISCOVERY_EXPLORE_TOKEN|authorizeDiscoveryExplore|handleDiscoveryExplore/);
+    assert.doesNotMatch(panel, /DISCOVERY_EXPLORE_TOKEN|discovery-explore/);
+    assert.doesNotMatch(route, /DISCOVERY_EXPLORE_TOKEN|authorizeDiscoveryExplore/);
+    assert.match(exploreRoute, /handleDiscoveryExplore/);
+    assert.doesNotMatch(src("shadow-discovery-http.ts"), /VITE_DISCOVERY_EXPLORE_TOKEN/);
+  });
+
+  it("H. token never appears in response or journal payload", async () => {
+    await withExploreEnv({ explore: EXPLORE_TOKEN, watch: null }, async () => {
+      const res = await handleDiscoveryExplore(
+        exploreReq({ authorization: `Bearer ${EXPLORE_TOKEN}` }),
+        async () => stubExploreResult(),
+      );
+      const text = await res.text();
+      assert.equal(res.status, 200);
+      assert.equal(text.includes(EXPLORE_TOKEN), false);
+      assert.doesNotMatch(text, /DISCOVERY_EXPLORE_TOKEN=/);
+      const denied = await handleDiscoveryExplore(exploreReq({ authorization: `Bearer ${EXPLORE_TOKEN}-nope` }), async () => stubExploreResult());
+      const deniedText = await denied.text();
+      assert.equal(deniedText.includes(EXPLORE_TOKEN), false);
+      assert.equal(deniedText.includes(`${EXPLORE_TOKEN}-nope`), false);
+    });
+  });
+
+  it("J. integration auth tests never call live exploreDiscoveryOnce / Neon", () => {
+    const testSrc = readFileSync(new URL("./shadow-discovery-http.test.ts", import.meta.url), "utf8");
+    assert.match(testSrc, /stubExploreResult/);
+    assert.doesNotMatch(testSrc, /https:\/\/atalaya-dev\.vercel\.app\/api\/shadow\/discovery-explore/);
   });
 });
