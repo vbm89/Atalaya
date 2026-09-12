@@ -4,7 +4,7 @@ import { getShadowRadar } from "@/lib/learn/shadow-radar.fn";
 import { displayLabValue, LAB_UNAVAILABLE, type LabIntegrity } from "@/lib/watch/lab-integrity";
 import { XauFeedComparator, type XauFeedComparatorData } from "./xau-feed-comparator";
 import { ShadowAssetRankingPanel } from "./shadow-asset-ranking-panel";
-import { ShadowFrequencyPanel } from "./shadow-frequency-panel";
+import { ShadowDiscoveryPanel } from "./shadow-discovery-panel";
 
 function Row({ label, value }: { label: string; value: string }) {
   return <div className="flex items-baseline justify-between gap-3 py-2 text-sm"><dt className="text-subtle">{label}</dt><dd className="min-w-0 text-right font-medium leading-snug break-words font-mono tabular">{value}</dd></div>;
@@ -46,6 +46,8 @@ export function LabIntegrityPanel() {
           {latestReplay?<p className="border-t border-border px-4 py-3 text-[11px] leading-relaxed text-subtle">Último replay: {new Date(latestReplay.generatedAt).toLocaleString("es-ES")}. El laboratorio mantiene INSUFFICIENT hasta alcanzar el tamaño mínimo de evidencia.</p>:null}
         </>}
       </div>
+
+      <ShadowDiscoveryPanel />
 
       <div className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated shadow-[var(--shadow-border)]" data-shadow-frequency>
         <div className="border-b border-border px-4 py-3">
