@@ -85,8 +85,7 @@ function atrAt(bars: readonly K1Bar[], i: number): number | null {
   return Number.isFinite(atr) && atr > 0 ? atr : null;
 }
 
-function firstTouchForModel(candidate: K1Candidate, bars: readonly K1Bar[], model: "touch" | "close_through"):
-  "tp1" | "sl" | null {
+function firstTouchForModel(candidate: K1Candidate, bars: readonly K1Bar[], model: "touch" | "close_through"): "tp1" | "sl" | null {
   for (const bar of bars) {
     if (bar.t < candidate.decisionSlot) continue;
     const sl = model === "touch"
@@ -126,11 +125,12 @@ function outcomeFor(candidate: K1Candidate, bars: readonly K1Bar[]): K1Outcome {
       break;
     }
     if (tp1 && firstTouch == null) firstTouch = "tp1";
-    if (tp1 && firstTouch === "tp1") break;
+    // Do not stop after TP1: the path may later hit SL. First-touch and terminal path are separate.
   }
 
   const grossR = firstTouch === "tp1" ? TP1_R : firstTouch === "sl" ? -1 : null;
-  return { candidate, firstTouch, terminal: firstTouch ?? "expired", grossR, reachedTp1, sameBarAmbiguous, tp1ThenSl };
+  const terminal = firstTouch == null ? "expired" : tp1ThenSl ? "sl" : firstTouch;
+  return { candidate, firstTouch, terminal, grossR, reachedTp1, sameBarAmbiguous, tp1ThenSl };
 }
 
 export function scanK1FailedBreakout(assetBars: readonly K1Bar[]): K1Candidate[] {
