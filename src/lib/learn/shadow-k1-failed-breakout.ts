@@ -82,7 +82,6 @@ export const K1_PARAMETERS = Object.freeze({
   maxRiskAtr: MAX_RISK_ATR, tp1R: TP1_R, tp2R: null, decision: "close_of_first_failure_reclaim",
   outcomeStarts: "next_closed_bar", oneCandidatePerBreakout: true, volumeFilter: false, sessionFilter: false,
   newsFilter: false, assetFilter: "all", touchAndCloseThrough: "both_research_scenarios", unknownCostsBlockPromotion: true,
-  newsFilter: false,
 });
 
 function trueRange(bar: K1Bar, previous: K1Bar | undefined): number {
@@ -183,13 +182,10 @@ export function scanK1FailedBreakout(assetBars: readonly K1Bar[]): K1Candidate[]
         const entry = failure.c;
         const sl = failureExtreme + STOP_BUFFER_ATR * atr;
         const risk = sl - entry;
-        if (risk / atr < MIN_RISK_ATR || risk / atr > MAX_RISK_ATR) {
-          consumedThrough = j;
-          break;
-        }
+        consumedThrough = j;
+        if (risk / atr < MIN_RISK_ATR || risk / atr > MAX_RISK_ATR) break;
         out.push({ assetId: breakout.assetId, direction: "sell", breakoutSlot: breakout.t + BAR_SEC, decisionSlot: failure.t + BAR_SEC,
           entry, sl, tp1: entry - TP1_R * risk, risk, atr, rangeHigh, rangeLow, breakoutExtreme: breakout.h, failureExtreme: failure.h });
-        consumedThrough = j;
         break;
       }
       if (down && failure.h >= rangeLow && failure.c > rangeLow) {
@@ -197,13 +193,10 @@ export function scanK1FailedBreakout(assetBars: readonly K1Bar[]): K1Candidate[]
         const entry = failure.c;
         const sl = failureExtreme - STOP_BUFFER_ATR * atr;
         const risk = entry - sl;
-        if (risk / atr < MIN_RISK_ATR || risk / atr > MAX_RISK_ATR) {
-          consumedThrough = j;
-          break;
-        }
+        consumedThrough = j;
+        if (risk / atr < MIN_RISK_ATR || risk / atr > MAX_RISK_ATR) break;
         out.push({ assetId: breakout.assetId, direction: "buy", breakoutSlot: breakout.t + BAR_SEC, decisionSlot: failure.t + BAR_SEC,
           entry, sl, tp1: entry + TP1_R * risk, risk, atr, rangeHigh, rangeLow, breakoutExtreme: breakout.l, failureExtreme: failure.l });
-        consumedThrough = j;
         break;
       }
     }
