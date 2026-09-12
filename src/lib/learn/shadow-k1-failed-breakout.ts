@@ -101,6 +101,10 @@ function firstTouchForModel(candidate: K1Candidate, bars: readonly K1Bar[], mode
   return null;
 }
 
+function grossRForTouch(firstTouch: "tp1" | "sl" | null): number | null {
+  return firstTouch === "tp1" ? TP1_R : firstTouch === "sl" ? -1 : null;
+}
+
 function outcomeFor(candidate: K1Candidate, bars: readonly K1Bar[]): K1Outcome {
   let firstTouch: K1Outcome["firstTouch"] = null;
   let reachedTp1 = false;
@@ -112,23 +116,27 @@ function outcomeFor(candidate: K1Candidate, bars: readonly K1Bar[]): K1Outcome {
     if (bar.t < candidate.decisionSlot) continue;
     const sl = candidate.direction === "buy" ? bar.l <= candidate.sl : bar.h >= candidate.sl;
     const tp1 = candidate.direction === "buy" ? bar.h >= candidate.tp1 : bar.l <= candidate.tp1;
-    if (tp1) { reachedTp1 = true; tp1Seen = true; }
     if (sl && tp1) {
       sameBarAmbiguous = true;
-      if (tp1Seen) tp1ThenSl = true;
+      // Intrabar order is unknowable here; conservatively terminal SL, but do not
+      // claim a sequential TP1 -> SL path from an ambiguous candle.
       if (firstTouch == null) firstTouch = "sl";
       break;
+    }
+    if (tp1) {
+      reachedTp1 = true;
+      tp1Seen = true;
+      if (firstTouch == null) firstTouch = "tp1";
+      continue;
     }
     if (sl) {
       if (tp1Seen) tp1ThenSl = true;
       if (firstTouch == null) firstTouch = "sl";
       break;
     }
-    if (tp1 && firstTouch == null) firstTouch = "tp1";
-    // Do not stop after TP1: the path may later hit SL. First-touch and terminal path are separate.
   }
 
-  const grossR = firstTouch === "tp1" ? TP1_R : firstTouch === "sl" ? -1 : null;
+  const grossR = grossRForTouch(firstTouch);
   const terminal = firstTouch == null ? "expired" : tp1ThenSl ? "sl" : firstTouch;
   return { candidate, firstTouch, terminal, grossR, reachedTp1, sameBarAmbiguous, tp1ThenSl };
 }
@@ -195,8 +203,14 @@ export function buildK1Report(byAsset: Readonly<Record<string, readonly K1Bar[]>
   const cut = slots.length ? slots[Math.max(0, Math.floor(slots.length * 0.8) - 1)]! : 0;
   const train = outcomes.filter((o) => o.candidate.decisionSlot <= cut);
   const test = outcomes.filter((o) => o.candidate.decisionSlot > cut);
-  const touch = outcomes.filter((o) => firstTouchForModel(o.candidate, byAsset[o.candidate.assetId] ?? [], "touch") != null);
-  const closeThrough = outcomes.filter((o) => firstTouchForModel(o.candidate, byAsset[o.candidate.assetId] ?? [], "close_through") != null);
+
+  const fillOutcomes = (model: "touch" | "close_through") => outcomes.map((o) => ({
+    ...o,
+    firstTouch: firstTouchForModel(o.candidate, byAsset[o.candidate.assetId] ?? [], model),
+    grossR: grossRForTouch(firstTouchForModel(o.candidate, byAsset[o.candidate.assetId] ?? [], model)),
+  }));
+  const touch = fillOutcomes("touch");
+  const closeThrough = fillOutcomes("close_through");
 
   for (const outcome of outcomes) {
     shadowCostR(outcome.grossR, { spreadPrice: null, commissionPrice: null, riskPrice: outcome.candidate.risk });
@@ -209,7 +223,8 @@ export function buildK1Report(byAsset: Readonly<Record<string, readonly K1Bar[]>
     expired: outcomes.filter((o) => o.firstTouch == null).length, successPct: successPct(outcomes), meanGrossR: expectancy(outcomes),
     train: summarize(train), test: summarize(test), costsKnown: false, netExpectancyR: null,
     fillModels: {
-      touchDecided: touch.length, closeThroughDecided: closeThrough.length,
+      touchDecided: touch.filter((o) => o.grossR != null).length,
+      closeThroughDecided: closeThrough.filter((o) => o.grossR != null).length,
       touchExpectancyR: expectancy(touch), closeThroughExpectancyR: expectancy(closeThrough),
     },
     path: {
