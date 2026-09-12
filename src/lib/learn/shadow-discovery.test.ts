@@ -221,4 +221,13 @@ describe("coverage and explore report", () => {
     assert.deepEqual(kinds, sorted);
     assert.equal(report.rankingByExpectancy, false);
   });
+
+  it("htfContextBars requires windows; lab stays detectPatterns false", () => {
+    const uni = readFileSync(new URL("./shadow-discovery-universe.ts", import.meta.url), "utf8");
+    assert.match(uni, /export function htfContextBars\(args: \{/);
+    assert.match(uni, /htfWindow:/);
+    assert.match(uni, /return mtfLegsInValidWindows\(args\)\.htf/);
+    const lab = readFileSync(new URL("./shadow-discovery.ts", import.meta.url), "utf8");
+    assert.match(lab, /detectPatterns:\s*false/);
+  });
 });

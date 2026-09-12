@@ -11,7 +11,10 @@ import {
   DISCOVERY_ARCHIVE_TFS,
   DISCOVERY_ASSETS,
   DISCOVERY_COMMON_MIN_DAYS,
+  DISCOVERY_RECENT_TFS,
   type DiscoveryBar,
+  type DiscoveryEvent,
+  type DiscoveryMtfAvailability,
   type DiscoveryTf,
   type DiscoveryUniverseKind,
 } from "./shadow-discovery-types";
@@ -162,6 +165,7 @@ export function assetDeepSlices(bars: readonly DiscoveryBar[], common: Common4Wi
 
 /**
  * MTF: native bars only, causal HTF close, and every leg inside its own valid window.
+ * Sole permitted path for HTF/LTF relations that can become a metric or sequence.
  */
 export function mtfLegsInValidWindows(args: {
   htf: readonly DiscoveryBar[];
@@ -177,6 +181,67 @@ export function mtfLegsInValidWindows(args: {
   if (!decisionInWindow) return { htf: [], ltf: [] };
   return { htf: htfClosedAtDecision(htfIn, args.decisionClose), ltf };
 }
+
+/**
+ * HTF context for a decision. Requires both windows — never window-blind.
+ * Delegates to mtfLegsInValidWindows; cannot return ASSET_DEEP as COMMON_4 context.
+ */
+export function htfContextBars(args: {
+  htf: readonly DiscoveryBar[];
+  ltf: readonly DiscoveryBar[];
+  htfWindow: TimeWindow | Common4Window;
+  ltfWindow: TimeWindow | Common4Window;
+  decisionClose: number;
+}): DiscoveryBar[] {
+  return mtfLegsInValidWindows(args).htf;
+}
+
+/** Prefix used to detect `event` includes any bar before COMMON_4.fromT. */
+export function eventUsedBarsBeforeCommon(
+  series: readonly DiscoveryBar[],
+  event: DiscoveryEvent,
+  common: Common4Window,
+): boolean {
+  if (!common.available || common.fromT == null || common.toT == null) return false;
+  if (event.openT < common.fromT || event.openT > common.toT) return false;
+  const idx = typeof event.extra.index === "number"
+    ? event.extra.index
+    : series.findIndex((b) => b.t === event.openT && b.assetId === event.assetId && b.tf === event.tf);
+  if (idx < 0) return false;
+  return series.slice(0, idx + 1).some((b) => b.t < common.fromT!);
+}
+
+export function mtfPairAvailability(
+  from: DiscoveryTf,
+  to: DiscoveryTf,
+  coverage: ReadonlyArray<{ tf: DiscoveryTf; bars: number }>,
+  commons: readonly Common4Window[],
+): DiscoveryMtfAvailability {
+  const aHas = coverage.some((r) => r.tf === from && r.bars > 0);
+  const bHas = coverage.some((r) => r.tf === to && r.bars > 0);
+  const recent = (DISCOVERY_RECENT_TFS as readonly DiscoveryTf[]).includes(from)
+    || (DISCOVERY_RECENT_TFS as readonly DiscoveryTf[]).includes(to);
+  if (!aHas || !bHas) {
+    return { from, to, historical: false, recentOnly: false, reason: `sin cinta nativa ${from}→${to}` };
+  }
+  if (recent) {
+    return { from, to, historical: false, recentOnly: true, reason: "1m/5m solo reciente; no MTF histórico" };
+  }
+  const wf = commons.find((c) => c.tf === from);
+  const wt = commons.find((c) => c.tf === to);
+  if (!wf?.available || !wt?.available) {
+    return { from, to, historical: false, recentOnly: false, reason: `MTF ${from}→${to} exige COMMON_4 en ambos TF` };
+  }
+  return {
+    from, to, historical: true, recentOnly: false,
+    reason: "nativo; join causal solo vía mtfLegsInValidWindows",
+  };
+}
+
+export const MTF_ARCHIVE_PAIRS: readonly [DiscoveryTf, DiscoveryTf][] = [
+  ["4h", "1h"], ["1h", "30m"], ["30m", "15m"], ["4h", "15m"],
+];
+
 
 export function spansFromCoverage(
   rows: ReadonlyArray<{

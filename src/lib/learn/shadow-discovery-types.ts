@@ -116,6 +116,21 @@ export interface DiscoveryEvent {
   level: number | null;
   atr: number | null;
   extra: Record<string, number | string | boolean | null>;
+  /**
+   * True when detection of a COMMON_4 event used bars with t < COMMON_4.fromT.
+   * Does not invalidate the event. Not lookahead.
+   */
+  warmupOutsideCommon: boolean;
+}
+
+export interface DiscoveryMtfAvailability {
+  from: DiscoveryTf;
+  to: DiscoveryTf;
+  /** True only when both TFs have a COMMON_4 window and native tape. Never 1m/5m. */
+  historical: boolean;
+  /** 1m/5m (or mixed with them) may exist as recent tape only. */
+  recentOnly: boolean;
+  reason: string;
 }
 
 export type DiscoverySequenceFamily =

@@ -1,6 +1,6 @@
 import type { AssetId } from "../trading/types";
 import { K1_REGISTERED_AT } from "./shadow-k1-failed-breakout";
-import { closedBarsThrough, htfClosedAtDecision } from "./shadow-discovery-clock";
+import { closedBarsThrough } from "./shadow-discovery-clock";
 import {
   coverageQuality,
   detectGaps,
@@ -12,12 +12,15 @@ import {
   spanDays,
 } from "./shadow-discovery-bars";
 import { detectEvents } from "./shadow-discovery-events";
-import { detectSequences } from "./shadow-discovery-sequences";
+import { detectSequences, detectHtfContextSequences } from "./shadow-discovery-sequences";
 import { outcomeAfterEvent } from "./shadow-discovery-outcome";
 import {
   assetDeepSlices,
   clipBarsToCommon4,
   common4Window,
+  eventUsedBarsBeforeCommon,
+  MTF_ARCHIVE_PAIRS,
+  mtfPairAvailability,
   spansFromCoverage,
   type AssetDeepSlice,
   type Common4Window,
@@ -31,6 +34,7 @@ import {
   type DiscoveryEvent,
   type DiscoveryEventKind,
   type DiscoveryJournalEntry,
+  type DiscoveryMtfAvailability,
   type DiscoverySequence,
   type DiscoveryTf,
 } from "./shadow-discovery-types";
@@ -50,7 +54,7 @@ export interface DiscoveryExploreReport {
   coverage: DiscoveryCoverageRow[];
   eventCounts: DiscoveryEventCount[];
   sequenceCounts: { family: string; n: number }[];
-  mtfAvailable: { from: DiscoveryTf; to: DiscoveryTf; ok: boolean; reason: string }[];
+  mtfAvailable: DiscoveryMtfAvailability[];
   journal: DiscoveryJournalEntry;
   /** Outcomes are optional and NEVER used to rank. */
   outcomesSampled: number;
@@ -120,25 +124,13 @@ export function buildCoverage(
 function mtfMatrix(
   coverage: DiscoveryCoverageRow[],
   commons: Common4Window[],
-): DiscoveryExploreReport["mtfAvailable"] {
+): DiscoveryMtfAvailability[] {
   const pairs: [DiscoveryTf, DiscoveryTf][] = [
-    ["4h", "1h"], ["1h", "30m"], ["30m", "15m"], ["4h", "15m"], ["15m", "5m"], ["5m", "1m"],
+    ...MTF_ARCHIVE_PAIRS,
+    ["15m", "5m"],
+    ["5m", "1m"],
   ];
-  return pairs.map(([from, to]) => {
-    const a = coverage.filter((r) => r.tf === from && r.bars > 0);
-    const b = coverage.filter((r) => r.tf === to && r.bars > 0);
-    if (!a.length || !b.length) {
-      return { from, to, ok: false, reason: `sin cinta nativa ${from}→${to}` };
-    }
-    const recent = to === "1m" || to === "5m" || from === "1m" || from === "5m";
-    if (recent) return { from, to, ok: true, reason: "solo reciente (histórico corto); sin síntesis" };
-    const wf = commons.find((c) => c.tf === from);
-    const wt = commons.find((c) => c.tf === to);
-    if (!wf?.available || !wt?.available) {
-      return { from, to, ok: false, reason: `MTF ${from}→${to} exige ventanas válidas en ambos TF` };
-    }
-    return { from, to, ok: true, reason: "nativo; join causal solo dentro de COMMON_4 de cada TF" };
-  });
+  return pairs.map(([from, to]) => mtfPairAvailability(from, to, coverage, commons));
 }
 
 /**
@@ -169,7 +161,14 @@ export function exploreDiscovery(
   }
   events.sort((a, b) => a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));
 
-  const commonEvents = events.filter((e) => {
+  const tagged = events.map((e) => {
+    const c = common4.find((w) => w.tf === e.tf);
+    const series = grouped.get(`${e.assetId}|${e.tf}`) ?? [];
+    const warmup = c ? eventUsedBarsBeforeCommon(series, e, c) : false;
+    return { ...e, warmupOutsideCommon: warmup };
+  });
+
+  const commonEvents = tagged.filter((e) => {
     const c = common4.find((w) => w.tf === e.tf);
     if (!c?.available || c.fromT == null || c.toT == null) return false;
     return e.openT >= c.fromT && e.openT <= c.toT;
@@ -188,6 +187,19 @@ export function exploreDiscovery(
   });
 
   const sequences: DiscoverySequence[] = detectSequences(commonEvents);
+  if (opts?.detectPatterns) {
+    for (const [from, to] of MTF_ARCHIVE_PAIRS) {
+      const htfW = common4.find((c) => c.tf === from) ?? null;
+      const ltfW = common4.find((c) => c.tf === to) ?? null;
+      sequences.push(...detectHtfContextSequences({
+        events: commonEvents,
+        htfBars: closed.filter((b) => b.tf === from),
+        ltfBars: closed.filter((b) => b.tf === to),
+        htfWindow: htfW,
+        ltfWindow: ltfW,
+      }));
+    }
+  }
   const seqNames = [...new Set(sequences.map((s) => s.family))].sort();
   const sequenceCounts = seqNames.map((family) => ({
     family,
@@ -239,9 +251,4 @@ export function exploreDiscovery(
   };
 }
 
-export function htfContextBars(
-  htf: readonly DiscoveryBar[],
-  decisionClose: number,
-): DiscoveryBar[] {
-  return htfClosedAtDecision(htf, decisionClose);
-}
+export { htfContextBars } from "./shadow-discovery-universe";

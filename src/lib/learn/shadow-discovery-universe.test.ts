@@ -7,6 +7,7 @@ import {
   DISCOVERY_ASSETS,
   DISCOVERY_COMMON_MIN_DAYS,
   type DiscoveryBar,
+  type DiscoveryEvent,
   type DiscoveryTf,
 } from "./shadow-discovery-types.ts";
 import {
@@ -15,13 +16,18 @@ import {
   clipBarsToAssetDeep,
   clipBarsToCommon4,
   common4Window,
+  eventUsedBarsBeforeCommon,
+  htfContextBars,
   intersectWindows,
   mtfLegsInValidWindows,
+  mtfPairAvailability,
   nextDiscoveryTfToBackfill,
   tfUnlocksNext,
+  type Common4Window,
   type DiscoveryAssetSpan,
 } from "./shadow-discovery-universe.ts";
 import { exploreDiscovery } from "./shadow-discovery-explore.ts";
+import { detectHtfContextSequences, detectSequences } from "./shadow-discovery-sequences.ts";
 import type { AssetId } from "../trading/types.ts";
 
 const DAY = 86400;
@@ -50,6 +56,34 @@ function four(days: number, exhausted = false): DiscoveryAssetSpan[] {
 function bar(assetId: AssetId, t: number, tf: DiscoveryTf = "15m"): DiscoveryBar {
   return {
     assetId, tf, t, o: 1, h: 2, l: 0.5, c: 1.1, v: 1, source: "test",
+  };
+}
+
+function ev(p: Partial<DiscoveryEvent> & Pick<DiscoveryEvent, "kind" | "tf" | "openT" | "closeT">): DiscoveryEvent {
+  return {
+    id: `${p.assetId ?? "BTCUSD"}|${p.tf}|${p.kind}|${p.openT}`,
+    assetId: "BTCUSD",
+    direction: null,
+    level: null,
+    atr: null,
+    extra: {},
+    warmupOutsideCommon: false,
+    ...p,
+  };
+}
+
+function win(fromT: number, toT: number, tf: DiscoveryTf = "15m"): Common4Window {
+  return {
+    tf,
+    available: true,
+    fromT,
+    toT,
+    days: (toT - fromT) / DAY,
+    assets: DISCOVERY_ASSETS,
+    limitingAssets: [],
+    unlocksNextTf: true,
+    inference: "INSUFFICIENT",
+    exploreGrade: "EXPLORE",
   };
 }
 
@@ -171,25 +205,181 @@ describe("COMMON_4 is a real intersection", () => {
   });
 });
 
-describe("MTF windows", () => {
-  it("does not use HTF bars outside the valid window", () => {
-    const htfWindow = { fromT: 20_000, toT: 80_000 };
-    const ltfWindow = { fromT: 20_000, toT: 80_000 };
-    const decisionOpen = 50_000;
-    const decisionClose = barCloseSec(decisionOpen, "15m");
-    const htf: DiscoveryBar[] = [
-      { ...bar("BTCUSD", 1_000, "1h"), tf: "1h", t: 1_000 },
-      { ...bar("BTCUSD", 36_000, "1h"), tf: "1h", t: 36_000 },
-    ];
-    const ltf: DiscoveryBar[] = [
-      bar("BTCUSD", decisionOpen, "15m"),
-    ];
+describe("MTF join causality", () => {
+  const htfWindow = { fromT: 0, toT: 80_000 };
+  const ltfWindow = { fromT: 0, toT: 80_000 };
+  const decisionOpen = 14_400;
+  const decisionClose = barCloseSec(decisionOpen, "15m"); // 15300
+  const closedHtf = { ...bar("BTCUSD", 0, "4h"), tf: "4h" as const, t: 0 };           // close 14400
+  const openHtf = { ...bar("BTCUSD", 14_400, "4h"), tf: "4h" as const, t: 14_400 };   // close 28800
+  const ltf = bar("BTCUSD", decisionOpen, "15m");
+
+  it("A. HTF close > decisionClose is excluded", () => {
     const legs = mtfLegsInValidWindows({
-      htf, ltf, htfWindow, ltfWindow, decisionClose,
+      htf: [closedHtf, openHtf], ltf: [ltf], htfWindow, ltfWindow, decisionClose,
     });
-    assert.equal(legs.htf.some((b) => b.t === 1_000), false);
-    assert.equal(legs.htf.some((b) => b.t === 36_000), true);
-    assert.equal(legs.ltf.length, 1);
+    assert.equal(legs.htf.some((b) => b.t === 14_400), false);
+  });
+
+  it("B. HTF still open (bar containing the decision) is excluded", () => {
+    const legs = mtfLegsInValidWindows({
+      htf: [openHtf], ltf: [ltf], htfWindow, ltfWindow, decisionClose,
+    });
+    assert.equal(legs.htf.length, 0);
+  });
+
+  it("C. HTF close == decisionClose is included", () => {
+    const atOpenOf4h = 14_400;
+    const legs = mtfLegsInValidWindows({
+      htf: [closedHtf, openHtf],
+      ltf: [bar("BTCUSD", 13_500, "15m")],
+      htfWindow,
+      ltfWindow,
+      decisionClose: atOpenOf4h,
+    });
+    assert.equal(legs.htf.length, 1);
+    assert.equal(legs.htf[0]!.t, 0);
+    assert.equal(barCloseSec(0, "4h"), atOpenOf4h);
+  });
+
+  it("D. HTF outside COMMON_4 is excluded", () => {
+    const legs = mtfLegsInValidWindows({
+      htf: [{ ...bar("BTCUSD", -10_000, "4h"), tf: "4h", t: -10_000 }, closedHtf],
+      ltf: [ltf],
+      htfWindow,
+      ltfWindow,
+      decisionClose,
+    });
+    assert.equal(legs.htf.some((b) => b.t === -10_000), false);
+    assert.equal(legs.htf.some((b) => b.t === 0), true);
+  });
+
+  it("E. LTF outside COMMON_4 is excluded", () => {
+    const outside = bar("BTCUSD", 90_000, "15m");
+    const legs = mtfLegsInValidWindows({
+      htf: [closedHtf],
+      ltf: [outside],
+      htfWindow,
+      ltfWindow,
+      decisionClose: barCloseSec(90_000, "15m"),
+    });
+    assert.equal(legs.ltf.length, 0);
+    assert.equal(legs.htf.length, 0);
+  });
+
+  it("F. ASSET_DEEP HTF does not enter a COMMON_4 join", () => {
+    const deep = { ...bar("BTCUSD", -50_000, "4h"), tf: "4h" as const, t: -50_000 };
+    const ctx = htfContextBars({
+      htf: [deep, closedHtf],
+      ltf: [ltf],
+      htfWindow: win(0, 80_000, "4h"),
+      ltfWindow: win(0, 80_000, "15m"),
+      decisionClose,
+    });
+    assert.equal(ctx.some((b) => b.t === -50_000), false);
+    assert.equal(ctx.some((b) => b.t === 0), true);
+  });
+
+  it("H. htfContextBars cannot return HTF outside the window", () => {
+    const ctx = htfContextBars({
+      htf: [{ ...bar("BTCUSD", 1_000, "4h"), tf: "4h", t: 1_000 }, closedHtf],
+      ltf: [ltf],
+      htfWindow: win(5_000, 80_000, "4h"),
+      ltfWindow: win(0, 80_000, "15m"),
+      decisionClose,
+    });
+    assert.equal(ctx.some((b) => b.t === 1_000), false);
+  });
+
+  it("K. future HTF after the decision does not change the join", () => {
+    const base = mtfLegsInValidWindows({
+      htf: [closedHtf], ltf: [ltf], htfWindow, ltfWindow, decisionClose,
+    });
+    const future = { ...bar("BTCUSD", 28_800, "4h"), tf: "4h" as const, t: 28_800 };
+    const withFuture = mtfLegsInValidWindows({
+      htf: [closedHtf, future], ltf: [ltf], htfWindow, ltfWindow, decisionClose,
+    });
+    assert.deepEqual(withFuture.htf.map((b) => b.t), base.htf.map((b) => b.t));
+  });
+});
+
+describe("HTF_CONTEXT uses the causal join", () => {
+  it("G. detectSequences does not emit HTF_CONTEXT; join does", () => {
+    const htfBar = { ...bar("BTCUSD", 0, "4h"), tf: "4h" as const, t: 0 };
+    const ltfBar = bar("BTCUSD", 14_400, "15m");
+    const htfEv = ev({ kind: "bos_down", tf: "4h", openT: 0, closeT: barCloseSec(0, "4h"), direction: "sell" });
+    const ltfEv = ev({
+      kind: "sweep_prior_high", tf: "15m", openT: 14_400, closeT: barCloseSec(14_400, "15m"), direction: "sell",
+    });
+    assert.equal(detectSequences([htfEv, ltfEv]).filter((s) => s.family === "HTF_CONTEXT_LTF_EVENT").length, 0);
+    const seq = detectHtfContextSequences({
+      events: [htfEv, ltfEv],
+      htfBars: [htfBar],
+      ltfBars: [ltfBar],
+      htfWindow: win(0, 80_000, "4h"),
+      ltfWindow: win(0, 80_000, "15m"),
+    });
+    assert.equal(seq.length, 1);
+    assert.equal(seq[0]!.family, "HTF_CONTEXT_LTF_EVENT");
+    assert.equal(seq[0]!.legs[0]!.openT, 0);
+    assert.equal(seq[0]!.legs[1]!.openT, 14_400);
+  });
+
+  it("G. ASSET_DEEP HTF event is not a COMMON_4 context leg", () => {
+    const deepHtf = { ...bar("BTCUSD", -50_000, "4h"), tf: "4h" as const, t: -50_000 };
+    const ltfBar = bar("BTCUSD", 14_400, "15m");
+    const htfEv = ev({ kind: "bos_down", tf: "4h", openT: -50_000, closeT: barCloseSec(-50_000, "4h") });
+    const ltfEv = ev({ kind: "sweep_prior_high", tf: "15m", openT: 14_400, closeT: barCloseSec(14_400, "15m") });
+    const seq = detectHtfContextSequences({
+      events: [htfEv, ltfEv],
+      htfBars: [deepHtf],
+      ltfBars: [ltfBar],
+      htfWindow: win(0, 80_000, "4h"),
+      ltfWindow: win(0, 80_000, "15m"),
+    });
+    assert.equal(seq.length, 0);
+  });
+
+  it("source: HTF_CONTEXT is skipped in detectSequences and routed through mtfLegs", () => {
+    const seqSrc = readFileSync(new URL("./shadow-discovery-sequences.ts", import.meta.url), "utf8");
+    assert.match(seqSrc, /if \(family === "HTF_CONTEXT_LTF_EVENT"\) continue/);
+    assert.match(seqSrc, /mtfLegsInValidWindows/);
+    assert.doesNotMatch(seqSrc, /htfContextBars\(/);
+    const lab = readFileSync(new URL("./shadow-discovery.ts", import.meta.url), "utf8");
+    assert.match(lab, /detectPatterns:\s*false/);
+  });
+});
+
+describe("warmup outside COMMON_4", () => {
+  it("I. tags events whose prefix used bars before COMMON_4.fromT", () => {
+    const common = win(10_000, 50_000, "15m");
+    const series = [
+      bar("BTCUSD", 1_000),
+      bar("BTCUSD", 10_000),
+      bar("BTCUSD", 10_900),
+    ];
+    const inside = ev({ kind: "displacement", tf: "15m", openT: 10_000, closeT: 10_900, extra: { index: 1 } });
+    assert.equal(eventUsedBarsBeforeCommon(series, inside, common), true);
+    const noWarm = ev({ kind: "displacement", tf: "15m", openT: 10_000, closeT: 10_900, extra: { index: 0 } });
+    assert.equal(eventUsedBarsBeforeCommon([series[1]!, series[2]!], noWarm, common), false);
+  });
+});
+
+describe("mtfMatrix recent vs historical", () => {
+  it("J. 1m/5m recent tape is not historical MTF", () => {
+    const coverage = [
+      { tf: "15m" as const, bars: 200 },
+      { tf: "5m" as const, bars: 200 },
+      { tf: "1m" as const, bars: 200 },
+      { tf: "4h" as const, bars: 80 },
+    ];
+    const commons = [win(0, 80_000, "15m"), win(0, 80_000, "4h")];
+    const recent = mtfPairAvailability("15m", "5m", coverage, commons);
+    assert.equal(recent.historical, false);
+    assert.equal(recent.recentOnly, true);
+    const hist = mtfPairAvailability("4h", "15m", coverage, commons);
+    assert.equal(hist.historical, true);
+    assert.equal(hist.recentOnly, false);
   });
 });
 

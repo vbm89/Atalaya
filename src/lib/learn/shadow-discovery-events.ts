@@ -34,6 +34,7 @@ function base(
     level,
     atr,
     extra: { index: i, ...extra },
+    warmupOutsideCommon: false,
   };
 }
 
