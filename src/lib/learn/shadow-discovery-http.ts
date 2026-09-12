@@ -69,3 +69,49 @@ export async function handleDiscoveryUiWrite(
   });
   return handleDiscoveryWrite(internal, run);
 }
+
+/** Explicit one-shot explore. Never used by GET/lab/ingest/UI coverage button. */
+export async function handleDiscoveryExplore(
+  request: Request,
+): Promise<Response> {
+  const auth = authorizeDiscoveryWrite(request);
+  if (!auth.ok) {
+    return Response.json({ error: auth.error }, { status: auth.status, headers: NO_STORE });
+  }
+  try {
+    const { getSql } = await import("@/lib/db");
+    const { exploreDiscoveryOnce } = await import("./shadow-discovery-explore-once");
+    const sql = await getSql();
+    const result = await exploreDiscoveryOnce(sql);
+    const payload = {
+      ok: true as const,
+      journalId: result.journalId,
+      persisted: result.persisted,
+      nCommon4: result.nCommon4,
+      outcomesSampled: result.catalog.report.outcomesSampled,
+      outcomeConsulted: result.catalog.report.journal.outcomeConsulted,
+      candidates: result.catalog.report.journal.candidates,
+      rankingByExpectancy: result.catalog.report.rankingByExpectancy,
+      universe: result.catalog.report.journal.universe,
+      cells: result.catalog.cells,
+      sequenceCells: result.catalog.sequenceCells,
+      sequences: result.catalog.sequences,
+      catalogN: result.catalog.catalogN,
+      warmupExcludedN: result.catalog.warmupExcludedN,
+      warmupTaggedN: result.catalog.warmupTaggedN,
+      outsideWindowN: result.catalog.outsideWindowN,
+      k1TestExcludedN: result.catalog.k1TestExcludedN,
+      detectedN: result.catalog.detectedN,
+      eventCounts: result.catalog.report.eventCounts,
+      sequenceCounts: result.catalog.report.sequenceCounts,
+      journal: result.catalog.report.journal,
+    };
+    return Response.json(payload, { headers: NO_STORE });
+  } catch (e) {
+    const aborted = e instanceof Error && e.name === "DiscoveryExploreAbort";
+    return Response.json(
+      { ok: false as const, error: e instanceof Error ? e.message : "discovery explore unavailable" },
+      { status: aborted ? 409 : 500, headers: NO_STORE },
+    );
+  }
+}

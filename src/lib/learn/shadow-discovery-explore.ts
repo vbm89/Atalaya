@@ -133,16 +133,86 @@ function mtfMatrix(
   return pairs.map(([from, to]) => mtfPairAvailability(from, to, coverage, commons));
 }
 
+export interface DiscoveryCatalogCell {
+  tf: DiscoveryTf;
+  assetId: AssetId;
+  kind: DiscoveryEventKind;
+  n: number;
+  buy: number;
+  sell: number;
+}
+
+export interface DiscoverySequenceCell {
+  family: string;
+  assetId: AssetId;
+  tf: DiscoveryTf;
+  n: number;
+}
+
+export interface DiscoveryExploreCatalog {
+  report: DiscoveryExploreReport;
+  cells: DiscoveryCatalogCell[];
+  sequenceCells: DiscoverySequenceCell[];
+  sequences: Array<{
+    family: string;
+    assetId: AssetId;
+    decisionCloseT: number;
+    legs: Array<{
+      kind: string;
+      tf: DiscoveryTf;
+      openT: number;
+      closeT: number;
+      direction: DiscoveryEvent["direction"];
+    }>;
+  }>;
+  detectedN: number;
+  k1TestExcludedN: number;
+  warmupTaggedN: number;
+  warmupExcludedN: number;
+  outsideWindowN: number;
+  catalogN: number;
+}
+
+function catalogCells(events: readonly DiscoveryEvent[]): DiscoveryCatalogCell[] {
+  const map = new Map<string, DiscoveryCatalogCell>();
+  for (const e of events) {
+    const key = `${e.tf}|${e.assetId}|${e.kind}`;
+    const cur = map.get(key) ?? { tf: e.tf, assetId: e.assetId, kind: e.kind, n: 0, buy: 0, sell: 0 };
+    cur.n += 1;
+    if (e.direction === "buy") cur.buy += 1;
+    if (e.direction === "sell") cur.sell += 1;
+    map.set(key, cur);
+  }
+  return [...map.values()].sort((a, b) =>
+    a.tf.localeCompare(b.tf) || a.assetId.localeCompare(b.assetId) || a.kind.localeCompare(b.kind),
+  );
+}
+
+function sequenceCellsOf(sequences: readonly DiscoverySequence[]): DiscoverySequenceCell[] {
+  const map = new Map<string, DiscoverySequenceCell>();
+  for (const s of sequences) {
+    const tf = s.legs[s.legs.length - 1]?.tf ?? s.legs[0]?.tf;
+    if (!tf) continue;
+    const key = `${s.family}|${s.assetId}|${tf}`;
+    const cur = map.get(key) ?? { family: s.family, assetId: s.assetId, tf, n: 0 };
+    cur.n += 1;
+    map.set(key, cur);
+  }
+  return [...map.values()].sort((a, b) =>
+    a.family.localeCompare(b.family) || a.assetId.localeCompare(b.assetId) || a.tf.localeCompare(b.tf),
+  );
+}
+
 /**
- * EXPLORE: descriptive counts. Never sorts by R / expectancy.
- * 15M events with closeT >= K1_REGISTERED_AT are excluded so K1 TEST cannot leak into discovery.
+ * EXPLORE catalog. Never sorts by R / expectancy.
+ * 15M events with closeT >= K1_REGISTERED_AT are excluded so K1 TEST cannot leak.
  */
-export function exploreDiscovery(
+export function collectExploreCatalog(
   bars: readonly DiscoveryBar[],
   nowSec: number,
   codeVersion = "shadow-discovery-1",
   opts?: { detectPatterns?: boolean; cursors?: Parameters<typeof buildCoverage>[1] },
-): DiscoveryExploreReport {
+): DiscoveryExploreCatalog {
   const closed = closedBarsThrough(sanitizeBars(bars), nowSec);
   const coverage = buildCoverage(closed, opts?.cursors);
   const spans = spansFromCoverage(coverage);
@@ -152,11 +222,15 @@ export function exploreDiscovery(
   const assetDeep = common4.flatMap((c) => assetDeepSlices(closed, c));
   const grouped = groupByAssetTf(closed);
   const events: DiscoveryEvent[] = [];
+  let k1TestExcludedN = 0;
   if (opts?.detectPatterns) {
     for (const series of grouped.values()) {
       const detected = detectEvents(series);
       for (const e of detected) {
-        if (e.tf === "15m" && e.closeT >= K1_REGISTERED_AT) continue;
+        if (e.tf === "15m" && e.closeT >= K1_REGISTERED_AT) {
+          k1TestExcludedN += 1;
+          continue;
+        }
         events.push(e);
       }
     }
@@ -174,6 +248,21 @@ export function exploreDiscovery(
     const c = common4.find((w) => w.tf === e.tf);
     return c ? isCommon4CatalogEvent(e, c) : false;
   });
+
+  const warmupTaggedN = tagged.filter((e) => e.warmupOutsideCommon).length;
+  const warmupExcludedN = tagged.filter((e) => {
+    const c = common4.find((w) => w.tf === e.tf);
+    if (!c?.available || c.fromT == null || c.toT == null) return false;
+    if (e.tf !== c.tf) return false;
+    const inWindow = e.openT >= c.fromT && e.openT <= c.toT;
+    return inWindow && e.warmupOutsideCommon;
+  }).length;
+  const outsideWindowN = tagged.filter((e) => {
+    const c = common4.find((w) => w.tf === e.tf);
+    if (!c?.available || c.fromT == null || c.toT == null) return true;
+    if (e.tf !== c.tf) return true;
+    return e.openT < c.fromT || e.openT > c.toT;
+  }).length;
 
   const kinds = [...new Set(commonEvents.map((e) => e.kind))].sort();
   const eventCounts: DiscoveryEventCount[] = kinds.map((kind) => {
@@ -222,7 +311,7 @@ export function exploreDiscovery(
     notes: "EXPLORE / INSUFFICIENT. descriptivo, no validación. COMMON_4 = intersección. ASSET_DEEP separado. warmupOutsideCommon excluido de recuentos. outcome no consultado. Sin ranking. TEST de K1 excluido. k no incrementa.",
   };
 
-  return {
+  const report: DiscoveryExploreReport = {
     generatedAt: journal.exploredAt,
     codeVersion,
     k1TestExcluded: true,
@@ -241,6 +330,44 @@ export function exploreDiscovery(
       exploreGrade: "EXPLORE",
     },
   };
+
+  return {
+    report,
+    cells: catalogCells(commonEvents),
+    sequenceCells: sequenceCellsOf(sequences),
+    sequences: sequences.map((s) => ({
+      family: s.family,
+      assetId: s.assetId,
+      decisionCloseT: s.decisionCloseT,
+      legs: s.legs.map((l) => ({
+        kind: l.kind,
+        tf: l.tf,
+        openT: l.openT,
+        closeT: l.closeT,
+        direction: l.direction,
+      })),
+    })),
+    detectedN: events.length + k1TestExcludedN,
+    k1TestExcludedN,
+    warmupTaggedN,
+    warmupExcludedN,
+    outsideWindowN,
+    catalogN: commonEvents.length,
+  };
 }
+
+/**
+ * EXPLORE: descriptive counts. Never sorts by R / expectancy.
+ * 15M events with closeT >= K1_REGISTERED_AT are excluded so K1 TEST cannot leak into discovery.
+ */
+export function exploreDiscovery(
+  bars: readonly DiscoveryBar[],
+  nowSec: number,
+  codeVersion = "shadow-discovery-1",
+  opts?: { detectPatterns?: boolean; cursors?: Parameters<typeof buildCoverage>[1] },
+): DiscoveryExploreReport {
+  return collectExploreCatalog(bars, nowSec, codeVersion, opts).report;
+}
+
 
 export { htfContextBars } from "./shadow-discovery-universe";

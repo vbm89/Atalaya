@@ -100,17 +100,22 @@ export async function upsertDiscoveryCursor(sql: SqlQuery, c: DiscoveryCursor): 
   );
 }
 
-export async function persistDiscoveryJournal(sql: SqlQuery, entry: DiscoveryJournalEntry): Promise<void> {
-  await sql.query(
+export async function persistDiscoveryJournal(sql: SqlQuery, entry: DiscoveryJournalEntry): Promise<number | null> {
+  const rows = await sql.query<{ id: number | string }>(
     `insert into discovery_journal
       (explored_at, universe, primitives, families, variants, discarded, discard_reason, candidates, outcome_consulted, code_version, notes)
-     values ($1::timestamptz,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+     values ($1::timestamptz,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     returning id`,
     [
       entry.exploredAt, entry.universe, entry.primitives, entry.families, entry.variants,
       entry.discarded, entry.discardReason, entry.candidates, entry.outcomeConsulted,
       entry.codeVersion, entry.notes,
     ],
   );
+  const raw = rows[0]?.id;
+  if (raw == null) return null;
+  const id = Number(raw);
+  return Number.isFinite(id) ? id : null;
 }
 
 export async function loadDiscoveryJournal(sql: SqlQuery, limit = 20): Promise<DiscoveryJournalEntry[]> {
