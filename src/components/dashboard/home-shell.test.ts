@@ -48,6 +48,7 @@ describe("HOME shell contract", () => {
     const panel = read("shadow-discovery-panel.tsx");
     assert.match(panel, /COMMON_4/);
     assert.match(panel, /ASSET_DEEP/);
+    assert.match(panel, /n=/);
     assert.match(panel, /descriptivo, no validación/);
     assert.match(panel, /EXPLORE \/ INSUFFICIENT/);
     assert.match(panel, /Cobertura actual/);

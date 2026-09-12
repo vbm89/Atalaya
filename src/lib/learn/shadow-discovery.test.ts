@@ -231,3 +231,28 @@ describe("coverage and explore report", () => {
     assert.match(lab, /detectPatterns:\s*false/);
   });
 });
+
+describe("EXPLORE outcome isolation (F–J)", () => {
+  it("F. detectPatterns=true does not call outcomeAfterEvent", () => {
+    const src = readFileSync(new URL("./shadow-discovery-explore.ts", import.meta.url), "utf8");
+    assert.doesNotMatch(src, /outcomeAfterEvent/);
+    assert.doesNotMatch(src, /shadow-discovery-outcome/);
+  });
+
+  it("G/H/J. outcomesSampled is 0 and outcomeConsulted is false", () => {
+    const report = exploreDiscovery(ramp(40), 10_000_000, "shadow-discovery-1", { detectPatterns: true });
+    assert.equal(report.outcomesSampled, 0);
+    assert.equal(report.journal.outcomeConsulted, false);
+    assert.match(report.journal.notes ?? "", /outcome no consultado/);
+  });
+
+  it("I. no candidate depends on future result", () => {
+    const report = exploreDiscovery(ramp(40), 10_000_000, "shadow-discovery-1", { detectPatterns: true });
+    assert.deepEqual(report.journal.candidates, []);
+    assert.equal(report.rankingByExpectancy, false);
+    const src = readFileSync(new URL("./shadow-discovery-explore.ts", import.meta.url), "utf8");
+    assert.doesNotMatch(src, /\bwinRate\b|\bsuccessPct\b|\bmeanGrossR\b/);
+    assert.doesNotMatch(src, /outcomeAfterEvent/);
+    assert.ok(report.journal.variants.every((v) => typeof v === "string"));
+  });
+});

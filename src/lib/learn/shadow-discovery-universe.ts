@@ -40,6 +40,12 @@ export interface Common4Window {
   days: number | null;
   assets: readonly AssetId[];
   limitingAssets: AssetId[];
+  /**
+   * Bar count of the clipped COMMON_4 universe for this TF.
+   * Derived via clipBarsToCommon4(...).length — never min(n per asset),
+   * never ASSET_DEEP length, never event count. null until bars are attached.
+   */
+  n: number | null;
   /** Unlock ingest of the next TF — not evidence. */
   unlocksNextTf: boolean;
   inference: "INSUFFICIENT";
@@ -118,12 +124,12 @@ export function common4Window(spans: readonly DiscoveryAssetSpan[], tf: Discover
     exploreGrade: "EXPLORE" as const,
   };
   if (four.some((s) => !s || s.firstT == null || s.lastT == null)) {
-    return { ...base, available: false, fromT: null, toT: null, days: null, limitingAssets: [] };
+    return { ...base, available: false, fromT: null, toT: null, days: null, limitingAssets: [], n: null };
   }
   const windows = four.map((s) => ({ fromT: s!.firstT!, toT: s!.lastT! }));
   const hit = intersectWindows(windows);
   if (!hit) {
-    return { ...base, available: false, fromT: null, toT: null, days: null, limitingAssets: [] };
+    return { ...base, available: false, fromT: null, toT: null, days: null, limitingAssets: [], n: null };
   }
   const limitingAssets = DISCOVERY_ASSETS.filter((id, i) => {
     const s = four[i]!;
@@ -136,6 +142,7 @@ export function common4Window(spans: readonly DiscoveryAssetSpan[], tf: Discover
     toT: hit.toT,
     days: spanDays(hit.fromT, hit.toT),
     limitingAssets,
+    n: null,
   };
 }
 
@@ -154,6 +161,26 @@ export function classifyBarUniverse(bar: DiscoveryBar, common: Common4Window): D
 export function clipBarsToCommon4(bars: readonly DiscoveryBar[], common: Common4Window): DiscoveryBar[] {
   if (!common.available) return [];
   return bars.filter((b) => b.tf === common.tf && classifyBarUniverse(b, common) === "COMMON_4");
+}
+
+/** Attach the exact clipped bar count. n is never approximated. */
+export function attachCommon4BarCount(
+  common: Common4Window,
+  bars: readonly DiscoveryBar[],
+): Common4Window {
+  if (!common.available) return { ...common, n: 0 };
+  return { ...common, n: clipBarsToCommon4(bars, common).length };
+}
+
+/**
+ * COMMON_4 catalog event: openT inside the window AND no ASSET_DEEP warmup.
+ * Warmup-tagged events remain on the tape; they are not counted here.
+ */
+export function isCommon4CatalogEvent(event: DiscoveryEvent, common: Common4Window): boolean {
+  if (!common.available || common.fromT == null || common.toT == null) return false;
+  if (event.tf !== common.tf) return false;
+  if (event.warmupOutsideCommon) return false;
+  return event.openT >= common.fromT && event.openT <= common.toT;
 }
 
 export function clipBarsToAssetDeep(bars: readonly DiscoveryBar[], common: Common4Window): DiscoveryBar[] {

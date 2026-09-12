@@ -12,6 +12,7 @@ import {
 } from "./shadow-discovery-types.ts";
 import {
   assetDeepSlices,
+  attachCommon4BarCount,
   classifyBarUniverse,
   clipBarsToAssetDeep,
   clipBarsToCommon4,
@@ -19,6 +20,7 @@ import {
   eventUsedBarsBeforeCommon,
   htfContextBars,
   intersectWindows,
+  isCommon4CatalogEvent,
   mtfLegsInValidWindows,
   mtfPairAvailability,
   nextDiscoveryTfToBackfill,
@@ -28,6 +30,7 @@ import {
   type Common4Window,
   type DiscoveryAssetSpan,
 } from "./shadow-discovery-universe.ts";
+import { detectEvents } from "./shadow-discovery-events.ts";
 import { exploreDiscovery } from "./shadow-discovery-explore.ts";
 import { detectHtfContextSequences, detectSequences } from "./shadow-discovery-sequences.ts";
 import type { AssetId } from "../trading/types.ts";
@@ -83,6 +86,7 @@ function win(fromT: number, toT: number, tf: DiscoveryTf = "15m"): Common4Window
     days: (toT - fromT) / DAY,
     assets: DISCOVERY_ASSETS,
     limitingAssets: [],
+    n: null,
     unlocksNextTf: true,
     inference: "INSUFFICIENT",
     exploreGrade: "EXPLORE",
@@ -381,6 +385,128 @@ describe("warmup outside COMMON_4", () => {
     assert.equal(eventUsedBarsBeforeCommon(series, inside, common), true);
     const noWarm = ev({ kind: "displacement", tf: "15m", openT: 10_000, closeT: 10_900, extra: { index: 0 } });
     assert.equal(eventUsedBarsBeforeCommon([series[1]!, series[2]!], noWarm, common), false);
+  });
+});
+
+const STEP = 900;
+
+function rampAsset(id: AssetId, firstT: number, n: number): DiscoveryBar[] {
+  const out: DiscoveryBar[] = [];
+  let px = 100;
+  for (let i = 0; i < n; i++) {
+    const o = px;
+    const c = px + 0.2;
+    out.push({
+      assetId: id,
+      tf: "15m",
+      t: firstT + i * STEP,
+      o,
+      h: Math.max(o, c) + 0.4,
+      l: Math.min(o, c) - 0.4,
+      c,
+      v: 8,
+      source: "test",
+    });
+    px = c;
+  }
+  return out;
+}
+
+describe("COMMON_4 catalog excludes warmup (A–E, K)", () => {
+  const commonFirst = 20_000;
+  const commonBars = 40;
+  const extraBtc = 20;
+  const lastT = commonFirst + (commonBars - 1) * STEP;
+  const bars: DiscoveryBar[] = [
+    ...rampAsset("BTCUSD", commonFirst - extraBtc * STEP, extraBtc + commonBars),
+    ...rampAsset("XAUUSD", commonFirst, commonBars),
+    ...rampAsset("US100", commonFirst, commonBars),
+    ...rampAsset("WTI", commonFirst, commonBars),
+  ];
+  const nowSec = lastT + STEP;
+  const report = exploreDiscovery(bars, nowSec, "shadow-discovery-1", { detectPatterns: true });
+  const c15 = report.universes.common4.find((c) => c.tf === "15m")!;
+  const clipped = clipBarsToCommon4(bars, c15);
+
+  it("A. event inside COMMON_4 with warmup fully inside COMMON_4 is counted", () => {
+    const usn = report.eventCounts.reduce((s, row) => s + (row.byAsset.US100 ?? 0), 0);
+    assert.ok(usn > 0, "US100 (no ASSET_DEEP prefix) must contribute catalog events");
+    const sample = ev({
+      assetId: "US100",
+      kind: "displacement",
+      tf: "15m",
+      openT: commonFirst + 20 * STEP,
+      closeT: commonFirst + 21 * STEP,
+      warmupOutsideCommon: false,
+    });
+    assert.equal(isCommon4CatalogEvent(sample, c15), true);
+  });
+
+  it("B. event inside COMMON_4 that needs bars before fromT is NOT counted", () => {
+    const btcN = report.eventCounts.reduce((s, row) => s + (row.byAsset.BTCUSD ?? 0), 0);
+    assert.equal(btcN, 0);
+    const warm = ev({
+      kind: "displacement",
+      tf: "15m",
+      openT: commonFirst + 5 * STEP,
+      closeT: commonFirst + 6 * STEP,
+      warmupOutsideCommon: true,
+    });
+    assert.equal(isCommon4CatalogEvent(warm, c15), false);
+  });
+
+  it("C. event outside COMMON_4 is NOT counted", () => {
+    const outside = ev({
+      kind: "displacement",
+      tf: "15m",
+      openT: commonFirst - STEP,
+      closeT: commonFirst,
+      warmupOutsideCommon: false,
+    });
+    assert.equal(isCommon4CatalogEvent(outside, c15), false);
+    const btcDetected = detectEvents(bars.filter((b) => b.assetId === "BTCUSD"));
+    const beforeWindow = btcDetected.filter((e) => e.openT < commonFirst);
+    assert.ok(beforeWindow.length > 0);
+    const countedKinds = new Set(report.eventCounts.map((r) => r.kind));
+    for (const e of beforeWindow) {
+      const tagged = { ...e, warmupOutsideCommon: eventUsedBarsBeforeCommon(bars.filter((b) => b.assetId === "BTCUSD"), e, c15) };
+      assert.equal(isCommon4CatalogEvent(tagged, c15), false);
+      void countedKinds;
+    }
+  });
+
+  it("D. ASSET_DEEP does not enter n nor COMMON_4 counts", () => {
+    assert.equal(clipped.some((b) => b.t < commonFirst), false);
+    assert.equal(clipped.some((b) => b.assetId === "BTCUSD" && b.t < commonFirst), false);
+    assert.equal(c15.n, clipped.length);
+    const deep = clipBarsToAssetDeep(bars, c15);
+    assert.ok(deep.some((b) => b.assetId === "BTCUSD"));
+    assert.equal(deep.length + clipped.length, bars.filter((b) => b.tf === "15m").length);
+    assert.equal(report.eventCounts.reduce((s, row) => s + (row.byAsset.BTCUSD ?? 0), 0), 0);
+  });
+
+  it("E. causal detector is unchanged (no COMMON_4 in detectEvents)", () => {
+    const src = readFileSync(new URL("./shadow-discovery-events.ts", import.meta.url), "utf8");
+    assert.doesNotMatch(src, /COMMON_4|warmupOutsideCommon\s*=\s*true|clipBarsToCommon4/);
+    const prefix = rampAsset("US100", commonFirst, 30);
+    const a = detectEvents(prefix);
+    const b = detectEvents([...prefix, ...rampAsset("US100", commonFirst + 30 * STEP, 5)]);
+    const idsA = a.map((e) => e.id);
+    const idsB = b.filter((e) => e.openT <= prefix[prefix.length - 1]!.t).map((e) => e.id);
+    assert.deepEqual(idsB, idsA);
+  });
+
+  it("K. published n equals clipped COMMON_4 bar count", () => {
+    const attached = attachCommon4BarCount(c15, bars);
+    assert.equal(attached.n, clipped.length);
+    assert.equal(c15.n, clipped.length);
+    assert.notEqual(c15.n, bars.length);
+    const btcAll = bars.filter((b) => b.assetId === "BTCUSD").length;
+    assert.notEqual(c15.n, btcAll);
+    const minPerAsset = Math.min(
+      ...DISCOVERY_ASSETS.map((id) => bars.filter((b) => b.assetId === id).length),
+    );
+    assert.notEqual(c15.n, minPerAsset);
   });
 });
 

@@ -43,6 +43,7 @@ export function ShadowDiscoveryPanel() {
               const c15 = report.universes?.common4.find((c) => c.tf === "15m");
               const deep = (report.universes?.assetDeep ?? []).filter((d) => d.tf === "15m");
               const days = c15?.days == null ? "—" : `${c15.days.toFixed(1)}d`;
+              const n = c15?.n == null ? "—" : String(c15.n);
               const limit = c15?.limitingAssets.length ? c15.limitingAssets.join(", ") : "—";
               const deepTxt = deep.length
                 ? deep.map((d) => `${d.assetId} +${d.extraDays == null ? d.extraBars : d.extraDays.toFixed(0)}d`).join(" · ")
@@ -50,7 +51,7 @@ export function ShadowDiscoveryPanel() {
               return (
                 <>
                   <p>
-                    COMMON_4 15m: {c15?.available ? days : "no disponible"} · limitan {limit}
+                    COMMON_4 15m: {c15?.available ? days : "no disponible"} · n={n} · limitan {limit}
                   </p>
                   <p className="mt-1">ASSET_DEEP 15m: {deepTxt}</p>
                   <p className="mt-1 font-medium text-fg">EXPLORE / INSUFFICIENT · descriptivo, no validación</p>
