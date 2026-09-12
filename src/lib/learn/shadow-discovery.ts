@@ -1,51 +1,94 @@
 /**
- * Shadow Pattern Discovery facade.
- * Independent of V1 live path and of K1. Does not register hypotheses.
+ * Shadow Pattern Discovery facade — universe ingest + coverage.
+ * This step does not explore patterns, register k, or rank expectancy.
  */
-import { ingestNativeDiscovery } from "./shadow-discovery-ingest";
-import { exploreDiscovery, type DiscoveryExploreReport } from "./shadow-discovery-explore";
-import { persistDiscoveryBars, persistDiscoveryJournal, loadDiscoveryBars } from "./shadow-discovery-store";
+import type { AssetId } from "../trading/types";
 import type { SqlQuery } from "../watch/store";
-import type { DiscoveryBar, DiscoveryTf } from "./shadow-discovery-types";
-import { DISCOVERY_ARCHIVE_TFS } from "./shadow-discovery-types";
+import { DISCOVERY_ARCHIVE_TFS, DISCOVERY_ASSETS, type DiscoveryTf } from "./shadow-discovery-types";
+import { DISCOVERY_PAGES_PER_CALL, paginateNativeSeries } from "./shadow-discovery-ingest";
+import { exploreDiscovery, type DiscoveryExploreReport } from "./shadow-discovery-explore";
+import {
+  loadDiscoveryBars,
+  loadDiscoveryCursors,
+  persistDiscoveryBars,
+  persistDiscoveryJournal,
+  upsertDiscoveryCursor,
+  type DiscoveryCursor,
+} from "./shadow-discovery-store";
 
 export { exploreDiscovery, buildCoverage } from "./shadow-discovery-explore";
 export { detectEvents } from "./shadow-discovery-events";
 export { detectSequences } from "./shadow-discovery-sequences";
-export { ingestNativeDiscovery } from "./shadow-discovery-ingest";
+export { ingestNativeDiscovery, paginateNativeSeries } from "./shadow-discovery-ingest";
 export { DISCOVERY_TFS, DISCOVERY_ARCHIVE_TFS, DISCOVERY_ASSETS } from "./shadow-discovery-types";
 
 export const DISCOVERY_CODE_VERSION = "shadow-discovery-1";
 
-function missingArchiveTf(bars: readonly DiscoveryBar[]): DiscoveryTf | null {
+function nextTfToBackfill(cursors: readonly DiscoveryCursor[]): DiscoveryTf {
   for (const tf of DISCOVERY_ARCHIVE_TFS) {
-    if (!bars.some((b) => b.tf === tf)) return tf;
+    const rows = DISCOVERY_ASSETS.map((assetId) => cursors.find((c) => c.assetId === assetId && c.tf === tf));
+    if (rows.some((c) => !c || !c.exhausted)) return tf;
   }
-  return null;
+  return DISCOVERY_ARCHIVE_TFS[DISCOVERY_ARCHIVE_TFS.length - 1]!;
 }
 
 export async function runDiscoveryLab(sql: SqlQuery | null, nowSec = Math.floor(Date.now() / 1000)): Promise<{
   report: DiscoveryExploreReport;
   ingested: number;
   fromStore: boolean;
+  backfillTf: DiscoveryTf | null;
 }> {
-  let bars: DiscoveryBar[] = [];
   let ingested = 0;
   let fromStore = false;
+  let backfillTf: DiscoveryTf | null = null;
   if (sql) {
-    bars = await loadDiscoveryBars(sql);
-    fromStore = bars.length > 0;
-    const nextTf = missingArchiveTf(bars);
-    if (nextTf) {
-      const fresh = await ingestNativeDiscovery({ tfs: [nextTf], limit: 300 });
-      ingested = await persistDiscoveryBars(sql, fresh);
-      bars = await loadDiscoveryBars(sql);
-      fromStore = bars.length > 0;
-    }
+    const existing = await loadDiscoveryBars(sql);
+    fromStore = existing.length > 0;
+    const cursors = await loadDiscoveryCursors(sql).catch(() => [] as DiscoveryCursor[]);
+    backfillTf = nextTfToBackfill(cursors);
+    const jobs = DISCOVERY_ASSETS.map(async (assetId: AssetId) => {
+      const cur = cursors.find((c) => c.assetId === assetId && c.tf === backfillTf);
+      if (cur?.exhausted) return 0;
+      const page = await paginateNativeSeries({
+        assetId,
+        tf: backfillTf!,
+        beforeOpenSec: cur?.oldestT ?? null,
+        nowSec,
+        pages: DISCOVERY_PAGES_PER_CALL,
+      });
+      const n = await persistDiscoveryBars(sql, page.bars);
+      await upsertDiscoveryCursor(sql, {
+        assetId,
+        tf: backfillTf!,
+        oldestT: page.oldestT ?? cur?.oldestT ?? null,
+        newestT: page.newestT ?? cur?.newestT ?? null,
+        source: page.source,
+        instrument: page.instrument,
+        instrumentKind: page.kind,
+        exhausted: page.exhausted,
+        pages: page.pages,
+      });
+      return n;
+    });
+    ingested = (await Promise.all(jobs)).reduce((a, b) => a + b, 0);
   }
-  const report = exploreDiscovery(bars, nowSec, DISCOVERY_CODE_VERSION);
+  const bars = sql ? await loadDiscoveryBars(sql) : [];
+  const cursors = sql ? await loadDiscoveryCursors(sql).catch(() => []) : [];
+  const report = exploreDiscovery(bars, nowSec, DISCOVERY_CODE_VERSION, { detectPatterns: false });
+  report.coverage = report.coverage.map((row) => {
+    const cur = cursors.find((c) => c.assetId === row.assetId && c.tf === row.tf);
+    if (!cur) return row;
+    return {
+      ...row,
+      exhausted: cur.exhausted,
+      instrument: row.instrument ?? cur.instrument,
+      instrumentKind: row.instrumentKind ?? cur.instrumentKind,
+    };
+  });
+  report.journal.notes = "UNIVERSO: ingest nativo + cobertura. Sin exploración de patrones. Sin ranking. k no incrementa. TEST de K1 no leído.";
+  report.journal.outcomeConsulted = false;
   if (sql) {
-    try { await persistDiscoveryJournal(sql, report.journal); } catch { /* journal is best-effort */ }
+    try { await persistDiscoveryJournal(sql, report.journal); } catch { /* best-effort */ }
   }
-  return { report, ingested, fromStore };
+  return { report, ingested, fromStore: fromStore || bars.length > 0, backfillTf };
 }

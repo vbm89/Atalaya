@@ -4,7 +4,10 @@ import { closedBarsThrough, htfClosedAtDecision } from "./shadow-discovery-clock
 import {
   coverageQuality,
   detectGaps,
+  discoveryStatus,
   groupByAssetTf,
+  isoUtc,
+  marketDaysUtc,
   sanitizeBars,
   spanDays,
 } from "./shadow-discovery-bars";
@@ -48,21 +51,30 @@ export interface DiscoveryExploreReport {
 function emptyCoverage(assetId: AssetId, tf: DiscoveryTf): DiscoveryCoverageRow {
   const q = coverageQuality({ bars: 0, days: null, tf });
   return {
-    assetId, tf, source: null, firstT: null, lastT: null, bars: 0, days: null,
-    gaps: 0, missingBars: 0, quality: q.quality, use: q.use,
+    assetId, tf, source: null, instrument: null, instrumentKind: null,
+    firstT: null, lastT: null, firstIso: null, lastIso: null,
+    bars: 0, days: null, marketDays: 0, gaps: 0, missingBars: 0,
+    quality: q.quality, use: q.use, discoveryStatus: "D",
     servesExplore: q.explore, servesTrainCandidate: q.trainCandidate,
+    exhausted: null,
   };
 }
 
-export function buildCoverage(bars: readonly DiscoveryBar[]): DiscoveryCoverageRow[] {
+export function buildCoverage(
+  bars: readonly DiscoveryBar[],
+  cursors?: ReadonlyArray<{ assetId: AssetId; tf: DiscoveryTf; exhausted: boolean; instrument?: string | null; instrumentKind?: DiscoveryCoverageRow["instrumentKind"] }>,
+): DiscoveryCoverageRow[] {
   const clean = sanitizeBars(bars);
   const grouped = groupByAssetTf(clean);
   const rows: DiscoveryCoverageRow[] = [];
   for (const assetId of DISCOVERY_ASSETS) {
     for (const tf of DISCOVERY_TFS) {
       const series = grouped.get(`${assetId}|${tf}`) ?? [];
+      const cur = cursors?.find((c) => c.assetId === assetId && c.tf === tf);
       if (!series.length) {
-        rows.push(emptyCoverage(assetId, tf));
+        const empty = emptyCoverage(assetId, tf);
+        empty.exhausted = cur?.exhausted ?? null;
+        rows.push(empty);
         continue;
       }
       const gaps = detectGaps(series, tf);
@@ -71,12 +83,19 @@ export function buildCoverage(bars: readonly DiscoveryBar[]): DiscoveryCoverageR
       const days = spanDays(firstT, lastT);
       const q = coverageQuality({ bars: series.length, days, tf });
       const sources = [...new Set(series.map((b) => b.source))];
+      const instruments = [...new Set(series.map((b) => b.instrument).filter(Boolean))];
+      const kinds = [...new Set(series.map((b) => b.instrumentKind).filter(Boolean))];
       rows.push({
-        assetId, tf, source: sources.join(","), firstT, lastT,
-        bars: series.length, days, gaps: gaps.length,
-        missingBars: gaps.reduce((s, g) => s + g.missing, 0),
+        assetId, tf, source: sources.join(",") || null,
+        instrument: (instruments[0] as string | undefined) ?? cur?.instrument ?? null,
+        instrumentKind: (kinds[0] as DiscoveryCoverageRow["instrumentKind"]) ?? cur?.instrumentKind ?? null,
+        firstT, lastT, firstIso: isoUtc(firstT), lastIso: isoUtc(lastT),
+        bars: series.length, days, marketDays: marketDaysUtc(series),
+        gaps: gaps.length, missingBars: gaps.reduce((s, g) => s + g.missing, 0),
         quality: q.quality, use: q.use,
+        discoveryStatus: discoveryStatus({ bars: series.length, calendarDays: days, tf }),
         servesExplore: q.explore, servesTrainCandidate: q.trainCandidate,
+        exhausted: cur?.exhausted ?? null,
       });
     }
   }
@@ -107,16 +126,19 @@ export function exploreDiscovery(
   bars: readonly DiscoveryBar[],
   nowSec: number,
   codeVersion = "shadow-discovery-1",
+  opts?: { detectPatterns?: boolean },
 ): DiscoveryExploreReport {
   const closed = closedBarsThrough(sanitizeBars(bars), nowSec);
   const coverage = buildCoverage(closed);
   const grouped = groupByAssetTf(closed);
   const events: DiscoveryEvent[] = [];
-  for (const series of grouped.values()) {
-    const detected = detectEvents(series);
-    for (const e of detected) {
-      if (e.tf === "15m" && e.closeT >= K1_REGISTERED_AT) continue;
-      events.push(e);
+  if (opts?.detectPatterns) {
+    for (const series of grouped.values()) {
+      const detected = detectEvents(series);
+      for (const e of detected) {
+        if (e.tf === "15m" && e.closeT >= K1_REGISTERED_AT) continue;
+        events.push(e);
+      }
     }
   }
   events.sort((a, b) => a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));

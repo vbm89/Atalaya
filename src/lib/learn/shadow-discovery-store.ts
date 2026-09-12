@@ -1,8 +1,21 @@
+import type { AssetId } from "../trading/types";
 import type { SqlQuery } from "../watch/store";
 import { sanitizeBars } from "./shadow-discovery-bars";
-import type { DiscoveryBar, DiscoveryJournalEntry } from "./shadow-discovery-types";
+import type { DiscoveryBar, DiscoveryInstrumentKind, DiscoveryJournalEntry, DiscoveryTf } from "./shadow-discovery-types";
 
 const CHUNK = 40;
+
+export interface DiscoveryCursor {
+  assetId: AssetId;
+  tf: DiscoveryTf;
+  oldestT: number | null;
+  newestT: number | null;
+  source: string | null;
+  instrument: string | null;
+  instrumentKind: DiscoveryInstrumentKind | null;
+  exhausted: boolean;
+  pages: number;
+}
 
 export async function persistDiscoveryBars(sql: SqlQuery, bars: readonly DiscoveryBar[]): Promise<number> {
   const clean = sanitizeBars(bars);
@@ -38,6 +51,43 @@ export async function loadDiscoveryBars(sql: SqlQuery): Promise<DiscoveryBar[]> 
     v: r.v == null ? null : Number(r.v),
     source: r.source,
   })));
+}
+
+export async function loadDiscoveryCursors(sql: SqlQuery): Promise<DiscoveryCursor[]> {
+  const rows = await sql.query<{
+    asset_id: string; tf: string; oldest_t: number | null; newest_t: number | null;
+    source: string | null; instrument: string | null; instrument_kind: string | null;
+    exhausted: boolean; pages: number;
+  }>(`select asset_id, tf, oldest_t, newest_t, source, instrument, instrument_kind, exhausted, pages from discovery_ingest_cursor`);
+  return rows.map((r) => ({
+    assetId: r.asset_id as AssetId,
+    tf: r.tf as DiscoveryTf,
+    oldestT: r.oldest_t == null ? null : Number(r.oldest_t),
+    newestT: r.newest_t == null ? null : Number(r.newest_t),
+    source: r.source,
+    instrument: r.instrument,
+    instrumentKind: (r.instrument_kind as DiscoveryInstrumentKind | null),
+    exhausted: Boolean(r.exhausted),
+    pages: Number(r.pages) || 0,
+  }));
+}
+
+export async function upsertDiscoveryCursor(sql: SqlQuery, c: DiscoveryCursor): Promise<void> {
+  await sql.query(
+    `insert into discovery_ingest_cursor
+       (asset_id, tf, oldest_t, newest_t, source, instrument, instrument_kind, exhausted, pages, updated_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
+     on conflict (asset_id, tf) do update set
+       oldest_t = least(discovery_ingest_cursor.oldest_t, excluded.oldest_t),
+       newest_t = greatest(discovery_ingest_cursor.newest_t, excluded.newest_t),
+       source = excluded.source,
+       instrument = excluded.instrument,
+       instrument_kind = excluded.instrument_kind,
+       exhausted = excluded.exhausted,
+       pages = discovery_ingest_cursor.pages + excluded.pages,
+       updated_at = now()`,
+    [c.assetId, c.tf, c.oldestT, c.newestT, c.source, c.instrument, c.instrumentKind, c.exhausted, c.pages],
+  );
 }
 
 export async function persistDiscoveryJournal(sql: SqlQuery, entry: DiscoveryJournalEntry): Promise<void> {

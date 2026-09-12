@@ -37,7 +37,13 @@ export interface DiscoveryBar {
   c: number;
   v: number | null;
   source: string;
+  instrument?: string;
+  instrumentKind?: DiscoveryInstrumentKind;
 }
+
+export type DiscoveryStatus = "A" | "B" | "C" | "D";
+
+export type DiscoveryInstrumentKind = "proxy-usdt-kline" | "proxy-swap";
 
 export type DiscoveryQuality = "ok" | "thin" | "empty" | "invalid";
 
@@ -55,16 +61,23 @@ export interface DiscoveryCoverageRow {
   assetId: AssetId;
   tf: DiscoveryTf;
   source: string | null;
+  instrument: string | null;
+  instrumentKind: DiscoveryInstrumentKind | null;
   firstT: number | null;
   lastT: number | null;
+  firstIso: string | null;
+  lastIso: string | null;
   bars: number;
   days: number | null;
+  marketDays: number;
   gaps: number;
   missingBars: number;
   quality: DiscoveryQuality;
   use: DiscoveryUse;
+  discoveryStatus: DiscoveryStatus;
   servesExplore: boolean;
   servesTrainCandidate: boolean;
+  exhausted: boolean | null;
 }
 
 export type DiscoveryEventKind =

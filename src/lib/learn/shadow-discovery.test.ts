@@ -129,7 +129,7 @@ describe("K1 isolation", () => {
     }
     const afterTest = bar(K1_REGISTERED_AT + 900, 200, 250, 200, 240);
     series.push(afterTest);
-    const report = exploreDiscovery(series, K1_REGISTERED_AT + 10000);
+    const report = exploreDiscovery(series, K1_REGISTERED_AT + 10000, "shadow-discovery-1", { detectPatterns: true });
     assert.equal(report.k1TestExcluded, true);
     assert.equal(report.rankingByExpectancy, false);
     for (const row of report.eventCounts) {
@@ -215,7 +215,7 @@ describe("coverage and explore report", () => {
   });
 
   it("event counts are alphabetical, not ranked by R", () => {
-    const report = exploreDiscovery(ramp(40), 10_000_000);
+    const report = exploreDiscovery(ramp(40), 10_000_000, "shadow-discovery-1", { detectPatterns: true });
     const kinds = report.eventCounts.map((e) => e.kind);
     const sorted = [...kinds].sort();
     assert.deepEqual(kinds, sorted);

@@ -11,10 +11,10 @@ export function ShadowDiscoveryPanel() {
       <div className="border-b border-border px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <h3 className="font-semibold">Pattern Discovery</h3>
-          <span className="text-xs font-mono text-subtle">EXPLORE · no live · k no incrementa</span>
+          <span className="text-xs font-mono text-subtle">UNIVERSO · sin ranking · k no incrementa</span>
         </div>
         <p className="mt-1 text-xs text-subtle">
-          Laboratorio de primitivas causales. K1 es un expediente aparte. No hay patrón ganador. TEST de K1 excluido.
+          Mapa de cinta nativa. Sin exploración de patrones en este paso. K1 y V1 intactos.
         </p>
       </div>
       {q.isLoading ? <p className="px-4 py-4 text-sm text-subtle">Leyendo cobertura…</p> : null}
@@ -36,11 +36,15 @@ export function ShadowDiscoveryPanel() {
                   <tr>
                     <th className="py-1 pr-2">Activo</th>
                     <th className="py-1 pr-2">TF</th>
+                    <th className="py-1 pr-2">Fuente</th>
+                    <th className="py-1 pr-2">Instrumento</th>
+                    <th className="py-1 pr-2">First</th>
+                    <th className="py-1 pr-2">Last</th>
                     <th className="py-1 pr-2">Velas</th>
                     <th className="py-1 pr-2">Días</th>
+                    <th className="py-1 pr-2">Mkt</th>
                     <th className="py-1 pr-2">Gaps</th>
-                    <th className="py-1 pr-2">Uso</th>
-                    <th className="py-1">Fuente</th>
+                    <th className="py-1 pr-2">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -48,59 +52,23 @@ export function ShadowDiscoveryPanel() {
                     <tr key={`${r.assetId}-${r.tf}`} className="border-t border-border/60">
                       <td className="py-1 pr-2 font-medium">{r.assetId}</td>
                       <td className="py-1 pr-2 font-mono">{r.tf}</td>
+                      <td className="py-1 pr-2 truncate max-w-[7rem]">{r.source ?? "—"}</td>
+                      <td className="py-1 pr-2 font-mono">{r.instrument ?? "—"}</td>
+                      <td className="py-1 pr-2 font-mono whitespace-nowrap">{r.firstIso ? r.firstIso.slice(0, 16) : "—"}</td>
+                      <td className="py-1 pr-2 font-mono whitespace-nowrap">{r.lastIso ? r.lastIso.slice(0, 16) : "—"}</td>
                       <td className="py-1 pr-2 font-mono">{r.bars}</td>
                       <td className="py-1 pr-2 font-mono">{r.days == null ? "—" : r.days.toFixed(1)}</td>
+                      <td className="py-1 pr-2 font-mono">{r.marketDays}</td>
                       <td className="py-1 pr-2 font-mono">{r.gaps}</td>
-                      <td className="py-1 pr-2">{r.use}</td>
-                      <td className="py-1 truncate max-w-[8rem]">{r.source ?? "—"}</td>
+                      <td className="py-1 pr-2 font-mono font-semibold">{r.discoveryStatus}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </div>
-          <div className="px-4 py-3">
-            <h4 className="text-sm font-medium">Eventos (alfabético, no por R)</h4>
-            {report.eventCounts.length === 0 ? (
-              <p className="mt-1 text-xs text-subtle">Aún no hay eventos. Hace falta cinta persistida.</p>
-            ) : (
-              <ul className="mt-2 space-y-1 text-[11px]">
-                {report.eventCounts.map((e) => (
-                  <li key={e.kind} className="flex justify-between gap-3">
-                    <span className="font-mono">{e.kind}</span>
-                    <span className="font-mono tabular">{e.n}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div className="px-4 py-3">
-            <h4 className="text-sm font-medium">Familias (gramática fija)</h4>
-            {report.sequenceCounts.length === 0 ? (
-              <p className="mt-1 text-xs text-subtle">Sin secuencias todavía.</p>
-            ) : (
-              <ul className="mt-2 space-y-1 text-[11px]">
-                {report.sequenceCounts.map((s) => (
-                  <li key={s.family} className="flex justify-between gap-3">
-                    <span className="font-mono">{s.family}</span>
-                    <span className="font-mono tabular">{s.n}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div className="px-4 py-3">
-            <h4 className="text-sm font-medium">MTF</h4>
-            <ul className="mt-2 space-y-1 text-[11px] text-subtle">
-              {report.mtfAvailable.map((m) => (
-                <li key={`${m.from}-${m.to}`}>
-                  {m.from} → {m.to}: {m.ok ? m.reason : `no disponible · ${m.reason}`}
-                </li>
-              ))}
-            </ul>
-          </div>
           <p className="px-4 py-3 text-[11px] leading-relaxed text-subtle">
-            Diario: {report.journal.notes} Costes UNKNOWN. No se registra K2. V1 intocable.
+            {report.journal.notes} A=histórico, B=útil limitado, C=reciente, D=insuficiente. Activos no se mezclan.
           </p>
         </div>
       ) : null}
