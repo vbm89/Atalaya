@@ -8,6 +8,15 @@ export const DISCOVERY_ARCHIVE_TFS: readonly DiscoveryTf[] = ["15m", "30m", "1h"
 export const DISCOVERY_RECENT_TFS: readonly DiscoveryTf[] = ["1m", "5m"];
 export const DISCOVERY_ASSETS: readonly AssetId[] = ["XAUUSD", "BTCUSD", "US100", "WTI"];
 
+/**
+ * Calendar days of per-asset tape (or exhausted) required to *unlock the next TF ingest*.
+ * Not a sufficiency / validation threshold. Inference on this tape stays INSUFFICIENT.
+ */
+export const DISCOVERY_COMMON_MIN_DAYS = 30;
+
+export type DiscoveryUniverseKind = "COMMON_4" | "ASSET_DEEP" | "TF_SOLO";
+
+
 export const DISCOVERY_STEP_SEC: Record<DiscoveryTf, number> = {
   "1m": 60,
   "5m": 300,

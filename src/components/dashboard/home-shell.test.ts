@@ -44,6 +44,15 @@ describe("HOME shell contract", () => {
     assert.match(dash, /onLab=/);
   });
 
+  it("Pattern Discovery states COMMON_4 / INSUFFICIENT and never ranks", () => {
+    const panel = read("shadow-discovery-panel.tsx");
+    assert.match(panel, /COMMON_4/);
+    assert.match(panel, /ASSET_DEEP/);
+    assert.match(panel, /descriptivo, no validación/);
+    assert.match(panel, /EXPLORE \/ INSUFFICIENT/);
+    assert.doesNotMatch(panel, /win-rate|expectancy|TEST de K1|k1Seal/i);
+  });
+
   it("lab panel imports ShadowFrequencyPanel before using it", () => {
     const lab = read("lab-integrity-panel.tsx");
     assert.match(lab, /import \{ ShadowFrequencyPanel \} from "\.\/shadow-frequency-panel"/);

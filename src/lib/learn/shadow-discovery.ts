@@ -4,9 +4,10 @@
  */
 import type { AssetId } from "../trading/types";
 import type { SqlQuery } from "../watch/store";
-import { DISCOVERY_ARCHIVE_TFS, DISCOVERY_ASSETS, type DiscoveryTf } from "./shadow-discovery-types";
+import { DISCOVERY_ASSETS, type DiscoveryTf } from "./shadow-discovery-types";
 import { DISCOVERY_PAGES_PER_CALL, paginateNativeSeries } from "./shadow-discovery-ingest";
-import { exploreDiscovery, type DiscoveryExploreReport } from "./shadow-discovery-explore";
+import { buildCoverage, exploreDiscovery, type DiscoveryExploreReport } from "./shadow-discovery-explore";
+import { nextDiscoveryTfToBackfill, spansFromCoverage } from "./shadow-discovery-universe";
 import {
   loadDiscoveryBars,
   loadDiscoveryCursors,
@@ -20,17 +21,10 @@ export { exploreDiscovery, buildCoverage } from "./shadow-discovery-explore";
 export { detectEvents } from "./shadow-discovery-events";
 export { detectSequences } from "./shadow-discovery-sequences";
 export { ingestNativeDiscovery, paginateNativeSeries } from "./shadow-discovery-ingest";
-export { DISCOVERY_TFS, DISCOVERY_ARCHIVE_TFS, DISCOVERY_ASSETS } from "./shadow-discovery-types";
+export { DISCOVERY_TFS, DISCOVERY_ARCHIVE_TFS, DISCOVERY_ASSETS, DISCOVERY_COMMON_MIN_DAYS } from "./shadow-discovery-types";
+export { nextDiscoveryTfToBackfill } from "./shadow-discovery-universe";
 
 export const DISCOVERY_CODE_VERSION = "shadow-discovery-1";
-
-function nextTfToBackfill(cursors: readonly DiscoveryCursor[]): DiscoveryTf {
-  for (const tf of DISCOVERY_ARCHIVE_TFS) {
-    const rows = DISCOVERY_ASSETS.map((assetId) => cursors.find((c) => c.assetId === assetId && c.tf === tf));
-    if (rows.some((c) => !c || !c.exhausted)) return tf;
-  }
-  return DISCOVERY_ARCHIVE_TFS[DISCOVERY_ARCHIVE_TFS.length - 1]!;
-}
 
 export async function runDiscoveryLab(sql: SqlQuery | null, nowSec = Math.floor(Date.now() / 1000)): Promise<{
   report: DiscoveryExploreReport;
@@ -45,7 +39,9 @@ export async function runDiscoveryLab(sql: SqlQuery | null, nowSec = Math.floor(
     const existing = await loadDiscoveryBars(sql);
     fromStore = existing.length > 0;
     const cursors = await loadDiscoveryCursors(sql).catch(() => [] as DiscoveryCursor[]);
-    backfillTf = nextTfToBackfill(cursors);
+    const coverageNow = buildCoverage(existing, cursors);
+    const spans = spansFromCoverage(coverageNow);
+    backfillTf = nextDiscoveryTfToBackfill(spans);
     const jobs = DISCOVERY_ASSETS.map(async (assetId: AssetId) => {
       const cur = cursors.find((c) => c.assetId === assetId && c.tf === backfillTf);
       if (cur?.exhausted) return 0;
@@ -74,7 +70,7 @@ export async function runDiscoveryLab(sql: SqlQuery | null, nowSec = Math.floor(
   }
   const bars = sql ? await loadDiscoveryBars(sql) : [];
   const cursors = sql ? await loadDiscoveryCursors(sql).catch(() => []) : [];
-  const report = exploreDiscovery(bars, nowSec, DISCOVERY_CODE_VERSION, { detectPatterns: false });
+  const report = exploreDiscovery(bars, nowSec, DISCOVERY_CODE_VERSION, { detectPatterns: false, cursors });
   report.coverage = report.coverage.map((row) => {
     const cur = cursors.find((c) => c.assetId === row.assetId && c.tf === row.tf);
     if (!cur) return row;
@@ -85,8 +81,10 @@ export async function runDiscoveryLab(sql: SqlQuery | null, nowSec = Math.floor(
       instrumentKind: row.instrumentKind ?? cur.instrumentKind,
     };
   });
-  report.journal.notes = "UNIVERSO: ingest nativo + cobertura. Sin exploración de patrones. Sin ranking. k no incrementa. TEST de K1 no leído.";
   report.journal.outcomeConsulted = false;
+  if (!report.journal.notes?.includes("descriptivo, no validación")) {
+    report.journal.notes = `${report.journal.notes ?? ""} descriptivo, no validación.`.trim();
+  }
   if (sql) {
     try { await persistDiscoveryJournal(sql, report.journal); } catch { /* best-effort */ }
   }

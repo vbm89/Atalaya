@@ -14,7 +14,7 @@ export function ShadowDiscoveryPanel() {
           <span className="text-xs font-mono text-subtle">UNIVERSO · sin ranking · k no incrementa</span>
         </div>
         <p className="mt-1 text-xs text-subtle">
-          Mapa de cinta nativa. Sin exploración de patrones en este paso. K1 y V1 intactos.
+          EXPLORE / INSUFFICIENT. descriptivo, no validación. K1 y V1 intactos.
         </p>
       </div>
       {q.isLoading ? <p className="px-4 py-4 text-sm text-subtle">Leyendo cobertura…</p> : null}
@@ -23,6 +23,26 @@ export function ShadowDiscoveryPanel() {
       ) : null}
       {report ? (
         <div className="divide-y divide-border">
+          <div className="px-4 py-3 text-[11px] leading-relaxed text-subtle">
+            {(() => {
+              const c15 = report.universes?.common4.find((c) => c.tf === "15m");
+              const deep = (report.universes?.assetDeep ?? []).filter((d) => d.tf === "15m");
+              const days = c15?.days == null ? "—" : `${c15.days.toFixed(1)}d`;
+              const limit = c15?.limitingAssets.length ? c15.limitingAssets.join(", ") : "—";
+              const deepTxt = deep.length
+                ? deep.map((d) => `${d.assetId} +${d.extraDays == null ? d.extraBars : d.extraDays.toFixed(0)}d`).join(" · ")
+                : "ninguno";
+              return (
+                <>
+                  <p>
+                    COMMON_4 15m: {c15?.available ? days : "no disponible"} · limitan {limit}
+                  </p>
+                  <p className="mt-1">ASSET_DEEP 15m: {deepTxt}</p>
+                  <p className="mt-1 font-medium text-fg">EXPLORE / INSUFFICIENT · descriptivo, no validación</p>
+                </>
+              );
+            })()}
+          </div>
           <div className="px-4 py-3 text-[11px] text-subtle">
             Ingestado ahora: {"ingested" in payload! ? String(payload.ingested) : LAB_UNAVAILABLE}
             {" · "}archivo {payload && "fromStore" in payload && payload.fromStore ? "persistido" : "feed / vacío"}

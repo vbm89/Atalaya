@@ -15,6 +15,15 @@ import { detectEvents } from "./shadow-discovery-events";
 import { detectSequences } from "./shadow-discovery-sequences";
 import { outcomeAfterEvent } from "./shadow-discovery-outcome";
 import {
+  assetDeepSlices,
+  clipBarsToCommon4,
+  common4Window,
+  spansFromCoverage,
+  type AssetDeepSlice,
+  type Common4Window,
+} from "./shadow-discovery-universe";
+import {
+  DISCOVERY_ARCHIVE_TFS,
   DISCOVERY_ASSETS,
   DISCOVERY_TFS,
   type DiscoveryBar,
@@ -46,6 +55,12 @@ export interface DiscoveryExploreReport {
   /** Outcomes are optional and NEVER used to rank. */
   outcomesSampled: number;
   rankingByExpectancy: false;
+  universes: {
+    common4: Common4Window[];
+    assetDeep: AssetDeepSlice[];
+    inference: "INSUFFICIENT";
+    exploreGrade: "EXPLORE";
+  };
 }
 
 function emptyCoverage(assetId: AssetId, tf: DiscoveryTf): DiscoveryCoverageRow {
@@ -102,7 +117,10 @@ export function buildCoverage(
   return rows;
 }
 
-function mtfMatrix(coverage: DiscoveryCoverageRow[]): DiscoveryExploreReport["mtfAvailable"] {
+function mtfMatrix(
+  coverage: DiscoveryCoverageRow[],
+  commons: Common4Window[],
+): DiscoveryExploreReport["mtfAvailable"] {
   const pairs: [DiscoveryTf, DiscoveryTf][] = [
     ["4h", "1h"], ["1h", "30m"], ["30m", "15m"], ["4h", "15m"], ["15m", "5m"], ["5m", "1m"],
   ];
@@ -113,8 +131,13 @@ function mtfMatrix(coverage: DiscoveryCoverageRow[]): DiscoveryExploreReport["mt
       return { from, to, ok: false, reason: `sin cinta nativa ${from}→${to}` };
     }
     const recent = to === "1m" || to === "5m" || from === "1m" || from === "5m";
-    if (recent) return { from, to, ok: true, reason: "solo reciente (histórico corto)" };
-    return { from, to, ok: true, reason: "datos nativos en ambos TF" };
+    if (recent) return { from, to, ok: true, reason: "solo reciente (histórico corto); sin síntesis" };
+    const wf = commons.find((c) => c.tf === from);
+    const wt = commons.find((c) => c.tf === to);
+    if (!wf?.available || !wt?.available) {
+      return { from, to, ok: false, reason: `MTF ${from}→${to} exige ventanas válidas en ambos TF` };
+    }
+    return { from, to, ok: true, reason: "nativo; join causal solo dentro de COMMON_4 de cada TF" };
   });
 }
 
@@ -126,10 +149,13 @@ export function exploreDiscovery(
   bars: readonly DiscoveryBar[],
   nowSec: number,
   codeVersion = "shadow-discovery-1",
-  opts?: { detectPatterns?: boolean },
+  opts?: { detectPatterns?: boolean; cursors?: Parameters<typeof buildCoverage>[1] },
 ): DiscoveryExploreReport {
   const closed = closedBarsThrough(sanitizeBars(bars), nowSec);
-  const coverage = buildCoverage(closed);
+  const coverage = buildCoverage(closed, opts?.cursors);
+  const spans = spansFromCoverage(coverage);
+  const common4 = DISCOVERY_ARCHIVE_TFS.map((tf) => common4Window(spans, tf));
+  const assetDeep = common4.flatMap((c) => assetDeepSlices(closed, c));
   const grouped = groupByAssetTf(closed);
   const events: DiscoveryEvent[] = [];
   if (opts?.detectPatterns) {
@@ -143,9 +169,15 @@ export function exploreDiscovery(
   }
   events.sort((a, b) => a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));
 
-  const kinds = [...new Set(events.map((e) => e.kind))].sort();
+  const commonEvents = events.filter((e) => {
+    const c = common4.find((w) => w.tf === e.tf);
+    if (!c?.available || c.fromT == null || c.toT == null) return false;
+    return e.openT >= c.fromT && e.openT <= c.toT;
+  });
+
+  const kinds = [...new Set(commonEvents.map((e) => e.kind))].sort();
   const eventCounts: DiscoveryEventCount[] = kinds.map((kind) => {
-    const subset = events.filter((e) => e.kind === kind);
+    const subset = commonEvents.filter((e) => e.kind === kind);
     const byAsset: Partial<Record<AssetId, number>> = {};
     const byTf: Partial<Record<DiscoveryTf, number>> = {};
     for (const e of subset) {
@@ -155,7 +187,7 @@ export function exploreDiscovery(
     return { kind, n: subset.length, byAsset, byTf };
   });
 
-  const sequences: DiscoverySequence[] = detectSequences(events);
+  const sequences: DiscoverySequence[] = detectSequences(commonEvents);
   const seqNames = [...new Set(sequences.map((s) => s.family))].sort();
   const sequenceCounts = seqNames.map((family) => ({
     family,
@@ -163,15 +195,18 @@ export function exploreDiscovery(
   }));
 
   let outcomesSampled = 0;
-  for (const e of events.slice(0, 50)) {
+  for (const e of commonEvents.slice(0, 50)) {
     const series = grouped.get(`${e.assetId}|${e.tf}`) ?? [];
-    outcomeAfterEvent(e, series);
+    const c = common4.find((w) => w.tf === e.tf);
+    const clipped = c ? clipBarsToCommon4(series, c) : [];
+    outcomeAfterEvent(e, clipped);
     outcomesSampled += 1;
   }
 
+  const primary = common4.find((c) => c.tf === "15m" && c.available) ?? common4.find((c) => c.available);
   const journal: DiscoveryJournalEntry = {
     exploredAt: new Date(nowSec * 1000).toISOString(),
-    universe: "independent_tape_excluding_k1_test",
+    universe: primary ? "COMMON_4" : "TF_SOLO",
     primitives: ["swing", "range", "sweep", "reclaim", "displacement", "bos", "fvg", "atr", "volume_ratio"],
     families: sequenceCounts.map((s) => s.family),
     variants: eventCounts.map((e) => e.kind),
@@ -180,7 +215,7 @@ export function exploreDiscovery(
     candidates: [],
     outcomeConsulted: false,
     codeVersion,
-    notes: "EXPLORE descriptivo. Sin ranking por R. TEST de K1 excluido. k no incrementa.",
+    notes: "EXPLORE / INSUFFICIENT. descriptivo, no validación. COMMON_4 = intersección. ASSET_DEEP separado. Sin ranking. TEST de K1 excluido. k no incrementa.",
   };
 
   return {
@@ -191,10 +226,16 @@ export function exploreDiscovery(
     coverage,
     eventCounts,
     sequenceCounts,
-    mtfAvailable: mtfMatrix(coverage),
+    mtfAvailable: mtfMatrix(coverage, common4),
     journal,
     outcomesSampled,
     rankingByExpectancy: false,
+    universes: {
+      common4,
+      assetDeep,
+      inference: "INSUFFICIENT",
+      exploreGrade: "EXPLORE",
+    },
   };
 }
 
