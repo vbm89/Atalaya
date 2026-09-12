@@ -11,6 +11,7 @@ export type ShadowHypothesisUniverse = "v1_map" | "independent_tape";
 
 export interface ShadowHypothesis {
   id: string;
+  version: number;
   label: string;
   geometry: string;
   parameters: Readonly<Record<string, string | number | boolean | null>>;
@@ -29,6 +30,7 @@ export interface ShadowHypothesis {
 export const SHADOW_HYPOTHESIS_REGISTRY: readonly ShadowHypothesis[] = Object.freeze([
   {
     id: "K1_FAILED_BREAKOUT_TRAP_15M",
+    version: 1,
     label: "Failed Breakout / Trap · 15M",
     geometry: "breakout_then_failure_reclaim",
     parameters: {
@@ -110,4 +112,6 @@ export const SHADOW_PREREGISTER_PLAN = Object.freeze({
   modifiesV1: false as const,
   kCountsReplayRows: false as const,
   testIsJudgeNotLeaderboard: true as const,
+  sealInspectsTestOutcomes: false as const,
+  geometryChangeIsNewHypothesis: true as const,
 });

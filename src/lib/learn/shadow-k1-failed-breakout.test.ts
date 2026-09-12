@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   buildK1Report,
   K1_REGISTERED_AT,
+  k1TrainSealTrades,
   scanK1BreakoutEvents,
   scanK1FailedBreakout,
   type K1Bar,
@@ -354,5 +355,18 @@ describe("K1 failed breakout / trap", () => {
     assert.equal(report.train.decided, report.decided);
     assert.equal(report.train.expectancyR, report.meanGrossR);
     assert.equal(report.train.successPct, report.successPct);
+  });
+
+  it("k1TrainSealTrades is TRAIN-only and ignores post-registeredAt candidates", () => {
+    const trainRows = ac(0, "XAUUSD");
+    const testRows = ac(K1_REGISTERED_AT, "BTCUSD");
+    const onlyTrain = k1TrainSealTrades({ XAUUSD: trainRows });
+    const mixed = k1TrainSealTrades({ XAUUSD: trainRows, BTCUSD: testRows });
+    assert.equal(onlyTrain.length, 1);
+    assert.deepEqual(
+      mixed.map((t) => `${t.assetId}|${t.decisionSlot}`),
+      onlyTrain.map((t) => `${t.assetId}|${t.decisionSlot}`),
+    );
+    assert.ok(mixed.every((t) => t.decisionSlot < K1_REGISTERED_AT));
   });
 });

@@ -432,3 +432,23 @@ export function buildK1Report(
     parameters: K1_PARAMETERS,
   };
 }
+
+/** TRAIN-only trades for the SEAL protocol. Never includes TEST (decisionSlot >= registeredAt). */
+export function k1TrainSealTrades(
+  byAsset: Readonly<Record<string, readonly K1Bar[]>>,
+): Array<{ assetId: string; decisionSlot: number; outcome: "tp1" | "sl" | "pending"; rrAtOutcome: number | null }> {
+  const trades: Array<{ assetId: string; decisionSlot: number; outcome: "tp1" | "sl" | "pending"; rrAtOutcome: number | null }> = [];
+  for (const bars of Object.values(byAsset)) {
+    for (const candidate of scanK1FailedBreakout(bars)) {
+      if (candidate.decisionSlot >= K1_REGISTERED_AT) continue;
+      const outcome = outcomeFor(candidate, byAsset[candidate.assetId] ?? bars);
+      trades.push({
+        assetId: candidate.assetId,
+        decisionSlot: candidate.decisionSlot,
+        outcome: outcome.terminal,
+        rrAtOutcome: outcome.grossR,
+      });
+    }
+  }
+  return trades;
+}

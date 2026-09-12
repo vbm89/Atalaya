@@ -10,7 +10,8 @@ export const getShadowRadar = createServerFn({ method: "POST" }).handler(async (
   const { buildXauFeedComparator } = await import("./xau-feed-comparator");
   const { buildShadowAssetRanking } = await import("./shadow-asset-ranking");
   const { buildShadowFrequencyReport, buildShadowFrequencyDensity } = await import("./shadow-frequency");
-  const { buildK1Report } = await import("./shadow-k1-failed-breakout");
+  const { buildK1Report, k1TrainSealTrades, K1_REGISTERED_AT } = await import("./shadow-k1-failed-breakout");
+  const { evaluateSealReadiness } = await import("./shadow-seal-protocol");
   const { replayCandidates } = await import("./shadow-replay");
   const { kHypotheses, SHADOW_HYPOTHESIS_REGISTRY } = await import("./shadow-preregister");
   const { evaluateShadowPromotion } = await import("./shadow-promotion-gate");
@@ -31,6 +32,21 @@ export const getShadowRadar = createServerFn({ method: "POST" }).handler(async (
     (k1ByAsset[row.asset_id] ??= []).push({ assetId: row.asset_id, t: Number(row.t), o: row.o, h: row.h, l: row.l, c: row.c });
   }
   const k1 = buildK1Report(k1ByAsset);
+  const trainTrades = k1TrainSealTrades(k1ByAsset);
+  const assetsWithTrainDecided = new Set(
+    trainTrades.filter((t) => t.outcome === "tp1" || t.outcome === "sl").map((t) => t.assetId),
+  ).size;
+  const k1Seal = evaluateSealReadiness({
+    hypothesisId: "K1_FAILED_BREAKOUT_TRAP_15M",
+    status: SHADOW_HYPOTHESIS_REGISTRY[0]!.status === "SEALED" ? "SEALED" : "REGISTERED",
+    registeredAtSec: K1_REGISTERED_AT,
+    nowSec: Math.floor(Date.now() / 1000),
+    trainDecided: k1.train.decided,
+    trainPending: k1.train.n - k1.train.decided,
+    trainTrades,
+    costsKnown: k1.costsKnown,
+    assetsWithTrainDecided,
+  });
   const strictPromotion = frequency.strategies.map((s) => ({
     strategy: s.strategy,
     decision: evaluateShadowPromotion({
@@ -60,7 +76,13 @@ export const getShadowRadar = createServerFn({ method: "POST" }).handler(async (
     frequency,
     frequencyDensity,
     k1,
+    k1Seal,
     strictPromotion,
-    preregister: { k: kHypotheses(SHADOW_HYPOTHESIS_REGISTRY), testIsLeaderboard: false },
+    preregister: {
+      k: kHypotheses(SHADOW_HYPOTHESIS_REGISTRY),
+      testIsLeaderboard: false,
+      k1Version: SHADOW_HYPOTHESIS_REGISTRY[0]!.version,
+      k1Status: SHADOW_HYPOTHESIS_REGISTRY[0]!.status,
+    },
   };
 });

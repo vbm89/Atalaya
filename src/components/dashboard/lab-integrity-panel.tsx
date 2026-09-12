@@ -48,6 +48,25 @@ export function LabIntegrityPanel() {
         </>}
       </div>
 
+      <div className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated shadow-[var(--shadow-border)]" data-shadow-seal>
+        <div className="border-b border-border px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="font-semibold">Protocolo SEAL</h3>
+            <span className="text-xs font-mono text-subtle">K1 v{payload?.preregister?.k1Version ?? 1} · TEST 🔒</span>
+          </div>
+          <p className="mt-1 text-xs text-subtle">TEST permanece oculto hasta SEALED. Los umbrales se escribieron antes de mirar TEST. Un cambio de geometría no es un fix: es otra hipótesis.</p>
+        </div>
+        {radar.isLoading ? <p className="px-4 py-4 text-sm text-subtle">Leyendo protocolo…</p> : (
+          <div className="px-4 py-3 space-y-2">
+            <div className="text-sm font-medium">{payload?.k1Seal?.status === "SEALED" ? "SEALED · TEST revelado" : payload?.k1Seal?.status === "READY_TO_SEAL" ? "Listo para sellar (aún no sellado)" : "NO SE SELLA AÚN"}</div>
+            <div className="text-[11px] text-subtle">Observación {payload?.k1Seal?.observationDays ?? "—"} días · TRAIN decididos {payload?.k1Seal?.trainDecided ?? "—"} · no se lee TEST</div>
+            {(payload?.k1Seal?.reasons ?? []).length > 0 ? (
+              <ul className="list-disc pl-4 text-[11px] text-subtle">{(payload.k1Seal.reasons as string[]).map((r) => <li key={r}>{r}</li>)}</ul>
+            ) : <p className="text-[11px] text-subtle">Sin bloqueos de protocolo, o protocolo no disponible.</p>}
+          </div>
+        )}
+      </div>
+
       <ShadowDiscoveryPanel />
 
       <div className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated shadow-[var(--shadow-border)]" data-shadow-frequency>

@@ -48,6 +48,9 @@ describe("HOME shell contract", () => {
     const lab = read("lab-integrity-panel.tsx");
     assert.match(lab, /import \{ ShadowFrequencyPanel \} from "\.\/shadow-frequency-panel"/);
     assert.match(lab, /<ShadowFrequencyPanel /);
+    assert.match(lab, /data-shadow-seal/);
+    assert.match(lab, /TEST 🔒/);
+    assert.doesNotMatch(lab, /k1Seal\.test\./);
   });
 
   it("HOME chrome does not import Shadow replay or capture writers", () => {

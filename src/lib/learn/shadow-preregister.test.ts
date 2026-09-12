@@ -39,11 +39,15 @@ describe("pre-registration k", () => {
     assert.equal(k1.parameters.sessionFilter, false);
     assert.equal(k1.parameters.newsFilter, false);
     assert.equal(k1.parameters.unknownCostsBlockPromotion, true);
+    assert.equal(k1.version, 1);
+    assert.equal(SHADOW_PREREGISTER_PLAN.sealInspectsTestOutcomes, false);
+    assert.equal(SHADOW_PREREGISTER_PLAN.geometryChangeIsNewHypothesis, true);
   });
 
   it("k increments only when a REGISTERED or SEALED hypothesis is added", () => {
     const one: ShadowHypothesis = {
       id: "demo",
+      version: 1,
       label: "demo",
       geometry: "breakout_retest",
       parameters: { lookback: 16 },
