@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { evaluateShadowPromotion } from "./shadow-promotion-gate";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { evaluateShadowPromotion } from "./shadow-promotion-gate.ts";
 
 const ready = {
   extraTestDecided: 80,
@@ -22,25 +23,26 @@ const ready = {
 describe("evaluateShadowPromotion", () => {
   it("stays locked when any robustness gate fails", () => {
     const result = evaluateShadowPromotion({ ...ready, extraTestDecided: 79 });
-    expect(result.eligible).toBe(false);
-    expect(result.status).toBe("NOT_READY");
-    expect(result.reasons).toContain("EXTRA TEST < 80");
+    assert.equal(result.eligible, false);
+    assert.equal(result.status, "NOT_READY");
+    assert.ok(result.reasons.includes("EXTRA TEST < 80"));
   });
 
   it("does not allow concentration at exactly 40%", () => {
     const result = evaluateShadowPromotion({ ...ready, top3PnlShare: 0.4 });
-    expect(result.eligible).toBe(false);
+    assert.equal(result.eligible, false);
   });
 
   it("requires known costs and independent multiple-testing control", () => {
     const result = evaluateShadowPromotion({ ...ready, costsKnown: false, multipleTestingAdjusted: false });
-    expect(result.eligible).toBe(false);
-    expect(result.reasons).toEqual(expect.arrayContaining(["costes desconocidos", "múltiples pruebas sin ajuste"]));
+    assert.equal(result.eligible, false);
+    assert.ok(result.reasons.includes("costes desconocidos"));
+    assert.ok(result.reasons.includes("múltiples pruebas sin ajuste"));
   });
 
   it("keeps the gate research-only even when all criteria are met", () => {
     const result = evaluateShadowPromotion(ready);
-    expect(result.eligible).toBe(true);
-    expect(result.status).toBe("RESEARCH");
+    assert.equal(result.eligible, true);
+    assert.equal(result.status, "RESEARCH");
   });
 });
