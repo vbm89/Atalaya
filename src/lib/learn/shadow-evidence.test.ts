@@ -10,7 +10,7 @@ describe("classifyShadowEvidence", () => {
     expect(classifyShadowEvidence({ cases: 100, extraTestN: 30, hasTrainTestSplit: true, predefined: false, contaminationFree: true }).status).toBe("EXPLORATORY");
   });
 
-  it("requires all gates before confirmatory", () => {
-    expect(classifyShadowEvidence({ cases: 100, extraTestN: 30, hasTrainTestSplit: true, predefined: true, contaminationFree: true }).status).toBe("CONFIRMATORY");
+  it("never marks evidence confirmatory before the promotion protocol", () => {
+    expect(classifyShadowEvidence({ cases: 100, extraTestN: 30, hasTrainTestSplit: true, predefined: true, contaminationFree: true }).status).toBe("EXPLORATORY");
   });
 });
