@@ -21,8 +21,47 @@ export interface ShadowHypothesis {
   status: ShadowHypothesisStatus;
 }
 
-/** Empty on purpose: nothing in Phase 1 was pre-registered before seeing TEST. */
-export const SHADOW_HYPOTHESIS_REGISTRY: readonly ShadowHypothesis[] = Object.freeze([]);
+/**
+ * k=1: the first genuinely independent hypothesis after the Phase 1 integrity work.
+ * Parameters are frozen before TEST is inspected. No volume/session/news filter is
+ * allowed to be added later without registering a new hypothesis.
+ */
+export const SHADOW_HYPOTHESIS_REGISTRY: readonly ShadowHypothesis[] = Object.freeze([
+  {
+    id: "K1_FAILED_BREAKOUT_TRAP_15M",
+    label: "Failed Breakout / Trap · 15M",
+    geometry: "breakout_then_failure_reclaim",
+    parameters: {
+      timeframe: "15m",
+      source: "market_m15",
+      atrPeriodBars: 14,
+      rangeLookbackBars: 16,
+      breakoutCloseAtr: 0.1,
+      maxFailureBars: 4,
+      reclaimClose: "back_inside_prior_range",
+      stopPlacement: "failed_extreme_plus_buffer",
+      stopBufferAtr: 0.1,
+      minRiskAtr: 0.25,
+      maxRiskAtr: 2,
+      tp1R: 2,
+      tp2R: null,
+      decision: "close_of_first_failure_reclaim",
+      outcomeStarts: "next_closed_bar",
+      oneCandidatePerBreakout: true,
+      volumeFilter: false,
+      sessionFilter: false,
+      newsFilter: false,
+      assetFilter: "all",
+      touchAndCloseThrough: "both_research_scenarios",
+      unknownCostsBlockPromotion: true,
+    },
+    universe: "independent_tape",
+    assets: "all",
+    primaryMetric: SHADOW_PRIMARY_METRIC,
+    registeredAt: "2026-09-12T06:30:00Z",
+    status: "REGISTERED",
+  },
+]);
 
 /** Historical Shadow variants. Visible as legado; they do not count as k. */
 export const SHADOW_LEGACY_HYPOTHESIS_IDS = Object.freeze([
