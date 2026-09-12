@@ -21,7 +21,7 @@ export interface K1Candidate {
 export interface K1Outcome {
   candidate: K1Candidate;
   firstTouch: "tp1" | "sl" | null;
-  terminal: "tp1" | "sl" | "expired";
+  terminal: "tp1" | "sl" | "pending";
   grossR: number | null;
   reachedTp1: boolean;
   sameBarAmbiguous: boolean;
@@ -32,15 +32,18 @@ export interface K1Report {
   hypothesisId: "K1_FAILED_BREAKOUT_TRAP_15M";
   source: "market_m15";
   timeframe: "15m";
+  registeredAt: number;
   candidates: number;
+  uniqueBreakoutEvents: number;
   decided: number;
   tp1: number;
   sl: number;
+  pending: number;
   expired: number;
   successPct: number | null;
   meanGrossR: number | null;
   train: { n: number; decided: number; successPct: number | null; expectancyR: number | null };
-  test: { n: number; decided: number; successPct: number | null; expectancyR: number | null };
+  test: { hidden: boolean; n: number; decided: number; successPct: number | null; expectancyR: number | null };
   costsKnown: false;
   netExpectancyR: null;
   fillModels: {
@@ -48,6 +51,12 @@ export interface K1Report {
     closeThroughDecided: number;
     touchExpectancyR: number | null;
     closeThroughExpectancyR: number | null;
+    discordantCount: number;
+    agreeSameFirstTouch: number;
+    touchSl_ctTp1: number;
+    touchTp1_ctSl: number;
+    touchSl_ctPending: number;
+    touchTp1_ctPending: number;
   };
   path: { reachedTp1: number; ambiguous: number; tp1ThenSl: number };
   parameters: Readonly<Record<string, string | number | boolean | null>>;
@@ -63,12 +72,16 @@ const MAX_RISK_ATR = 2;
 const TP1_R = 2;
 const BAR_SEC = 900;
 
+// Fixed at registration time. This is a cohort boundary, not a tunable K1 parameter.
+export const K1_REGISTERED_AT = Math.floor(Date.parse("2026-09-12T06:30:00Z") / 1000);
+
 export const K1_PARAMETERS = Object.freeze({
   timeframe: "15m", source: "market_m15", atrPeriodBars: ATR_PERIOD, rangeLookbackBars: RANGE_LOOKBACK,
   breakoutCloseAtr: BREAKOUT_CLOSE_ATR, maxFailureBars: MAX_FAILURE_BARS, reclaimClose: "back_inside_prior_range",
   stopPlacement: "failed_extreme_plus_buffer", stopBufferAtr: STOP_BUFFER_ATR, minRiskAtr: MIN_RISK_ATR,
   maxRiskAtr: MAX_RISK_ATR, tp1R: TP1_R, tp2R: null, decision: "close_of_first_failure_reclaim",
   outcomeStarts: "next_closed_bar", oneCandidatePerBreakout: true, volumeFilter: false, sessionFilter: false,
+  newsFilter: false, assetFilter: "all", touchAndCloseThrough: "both_research_scenarios", unknownCostsBlockPromotion: true,
   newsFilter: false,
 });
 
@@ -118,8 +131,6 @@ function outcomeFor(candidate: K1Candidate, bars: readonly K1Bar[]): K1Outcome {
     const tp1 = candidate.direction === "buy" ? bar.h >= candidate.tp1 : bar.l <= candidate.tp1;
     if (sl && tp1) {
       sameBarAmbiguous = true;
-      // Intrabar order is unknowable here; conservatively terminal SL, but do not
-      // claim a sequential TP1 -> SL path from an ambiguous candle.
       if (firstTouch == null) firstTouch = "sl";
       break;
     }
@@ -137,34 +148,48 @@ function outcomeFor(candidate: K1Candidate, bars: readonly K1Bar[]): K1Outcome {
   }
 
   const grossR = grossRForTouch(firstTouch);
-  const terminal = firstTouch == null ? "expired" : tp1ThenSl ? "sl" : firstTouch;
+  const terminal: K1Outcome["terminal"] = firstTouch == null ? "pending" : firstTouch;
   return { candidate, firstTouch, terminal, grossR, reachedTp1, sameBarAmbiguous, tp1ThenSl };
 }
 
 export function scanK1FailedBreakout(assetBars: readonly K1Bar[]): K1Candidate[] {
   const bars = [...assetBars].sort((a, b) => a.t - b.t);
   const out: K1Candidate[] = [];
-  for (let i = Math.max(RANGE_LOOKBACK, ATR_PERIOD); i < bars.length - 1; i += 1) {
+  let i = Math.max(RANGE_LOOKBACK, ATR_PERIOD);
+
+  while (i < bars.length - 1) {
     const atr = atrAt(bars, i);
-    if (atr == null) continue;
+    if (atr == null) {
+      i += 1;
+      continue;
+    }
     const rangeBars = bars.slice(i - RANGE_LOOKBACK, i);
     const rangeHigh = Math.max(...rangeBars.map((b) => b.h));
     const rangeLow = Math.min(...rangeBars.map((b) => b.l));
     const breakout = bars[i]!;
     const up = breakout.c >= rangeHigh + BREAKOUT_CLOSE_ATR * atr;
     const down = breakout.c <= rangeLow - BREAKOUT_CLOSE_ATR * atr;
-    if (!up && !down) continue;
+    if (!up && !down) {
+      i += 1;
+      continue;
+    }
 
-    for (let j = i + 1; j <= Math.min(i + MAX_FAILURE_BARS, bars.length - 1); j += 1) {
+    const endJ = Math.min(i + MAX_FAILURE_BARS, bars.length - 1);
+    let consumedThrough = endJ;
+    for (let j = i + 1; j <= endJ; j += 1) {
       const failure = bars[j]!;
       if (up && failure.l <= rangeHigh && failure.c < rangeHigh) {
         const failureExtreme = Math.max(breakout.h, failure.h);
         const entry = failure.c;
         const sl = failureExtreme + STOP_BUFFER_ATR * atr;
         const risk = sl - entry;
-        if (risk / atr < MIN_RISK_ATR || risk / atr > MAX_RISK_ATR) break;
+        if (risk / atr < MIN_RISK_ATR || risk / atr > MAX_RISK_ATR) {
+          consumedThrough = j;
+          break;
+        }
         out.push({ assetId: breakout.assetId, direction: "sell", breakoutSlot: breakout.t + BAR_SEC, decisionSlot: failure.t + BAR_SEC,
           entry, sl, tp1: entry - TP1_R * risk, risk, atr, rangeHigh, rangeLow, breakoutExtreme: breakout.h, failureExtreme: failure.h });
+        consumedThrough = j;
         break;
       }
       if (down && failure.h >= rangeLow && failure.c > rangeLow) {
@@ -172,12 +197,17 @@ export function scanK1FailedBreakout(assetBars: readonly K1Bar[]): K1Candidate[]
         const entry = failure.c;
         const sl = failureExtreme - STOP_BUFFER_ATR * atr;
         const risk = entry - sl;
-        if (risk / atr < MIN_RISK_ATR || risk / atr > MAX_RISK_ATR) break;
+        if (risk / atr < MIN_RISK_ATR || risk / atr > MAX_RISK_ATR) {
+          consumedThrough = j;
+          break;
+        }
         out.push({ assetId: breakout.assetId, direction: "buy", breakoutSlot: breakout.t + BAR_SEC, decisionSlot: failure.t + BAR_SEC,
           entry, sl, tp1: entry + TP1_R * risk, risk, atr, rangeHigh, rangeLow, breakoutExtreme: breakout.l, failureExtreme: failure.l });
+        consumedThrough = j;
         break;
       }
     }
+    i = consumedThrough + 1;
   }
   return out;
 }
@@ -199,10 +229,8 @@ function summarize(outcomes: readonly K1Outcome[]) {
 export function buildK1Report(byAsset: Readonly<Record<string, readonly K1Bar[]>>): K1Report {
   const candidates = Object.values(byAsset).flatMap((bars) => scanK1FailedBreakout(bars));
   const outcomes = candidates.map((candidate) => outcomeFor(candidate, byAsset[candidate.assetId] ?? []));
-  const slots = [...new Set(outcomes.map((o) => o.candidate.decisionSlot))].sort((a, b) => a - b);
-  const cut = slots.length ? slots[Math.max(0, Math.floor(slots.length * 0.8) - 1)]! : 0;
-  const train = outcomes.filter((o) => o.candidate.decisionSlot <= cut);
-  const test = outcomes.filter((o) => o.candidate.decisionSlot > cut);
+  const train = outcomes.filter((o) => o.candidate.decisionSlot < K1_REGISTERED_AT);
+  const test = outcomes.filter((o) => o.candidate.decisionSlot >= K1_REGISTERED_AT);
 
   const fillOutcomes = (model: "touch" | "close_through") => outcomes.map((o) => ({
     ...o,
@@ -216,16 +244,31 @@ export function buildK1Report(byAsset: Readonly<Record<string, readonly K1Bar[]>
     shadowCostR(outcome.grossR, { spreadPrice: null, commissionPrice: null, riskPrice: outcome.candidate.risk });
   }
 
+  const discordant = outcomes.map((_, index) => ({ touch: touch[index]!.firstTouch, closeThrough: closeThrough[index]!.firstTouch }))
+    .filter(({ touch: t, closeThrough: ct }) => t !== ct && (t !== null || ct !== null));
+  const agreeSameFirstTouch = outcomes.map((_, index) => ({ touch: touch[index]!.firstTouch, closeThrough: closeThrough[index]!.firstTouch }))
+    .filter(({ touch: t, closeThrough: ct }) => t !== null && t === ct).length;
+  const touchSl_ctTp1 = outcomes.filter((_, index) => touch[index]!.firstTouch === "sl" && closeThrough[index]!.firstTouch === "tp1").length;
+  const touchTp1_ctSl = outcomes.filter((_, index) => touch[index]!.firstTouch === "tp1" && closeThrough[index]!.firstTouch === "sl").length;
+  const touchSl_ctPending = outcomes.filter((_, index) => touch[index]!.firstTouch === "sl" && closeThrough[index]!.firstTouch === null).length;
+  const touchTp1_ctPending = outcomes.filter((_, index) => touch[index]!.firstTouch === "tp1" && closeThrough[index]!.firstTouch === null).length;
+
   return {
-    hypothesisId: "K1_FAILED_BREAKOUT_TRAP_15M", source: "market_m15", timeframe: "15m",
-    candidates: outcomes.length, decided: outcomes.filter((o) => o.grossR != null).length,
+    hypothesisId: "K1_FAILED_BREAKOUT_TRAP_15M", source: "market_m15", timeframe: "15m", registeredAt: K1_REGISTERED_AT,
+    candidates: outcomes.length, uniqueBreakoutEvents: outcomes.length,
+    decided: outcomes.filter((o) => o.grossR != null).length,
     tp1: outcomes.filter((o) => o.firstTouch === "tp1").length, sl: outcomes.filter((o) => o.firstTouch === "sl").length,
-    expired: outcomes.filter((o) => o.firstTouch == null).length, successPct: successPct(outcomes), meanGrossR: expectancy(outcomes),
-    train: summarize(train), test: summarize(test), costsKnown: false, netExpectancyR: null,
+    pending: outcomes.filter((o) => o.firstTouch == null).length, expired: 0,
+    successPct: successPct(outcomes), meanGrossR: expectancy(outcomes),
+    train: summarize(train),
+    test: { hidden: true, n: test.length, decided: 0, successPct: null, expectancyR: null },
+    costsKnown: false, netExpectancyR: null,
     fillModels: {
       touchDecided: touch.filter((o) => o.grossR != null).length,
       closeThroughDecided: closeThrough.filter((o) => o.grossR != null).length,
       touchExpectancyR: expectancy(touch), closeThroughExpectancyR: expectancy(closeThrough),
+      discordantCount: discordant.length, agreeSameFirstTouch,
+      touchSl_ctTp1, touchTp1_ctSl, touchSl_ctPending, touchTp1_ctPending,
     },
     path: {
       reachedTp1: outcomes.filter((o) => o.reachedTp1).length,
