@@ -11,6 +11,7 @@ import {
   slotToMs,
 } from "./shadow-replay";
 import { buildShadowHorizonReport, type ShadowHorizonReport } from "./shadow-horizon";
+import { analyzeShadowCosts, type ShadowCostAnalysisReport } from "./shadow-cost-analysis";
 
 export type ShadowEvidenceLabel = "INSUFFICIENT" | "DESCRIPTIVE" | "EXPLORATORY" | "CONFIRMATORY";
 
@@ -52,6 +53,8 @@ export interface ShadowAnalysisReport {
   walkForward: WalkForwardWindow[];
   variantsEvaluated: number;
   confirmatoryAllowed: false;
+  /** Costs/fill-model analysis is persisted with the replay but never promotes V1. */
+  costs: ShadowCostAnalysisReport;
   /** Same candidates, different holding horizons. Research only; never changes V1. */
   horizons: ShadowHorizonReport;
 }
@@ -168,6 +171,7 @@ export function analyzeShadowReplay(episodes: readonly ShadowEpisode[]): ShadowA
     walkForward,
     variantsEvaluated: SHADOW_VARIANTS.length,
     confirmatoryAllowed: false,
+    costs: analyzeShadowCosts(episodes, rows),
     horizons: buildShadowHorizonReport(episodes, rows),
   };
 }
