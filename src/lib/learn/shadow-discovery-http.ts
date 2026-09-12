@@ -108,6 +108,15 @@ export async function handleDiscoveryExplore(
     };
     return Response.json(payload, { headers: NO_STORE });
   } catch (e) {
+    const already =
+      (e instanceof Error && e.name === "DiscoveryExploreAlreadyExecuted") ||
+      (e instanceof Error && e.message.startsWith("ALREADY_EXECUTED"));
+    if (already) {
+      return Response.json(
+        { ok: false as const, error: "ALREADY_EXECUTED", code: "ALREADY_EXECUTED" },
+        { status: 409, headers: NO_STORE },
+      );
+    }
     const aborted = e instanceof Error && e.name === "DiscoveryExploreAbort";
     return Response.json(
       { ok: false as const, error: e instanceof Error ? e.message : "discovery explore unavailable" },

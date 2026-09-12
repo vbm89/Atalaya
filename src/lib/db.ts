@@ -35,6 +35,7 @@ export interface Sql {
     text: string,
     params?: unknown[],
   ): Promise<T[]>;
+  transaction<T>(fn: (sql: Sql) => Promise<T>): Promise<T>;
 }
 
 /**
@@ -94,10 +95,31 @@ function createNeonSql(): Promise<Sql> {
     types.setTypeParser(OID_DATE, identity);
     types.setTypeParser(OID_INTERVAL, identity);
     const pool = new Pool({ connectionString: databaseUrl });
-    return toSql(async <T>(text: string, params: unknown[]) => {
+    const sql = toSql(async <T>(text: string, params: unknown[]) => {
       const res = await pool.query(text, params);
       return res.rows as T[];
     });
+    sql.transaction = async <T>(fn: (tx: Sql) => Promise<T>): Promise<T> => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const tx = toSql(async <R>(text: string, params: unknown[]) => {
+          const res = await client.query(text, params);
+          return res.rows as R[];
+        });
+        try {
+          const out = await fn(tx as Sql);
+          await client.query("COMMIT");
+          return out;
+        } catch (err) {
+          try { await client.query("ROLLBACK"); } catch { /* ignore */ }
+          throw err;
+        }
+      } finally {
+        client.release();
+      }
+    };
+    return sql;
   })().catch((err) => {
     globalRef.__pgSqlPromise__ = undefined;
     throw err;
@@ -161,10 +183,20 @@ async function createPgliteSql(): Promise<Sql> {
   globalRef.__pgliteMigrateChain__ = pass;
   await pass;
 
-  return toSql(async <T>(text: string, params: unknown[]) => {
+  const sql = toSql(async <T>(text: string, params: unknown[]) => {
     const result = await pg.query<T>(text, params);
     return result.rows;
   });
+  sql.transaction = async <T>(fn: (tx: Sql) => Promise<T>): Promise<T> => {
+    return pg.transaction(async (client) => {
+      const tx = toSql(async <R>(text: string, params: unknown[]) => {
+        const result = await client.query<R>(text, params);
+        return result.rows;
+      });
+      return fn(tx as Sql);
+    });
+  };
+  return sql;
 }
 
 let sqlPromise: Promise<Sql> | null = null;

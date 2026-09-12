@@ -123,6 +123,8 @@ export const NOTIFY_CLAIM_STALE_MS = 120_000;
 
 export interface SqlQuery {
   query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]>;
+  /** Optional same-connection transaction. Required for one-shot explore lock. */
+  transaction?<T>(fn: (tx: SqlQuery) => Promise<T>): Promise<T>;
 }
 
 function num(v: unknown): number {

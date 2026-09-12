@@ -118,6 +118,23 @@ export async function persistDiscoveryJournal(sql: SqlQuery, entry: DiscoveryJou
   return Number.isFinite(id) ? id : null;
 }
 
+export async function findOneshotExploreJournal(
+  sql: SqlQuery,
+  mark: string,
+): Promise<number | null> {
+  const rows = await sql.query<{ id: number | string }>(
+    `select id from discovery_journal
+      where position($1 in coalesce(notes, '')) > 0
+      order by id asc
+      limit 1`,
+    [mark],
+  );
+  const raw = rows[0]?.id;
+  if (raw == null) return null;
+  const id = Number(raw);
+  return Number.isFinite(id) ? id : null;
+}
+
 export async function loadDiscoveryJournal(sql: SqlQuery, limit = 20): Promise<DiscoveryJournalEntry[]> {
   const rows = await sql.query<{
     explored_at: string; universe: string; primitives: string[]; families: string[];
