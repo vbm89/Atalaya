@@ -26,10 +26,16 @@ import {
   type Common4Window,
 } from "./shadow-discovery-universe";
 import {
+  classifyEventCommon4,
+  eventInCatalogUniverse,
+  filterSequencesForUniverse,
+} from "./shadow-discovery-dependency";
+import {
   DISCOVERY_ARCHIVE_TFS,
   DISCOVERY_ASSETS,
   DISCOVERY_TFS,
   type DiscoveryBar,
+  type DiscoveryCatalogUniverse,
   type DiscoveryCoverageRow,
   type DiscoveryEvent,
   type DiscoveryEventKind,
@@ -211,7 +217,12 @@ export function collectExploreCatalog(
   bars: readonly DiscoveryBar[],
   nowSec: number,
   codeVersion = "shadow-discovery-1",
-  opts?: { detectPatterns?: boolean; cursors?: Parameters<typeof buildCoverage>[1] },
+  opts?: {
+    detectPatterns?: boolean;
+    cursors?: Parameters<typeof buildCoverage>[1];
+    /** Omit = FIRST_ONESHOT prefix bound (`COMMON_4`). Never default to STRICT/CAUSAL. */
+    catalogUniverse?: DiscoveryCatalogUniverse;
+  },
 ): DiscoveryExploreCatalog {
   const closed = closedBarsThrough(sanitizeBars(bars), nowSec);
   const coverage = buildCoverage(closed, opts?.cursors);
@@ -246,7 +257,11 @@ export function collectExploreCatalog(
 
   const commonEvents = tagged.filter((e) => {
     const c = common4.find((w) => w.tf === e.tf);
-    return c ? isCommon4CatalogEvent(e, c) : false;
+    if (!c) return false;
+    if (opts?.catalogUniverse) {
+      return eventInCatalogUniverse(classifyEventCommon4(e, c), opts.catalogUniverse);
+    }
+    return isCommon4CatalogEvent(e, c);
   });
 
   const warmupTaggedN = tagged.filter((e) => e.warmupOutsideCommon).length;
@@ -290,16 +305,19 @@ export function collectExploreCatalog(
       }));
     }
   }
-  const seqNames = [...new Set(sequences.map((s) => s.family))].sort();
+  const sequenced = opts?.catalogUniverse
+    ? filterSequencesForUniverse(sequences, common4, opts.catalogUniverse)
+    : sequences;
+  const seqNames = [...new Set(sequenced.map((s) => s.family))].sort();
   const sequenceCounts = seqNames.map((family) => ({
     family,
-    n: sequences.filter((s) => s.family === family).length,
+    n: sequenced.filter((s) => s.family === family).length,
   }));
 
   const primary = common4.find((c) => c.tf === "15m" && c.available) ?? common4.find((c) => c.available);
   const journal: DiscoveryJournalEntry = {
     exploredAt: new Date(nowSec * 1000).toISOString(),
-    universe: primary ? "COMMON_4" : "TF_SOLO",
+    universe: opts?.catalogUniverse ?? (primary ? "COMMON_4" : "TF_SOLO"),
     primitives: ["swing", "range", "sweep", "reclaim", "displacement", "bos", "fvg", "atr", "volume_ratio"],
     families: sequenceCounts.map((s) => s.family),
     variants: eventCounts.map((e) => e.kind),
@@ -334,8 +352,8 @@ export function collectExploreCatalog(
   return {
     report,
     cells: catalogCells(commonEvents),
-    sequenceCells: sequenceCellsOf(sequences),
-    sequences: sequences.map((s) => ({
+    sequenceCells: sequenceCellsOf(sequenced),
+    sequences: sequenced.map((s) => ({
       family: s.family,
       assetId: s.assetId,
       decisionCloseT: s.decisionCloseT,
@@ -364,7 +382,11 @@ export function exploreDiscovery(
   bars: readonly DiscoveryBar[],
   nowSec: number,
   codeVersion = "shadow-discovery-1",
-  opts?: { detectPatterns?: boolean; cursors?: Parameters<typeof buildCoverage>[1] },
+  opts?: {
+    detectPatterns?: boolean;
+    cursors?: Parameters<typeof buildCoverage>[1];
+    catalogUniverse?: DiscoveryCatalogUniverse;
+  },
 ): DiscoveryExploreReport {
   return collectExploreCatalog(bars, nowSec, codeVersion, opts).report;
 }

@@ -16,6 +16,17 @@ export const DISCOVERY_COMMON_MIN_DAYS = 30;
 
 export type DiscoveryUniverseKind = "COMMON_4" | "ASSET_DEEP" | "TF_SOLO";
 
+/** Catalog strata for a future second exploration. FIRST_ONESHOT stays `COMMON_4`. */
+export type DiscoveryCatalogUniverse = "COMMON_4_STRICT" | "COMMON_4_CAUSAL";
+
+export type DiscoveryWarmupReason =
+  | "geometry_prefix"
+  | "atr_wilder"
+  | "last_swing"
+  | "last_fvg"
+  | "htf_leg"
+  | "none";
+
 
 export const DISCOVERY_STEP_SEC: Record<DiscoveryTf, number> = {
   "1m": 60,
@@ -119,8 +130,19 @@ export interface DiscoveryEvent {
   /**
    * True when detection of a COMMON_4 event used bars with t < COMMON_4.fromT.
    * Does not invalidate the event. Not lookahead.
+   * FIRST_ONESHOT membership still uses this prefix bound — do not reinterpret.
    */
   warmupOutsideCommon: boolean;
+  /**
+   * Min open time of bars that determine event *existence* / level.
+   * Absolute unix seconds. Detector-assigned; not a COMMON_4 clip.
+   */
+  geometryMinT: number;
+  /**
+   * Min open time of bars that enter indicator/state (ATR Wilder, lastSwing, lastFvg).
+   * null when existence does not use historical state. A4c: displacement uses series[0].
+   */
+  stateMinT: number | null;
 }
 
 export interface DiscoveryMtfAvailability {

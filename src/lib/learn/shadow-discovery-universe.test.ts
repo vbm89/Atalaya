@@ -73,6 +73,8 @@ function ev(p: Partial<DiscoveryEvent> & Pick<DiscoveryEvent, "kind" | "tf" | "o
     atr: null,
     extra: {},
     warmupOutsideCommon: false,
+    geometryMinT: p.geometryMinT ?? p.openT,
+    stateMinT: p.stateMinT ?? null,
     ...p,
   };
 }
