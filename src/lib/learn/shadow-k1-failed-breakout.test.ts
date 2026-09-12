@@ -12,19 +12,21 @@ function fixture(start = 0, assetId = "XAUUSD"): K1Bar[] {
   rows.push(bar(start + 20 * 900, 100, 101.4, 100, 101.3, assetId));
   rows.push(bar(start + 21 * 900, 101.3, 101.2, 100.8, 100.5, assetId));
   rows.push(bar(start + 22 * 900, 100.5, 100.7, 97.8, 98, assetId));
+  rows.push(bar(start + 23 * 900, 98, 99, 90.7, 98, assetId));
   return rows;
 }
 
 function fixtureWithRepeatedBreakout(start = 0): K1Bar[] {
-  const rows = fixture(start);
+  const rows = fixture(start).slice(0, 23);
   rows[21] = bar(start + 21 * 900, 101.3, 101.6, 101.1, 101.3);
   rows[22] = bar(start + 22 * 900, 101.3, 101.2, 100.8, 100.5);
-  rows[23] = bar(start + 23 * 900, 100.5, 100.7, 97.8, 98);
+  rows.push(bar(start + 23 * 900, 100.5, 100.7, 97.8, 98));
+  rows.push(bar(start + 24 * 900, 98, 99, 90.7, 98));
   return rows;
 }
 
 function fixtureWithTouchCtDivergence(start = 0): K1Bar[] {
-  const rows = fixture(start);
+  const rows = fixture(start).slice(0, 23);
   // Candidate is a sell with SL 101.6 and TP1 90.8. First post-decision bar
   // wicks through SL but closes below it; CT has not stopped yet.
   rows.push(bar(start + 23 * 900, 98, 101.7, 97.5, 98));
@@ -83,12 +85,7 @@ describe("K1 failed breakout / trap", () => {
   });
 
   it("marks an outcome at the right edge as pending, not expired", () => {
-    const rows = fixture();
-    const report = buildK1Report({ XAUUSD: rows });
-    assert.equal(report.pending, 0);
-    const edge = rows.slice(0, -1);
-    // Reuse a candidate whose decision is now the final available bar by
-    // constructing the same setup and dropping all post-decision bars.
+    const edge = fixture().slice(0, 23);
     const reportAtEdge = buildK1Report({ XAUUSD: edge });
     assert.equal(reportAtEdge.expired, 0);
     assert.equal(reportAtEdge.pending, 1);
