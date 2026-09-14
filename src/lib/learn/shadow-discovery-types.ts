@@ -112,7 +112,8 @@ export type DiscoveryEventKind =
   | "bos_up"
   | "bos_down"
   | "fvg_created"
-  | "fvg_retested";
+  | "fvg_retested"
+  | "order_block";
 
 export interface DiscoveryEvent {
   id: string;
