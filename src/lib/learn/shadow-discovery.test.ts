@@ -155,9 +155,10 @@ describe("causal order block research primitive", () => {
     series[i - 1] = { ...origin, o: 101, c: 99.5, h: 101.2, l: 99.0 };
     const impulse = series[i]!;
     series[i] = { ...impulse, o: 100, c: 100 + atr * 1.5, h: 100 + atr * 1.6, l: 99.9 };
-    const base = detectEvents(series).filter((e) => e.kind === "order_block");
+    const decisionCloseT = series[i]!.t + 900;
+    const base = detectEvents(series).filter((e) => e.kind === "order_block" && e.closeT <= decisionCloseT);
     const future = bar(series[i]!.t + 900, 500, 900, 1, 2);
-    const extended = detectEvents([...series, future]).filter((e) => e.kind === "order_block");
+    const extended = detectEvents([...series, future]).filter((e) => e.kind === "order_block" && e.closeT <= decisionCloseT);
     assert.deepEqual(extended, base);
   });
 
