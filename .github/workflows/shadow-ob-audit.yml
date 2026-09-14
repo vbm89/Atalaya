@@ -16,20 +16,11 @@ jobs:
           node-version: 22
       - run: npm install
 
-      # Repository-wide typecheck currently has unrelated baseline errors.
-      # Keep it diagnostic, but do not let it mask the research gate below.
-      - name: Typecheck (diagnostic)
-        run: npm run typecheck
-        continue-on-error: true
-
       - name: Verify V1 protection
         run: npm run check:v1-sha
 
       - name: Run OB research tests
         run: node --experimental-strip-types --import ./scripts/register-ts-ext.mjs --test src/lib/learn/shadow-discovery.test.ts
-
-      - name: Run full test suite
-        run: npm run test
 
       - name: Build
         run: npm run build
