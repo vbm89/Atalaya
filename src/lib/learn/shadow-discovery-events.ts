@@ -55,6 +55,40 @@ function base(
 }
 
 /**
+ * Mechanical Shadow definition of an Order Block candidate.
+ *
+ * A bullish OB is the immediately preceding bearish candle of a bullish
+ * displacement candle. A bearish OB is the immediately preceding bullish
+ * candle of a bearish displacement candle. The OB zone is the full range
+ * [low, high] of that opposite candle.
+ *
+ * No lookahead: existence is decided at the displacement candle close and
+ * only bars[0..i] are read. The displacement test uses the existing causal
+ * Wilder ATR implementation. This is a RESEARCH PRIMITIVE, not a trading
+ * rule and not a promotion candidate by itself.
+ */
+function orderBlockAt(
+  series: readonly DiscoveryBar[],
+  i: number,
+  atr: number | null,
+): { dir: "buy" | "sell"; originI: number; low: number; high: number } | null {
+  if (i < 1 || atr == null || atr <= 0 || !displacementAt(series, i, atr)) return null;
+  const origin = series[i - 1]!;
+  const impulse = series[i]!;
+  const originBearish = origin.c < origin.o;
+  const originBullish = origin.c > origin.o;
+  const impulseBullish = impulse.c > impulse.o;
+  const impulseBearish = impulse.c < impulse.o;
+  if (originBearish && impulseBullish) {
+    return { dir: "buy", originI: i - 1, low: origin.l, high: origin.h };
+  }
+  if (originBullish && impulseBearish) {
+    return { dir: "sell", originI: i - 1, low: origin.l, high: origin.h };
+  }
+  return null;
+}
+
+/**
  * Detect events on a single closed series. Bar i is the last closed bar used.
  * Future bars after `endInclusive` must not change any event with confirm <= endInclusive.
  *
@@ -139,6 +173,22 @@ export function detectEvents(bars: readonly DiscoveryBar[], endInclusive = bars.
 
     if (displacementAt(series, i, atr)) {
       out.push(base(bar, i, "displacement", bar.c >= bar.o ? "buy" : "sell", bar.c, atr, bar.t, tAt(series, 0)));
+    }
+
+    const ob = orderBlockAt(series, i, atr);
+    if (ob) {
+      const origin = series[ob.originI]!;
+      out.push(base(
+        bar, i, "order_block", ob.dir, (ob.low + ob.high) / 2, atr,
+        origin.t, tAt(series, 0),
+        {
+          originIndex: ob.originI,
+          originOpenT: origin.t,
+          zoneLow: ob.low,
+          zoneHigh: ob.high,
+          definition: "opposite_candle_before_displacement",
+        },
+      ));
     }
 
     if (lastH && bar.c > lastH.price) {
