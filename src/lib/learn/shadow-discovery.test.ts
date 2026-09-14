@@ -116,6 +116,57 @@ describe("anti-lookahead events", () => {
   });
 });
 
+describe("causal order block research primitive", () => {
+  it("registers the opposite candle immediately before a displacement", () => {
+    const series = ramp(15);
+    const i = series.length - 1;
+    const atr = atrAt(series, i);
+    assert.ok(atr && atr > 0);
+    const origin = series[i - 1]!;
+    series[i - 1] = { ...origin, o: origin.c + 1, c: origin.c - 0.5, h: origin.c + 1.2, l: origin.c - 1.0 };
+    const b = series[i]!;
+    series[i] = { ...b, o: b.o, c: b.o + (atr! * 1.5), h: b.o + (atr! * 1.6), l: b.o - 0.1 };
+    const events = detectEvents(series);
+    const ob = events.find((e) => e.kind === "order_block");
+    assert.ok(ob);
+    assert.equal(ob!.direction, "buy");
+    assert.equal(ob!.extra.originIndex, i - 1);
+    assert.equal(ob!.extra.zoneLow, series[i - 1]!.l);
+    assert.equal(ob!.extra.zoneHigh, series[i - 1]!.h);
+    assert.equal(ob!.geometryMinT, series[i - 1]!.t);
+  });
+
+  it("does not create an OB when the preceding candle has no body direction", () => {
+    const series = ramp(15);
+    const i = series.length - 1;
+    const atr = atrAt(series, i)!;
+    const origin = series[i - 1]!;
+    series[i - 1] = { ...origin, o: 100, c: 100, h: 101, l: 99 };
+    const impulse = series[i]!;
+    series[i] = { ...impulse, o: 100, c: 100 + atr * 1.5, h: 100 + atr * 1.6, l: 99.9 };
+    assert.equal(detectEvents(series).some((e) => e.kind === "order_block"), false);
+  });
+
+  it("OB decision is stable when future bars are appended", () => {
+    const series = ramp(15);
+    const i = series.length - 1;
+    const atr = atrAt(series, i)!;
+    const origin = series[i - 1]!;
+    series[i - 1] = { ...origin, o: 101, c: 99.5, h: 101.2, l: 99.0 };
+    const impulse = series[i]!;
+    series[i] = { ...impulse, o: 100, c: 100 + atr * 1.5, h: 100 + atr * 1.6, l: 99.9 };
+    const base = detectEvents(series).filter((e) => e.kind === "order_block");
+    const future = bar(series[i]!.t + 900, 500, 900, 1, 2);
+    const extended = detectEvents([...series, future]).filter((e) => e.kind === "order_block");
+    assert.deepEqual(extended, base);
+  });
+
+  it("OB does not import V1 protected modules", () => {
+    const src = readFileSync(new URL("./shadow-discovery-events.ts", import.meta.url), "utf8");
+    assert.doesNotMatch(src, /trading\/engine|trading\/signals|trading\/structure|trading\/risk|watch\/outcome|market\/xau-spot/);
+  });
+});
+
 describe("K1 isolation", () => {
   it("EXPLORE drops 15M events in the K1 TEST window", () => {
     const t = K1_REGISTERED_AT - 900;
