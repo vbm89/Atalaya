@@ -28,6 +28,12 @@ import {
   upsertDiscoveryCursor,
   type DiscoveryCursor,
 } from "./shadow-discovery-store";
+import {
+  DISCOVERY_CACHE_KEY,
+  discoveryCursorFingerprint,
+  loadDiscoveryLabCache,
+  saveDiscoveryLabCache,
+} from "./shadow-discovery-cache";
 
 export { exploreDiscovery, buildCoverage } from "./shadow-discovery-explore";
 export { detectEvents } from "./shadow-discovery-events";
@@ -96,12 +102,56 @@ function spansOf(cursors: readonly DiscoveryCursor[], bars: readonly import("./s
   return spansFromCoverage(buildCoverage(bars, cursors));
 }
 
+function spansFromCursors(cursors: readonly DiscoveryCursor[]) {
+  return spansFromCoverage(cursors.map((c) => ({
+    assetId: c.assetId,
+    tf: c.tf,
+    firstT: c.oldestT,
+    lastT: c.newestT,
+    exhausted: c.exhausted,
+  })));
+}
+
 /** READ ONLY. Opening the lab must call this. Never paginates or writes. */
 export async function readDiscoveryLab(sql: SqlQuery | null, nowSec = Math.floor(Date.now() / 1000)): Promise<DiscoveryLabView> {
-  const bars = sql ? await loadDiscoveryBars(sql) : [];
-  const cursors = sql ? await loadDiscoveryCursors(sql).catch(() => [] as DiscoveryCursor[]) : [];
+  if (!sql) {
+    const report = decorateReport([], [], nowSec);
+    return {
+      report,
+      ingested: 0,
+      fromStore: false,
+      backfillTf: null,
+      lastUpdatedAt: null,
+      ingestRan: false,
+      assetsProcessed: null,
+      ingestMode: "idle",
+    };
+  }
+
+  // Cursor metadata is tiny. It is the cache version: if coverage changes,
+  // the persisted snapshot is stale and is rebuilt only by the explicit
+  // "Actualizar cobertura" write path.
+  const cursors = await loadDiscoveryCursors(sql).catch(() => [] as DiscoveryCursor[]);
+  const fingerprint = discoveryCursorFingerprint(cursors);
+  const cached = await loadDiscoveryLabCache(sql, DISCOVERY_CACHE_KEY, fingerprint).catch(() => null);
+  const completeTf = nextTfToCompleteCoverage(spansFromCursors(cursors));
+  if (cached) {
+    return {
+      report: cached,
+      ingested: 0,
+      fromStore: true,
+      backfillTf: completeTf,
+      lastUpdatedAt: latestCursorUpdate(cursors),
+      ingestRan: false,
+      assetsProcessed: null,
+      ingestMode: "idle",
+    };
+  }
+
+  // Cold cache only: exact historical reconstruction. It is deliberately
+  // retained as the fallback so the first snapshot after migration is exact.
+  const bars = await loadDiscoveryBars(sql);
   const report = decorateReport(bars, cursors, nowSec);
-  const completeTf = nextTfToCompleteCoverage(spansOf(cursors, bars));
   return {
     report,
     ingested: 0,
@@ -188,9 +238,10 @@ export async function ingestDiscoveryCoverage(
     const empty = await readDiscoveryLab(null, nowSec);
     return { ...empty, ingestRan: true, ingested: 0, assetsProcessed: 0, ingestMode: "idle" };
   }
-  const existing = await loadDiscoveryBars(sql);
+  // Coverage decisions use the tiny cursor table. We no longer download the
+  // entire discovery_bars table just to decide which TF/assets need work.
   const cursors = await loadDiscoveryCursors(sql).catch(() => [] as DiscoveryCursor[]);
-  const spans = spansOf(cursors, existing);
+  const spans = spansFromCursors(cursors);
   const completeTf = nextTfToCompleteCoverage(spans);
   let ingested = 0;
   let assetsProcessed = 0;
@@ -210,7 +261,7 @@ export async function ingestDiscoveryCoverage(
     for (const tf of DISCOVERY_ARCHIVE_TFS) {
       for (const assetId of DISCOVERY_ASSETS) {
         const cur = cursors.find((c) => c.assetId === assetId && c.tf === tf);
-        if (!cur && !existing.some((b) => b.assetId === assetId && b.tf === tf)) continue;
+        if (!cur) continue;
         assetsProcessed += 1;
         tipJobs.push(persistTipPage(sql, paginate, assetId, tf, cur, nowSec));
       }
@@ -218,6 +269,12 @@ export async function ingestDiscoveryCoverage(
     ingested = (await Promise.all(tipJobs)).reduce((a, b) => a + b, 0);
   }
   const view = await readDiscoveryLab(sql, nowSec);
+  // Explicit write path owns cache regeneration. Reads remain strictly
+  // read-only. The cursor fingerprint makes the snapshot invalidation causal.
+  const freshCursors = await loadDiscoveryCursors(sql).catch(() => [] as DiscoveryCursor[]);
+  try {
+    await saveDiscoveryLabCache(sql, DISCOVERY_CACHE_KEY, discoveryCursorFingerprint(freshCursors), view.report);
+  } catch { /* best-effort cache; domain data remains authoritative */ }
   try { await persistDiscoveryJournal(sql, view.report.journal); } catch { /* best-effort */ }
   return {
     ...view,
