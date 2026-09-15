@@ -20,7 +20,7 @@ jobs:
         run: npm run check:v1-sha
 
       - name: Run OB research tests
-        run: node --experimental-strip-types --import ./scripts/register-ts-ext.mjs --test src/lib/learn/shadow-discovery.test.ts
+        run: node --experimental-strip-types --import ./scripts/register-ts-ext.mjs --test src/lib/learn/shadow-discovery.test.ts src/lib/learn/shadow-ob-audit.test.ts
 
       - name: Build
         run: npm run build
