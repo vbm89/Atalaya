@@ -1,4 +1,4 @@
-/** Public exports for DEV storage (Aiven + Cloudflare R2). */
+/** Public exports for DEV storage (Aiven + S3-compatible object storage / B2). */
 
 export {
   InactiveStorageError,
@@ -13,7 +13,27 @@ export {
   type StorageManifestEntry,
 } from "./types";
 
-export { R2Adapter, createR2Adapter, type R2AdapterConfig, type R2ObjectMeta } from "./r2-adapter";
+export {
+  ObjectStorageAdapter,
+  createObjectStorageAdapter,
+  ObjectStorageAdapter as S3Adapter,
+  createObjectStorageAdapter as createS3Adapter,
+  type ObjectStorageConfig,
+  type ObjectStorageObjectMeta,
+  type ObjectStoragePublicConfig,
+  type ObjectStorageEnvName,
+  type ObjectStorageAdapterOptions,
+  type ObjectStorageClientFactory,
+  type ObjectStorageS3Client,
+} from "./s3-adapter";
+
+/** R2-named exports are aliases for S3-compatible object storage (Backblaze B2). */
+export {
+  ObjectStorageAdapter as R2Adapter,
+  createObjectStorageAdapter as createR2Adapter,
+  type ObjectStorageConfig as R2AdapterConfig,
+  type ObjectStorageObjectMeta as R2ObjectMeta,
+} from "./s3-adapter";
 
 export {
   JsonlShaWriter,
@@ -26,6 +46,7 @@ export {
   utcDayBoundsMs,
   utcDayFromT,
   writeDiscoveryDayArchive,
+  type JsonlObjectStore,
 } from "./jsonl-archive";
 
 export {

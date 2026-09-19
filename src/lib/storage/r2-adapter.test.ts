@@ -1,57 +1,37 @@
+/**
+ * Thin compat tests: R2-named factory is an alias over OBJECT_STORAGE_* env.
+ */
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createR2Adapter } from "./r2-adapter";
+import { createObjectStorageAdapter } from "./s3-adapter";
 import { InactiveStorageError } from "./types";
 
-test("R2 adapter is inactive without env", () => {
+const FULL_ENV = {
+  OBJECT_STORAGE_ENDPOINT: "https://s3.example.test",
+  OBJECT_STORAGE_REGION: "us-east-005",
+  OBJECT_STORAGE_ACCESS_KEY_ID: "key",
+  OBJECT_STORAGE_SECRET_ACCESS_KEY: "super-secret-value",
+  OBJECT_STORAGE_BUCKET: "bucket",
+};
+
+test("createR2Adapter still works as alias with OBJECT_STORAGE_* env", () => {
   const r2 = createR2Adapter({});
   assert.equal(r2.active, false);
-  assert.ok(r2.missingEnv.includes("R2_ACCOUNT_ID"));
-  assert.ok(r2.missingEnv.includes("R2_ACCESS_KEY_ID"));
-  assert.ok(r2.missingEnv.includes("R2_SECRET_ACCESS_KEY"));
-  assert.ok(r2.missingEnv.includes("R2_BUCKET"));
+  assert.ok(r2.missingEnv.includes("OBJECT_STORAGE_ENDPOINT"));
+  assert.equal(r2.missingEnv.includes("R2_ACCOUNT_ID"), false);
+
+  const active = createR2Adapter(FULL_ENV);
+  assert.equal(active.active, true);
+  assert.deepEqual(active.getPublicConfig().forcePathStyle, false);
+  assert.equal(active.bucket, "bucket");
+  active.destroy();
 });
 
-test("inactive R2 methods throw InactiveStorageError", async () => {
-  const r2 = createR2Adapter({ R2_BUCKET: "only-bucket" });
-  assert.equal(r2.active, false);
-  await assert.rejects(() => r2.putObject("k", "x"), (err: unknown) => {
-    assert.ok(err instanceof InactiveStorageError);
-    assert.match(String((err as Error).message), /missing/i);
-    // Env var NAMES may appear; secret VALUES must not.
-    assert.equal(String((err as Error).message).includes("super-secret-value"), false);
-    return true;
-  });
-  await assert.rejects(() => r2.getObjectText("k"), InactiveStorageError);
-  await assert.rejects(() => r2.listPrefix("p"), InactiveStorageError);
-});
-
-test("R2 adapter becomes active when all required env present", () => {
-  const r2 = createR2Adapter({
-    R2_ACCOUNT_ID: "acct",
-    R2_ACCESS_KEY_ID: "key",
-    R2_SECRET_ACCESS_KEY: "super-secret-value",
-    R2_BUCKET: "bucket",
-  });
-  assert.equal(r2.active, true);
-  assert.deepEqual(r2.missingEnv, []);
-  // Do not call network — destroy without put
-  r2.destroy();
-});
-
-test("inactive error message never embeds secret values", async () => {
-  const r2 = createR2Adapter({
-    R2_ACCOUNT_ID: "acct",
-    R2_ACCESS_KEY_ID: "key",
-    R2_SECRET_ACCESS_KEY: "super-secret-value",
-    // bucket missing → inactive
-  });
-  assert.equal(r2.active, false);
-  try {
-    await r2.putObject("k", "x");
-    assert.fail("expected throw");
-  } catch (err) {
-    assert.ok(err instanceof InactiveStorageError);
-    assert.equal(String((err as Error).message).includes("super-secret-value"), false);
-  }
+test("createR2Adapter matches createObjectStorageAdapter inactivity", async () => {
+  const a = createR2Adapter({ OBJECT_STORAGE_BUCKET: "x" });
+  const b = createObjectStorageAdapter({ OBJECT_STORAGE_BUCKET: "x" });
+  assert.equal(a.active, b.active);
+  assert.deepEqual([...a.missingEnv].sort(), [...b.missingEnv].sort());
+  await assert.rejects(() => a.putObject("k", "v"), InactiveStorageError);
 });

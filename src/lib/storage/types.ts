@@ -1,6 +1,7 @@
-/** Shared types for DEV storage (Aiven PG + Cloudflare R2). */
+/** Shared types for DEV storage (Aiven PG + S3-compatible object storage / B2). */
 
-export type StorageBackend = "r2" | "pg";
+/** "r2" kept for legacy manifest rows; new writes use "s3". */
+export type StorageBackend = "r2" | "s3" | "pg";
 
 export type StorageCheckpointStatus =
   | "pending"
@@ -76,7 +77,7 @@ export interface JsonlDayArchiveMeta {
   rowCount: number;
 }
 
-/** Thrown when R2 (or other) storage is configured inactive / missing creds. */
+/** Thrown when object storage is configured inactive / missing creds. */
 export class InactiveStorageError extends Error {
   readonly code = "INACTIVE_STORAGE" as const;
   constructor(message = "Storage backend is inactive (required env vars missing)") {

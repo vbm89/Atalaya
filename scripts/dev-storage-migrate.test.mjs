@@ -52,6 +52,10 @@ test("migrator plan accepts distinct SOURCE/TARGET and stays dry-run", () => {
   assert.ok(plan.steps.length > 3);
   assert.equal(String(plan.source).includes("secret"), false);
   assert.equal(String(JSON.stringify(plan)).includes("secret"), false);
+  assert.ok(plan.objectStorage);
+  assert.ok(plan.objectStorage.requiredEnv.includes("OBJECT_STORAGE_ENDPOINT"));
+  assert.ok(plan.objectStorage.requiredEnv.includes("OBJECT_STORAGE_BUCKET"));
+  assert.equal(plan.objectStorage.requiredEnv.includes("R2_ACCOUNT_ID"), false);
 });
 
 test("redactDatabaseUrl strips password", () => {

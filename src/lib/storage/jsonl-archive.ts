@@ -4,9 +4,14 @@
  */
 import { createHash } from "node:crypto";
 import type { ArchiveBar, JsonlDayArchiveMeta } from "./types";
-import type { R2Adapter } from "./r2-adapter";
 
 const DAY_MS = 86_400_000;
+
+/** Minimal object-storage surface used by day archives (S3-compatible / B2). */
+export interface JsonlObjectStore {
+  putObject(key: string, body: Uint8Array | string, contentType?: string): Promise<void>;
+  getObjectText(key: string): Promise<string>;
+}
 
 /** Object key: discovery/{assetId}/{tf}/{YYYY-MM-DD}.jsonl */
 export function discoveryDayObjectKey(assetId: string, tf: string, day: string): string {
@@ -124,15 +129,16 @@ export function sha256Utf8(text: string): string {
 }
 
 /**
- * Write one UTC-day archive to R2 (chunked encode). Does not load unrelated days.
+ * Write one UTC-day archive to object storage (chunked encode).
+ * Does not load unrelated days.
  */
 export async function writeDiscoveryDayArchive(
-  r2: R2Adapter,
+  store: JsonlObjectStore,
   args: { assetId: string; tf: string; day: string; bars: readonly ArchiveBar[] },
 ): Promise<JsonlDayArchiveMeta> {
   const objectKey = discoveryDayObjectKey(args.assetId, args.tf, args.day);
   const encoded = encodeBarsJsonl(args.bars);
-  await r2.putObject(objectKey, encoded.text);
+  await store.putObject(objectKey, encoded.text);
   return {
     objectKey,
     assetId: args.assetId,
@@ -145,13 +151,13 @@ export async function writeDiscoveryDayArchive(
 }
 
 export async function readDiscoveryDayArchive(
-  r2: R2Adapter,
+  store: JsonlObjectStore,
   assetId: string,
   tf: string,
   day: string,
 ): Promise<{ meta: JsonlDayArchiveMeta; bars: ArchiveBar[] }> {
   const objectKey = discoveryDayObjectKey(assetId, tf, day);
-  const text = await r2.getObjectText(objectKey);
+  const text = await store.getObjectText(objectKey);
   const bars = parseJsonlBars(text);
   const sha = sha256Utf8(text);
   return {

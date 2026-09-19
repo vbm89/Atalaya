@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * Neon → Aiven/R2 DEV storage migrator.
- * Defaults to plan/dry-run. Any write to target/R2 requires --confirm-write.
+ * Neon → Aiven/S3-compatible (B2) DEV storage migrator.
+ * Defaults to plan/dry-run. Any write to target/object storage requires --confirm-write.
  * Never prints full connection URLs or passwords.
  *
  * Write path (only with --confirm-write):
  *   - SOURCE: Pool max:1 + SET SESSION default_transaction_read_only = on
  *   - TARGET: Pool max:1 for manifest/checkpoints
  *   - discovery_bars copied by asset/tf with afterT cursor, grouped into UTC-day
- *     JSONL objects on R2; progress in storage_checkpoints
+ *     JSONL objects on S3-compatible storage (B2); progress in storage_checkpoints
  */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -183,8 +183,8 @@ export function buildMigrationPlan(opts) {
     id: "ensure-target-schema",
     action: "apply_migration_file",
     target: "target",
-    file: "migrations/0013_dev_storage_manifest.sql",
-    note: "CREATE IF NOT EXISTS only; no scientific tables",
+    file: "migrations/0013_dev_storage_manifest.sql (+ 0014_storage_backend_object.sql)",
+    note: "CREATE IF NOT EXISTS + widen backend check for s3; no scientific tables",
     skippedUnlessWrite: true,
   });
   steps.push({
@@ -203,7 +203,7 @@ export function buildMigrationPlan(opts) {
       assetId: scope.assetId,
       tf: scope.tf,
       pageSize: opts.pageSize,
-      cursor: "afterT ascending; group by UTC day → R2 JSONL",
+      cursor: "afterT ascending; group by UTC day → S3/B2 JSONL",
       estimatedRows: opts.estimatedCounts?.[key] ?? null,
       verify: ["row_count", "content_sha256"],
       skippedUnlessWrite: true,
@@ -225,15 +225,16 @@ export function buildMigrationPlan(opts) {
     target: redactDatabaseUrl(opts.targetUrl),
     sourceIdentity: normalizeDbIdentity(opts.sourceUrl),
     targetIdentity: normalizeDbIdentity(opts.targetUrl),
-    r2: {
+    objectStorage: {
       requiredEnv: [
-        "R2_ACCOUNT_ID",
-        "R2_ACCESS_KEY_ID",
-        "R2_SECRET_ACCESS_KEY",
-        "R2_BUCKET",
+        "OBJECT_STORAGE_ENDPOINT",
+        "OBJECT_STORAGE_REGION",
+        "OBJECT_STORAGE_ACCESS_KEY_ID",
+        "OBJECT_STORAGE_SECRET_ACCESS_KEY",
+        "OBJECT_STORAGE_BUCKET",
       ],
-      optionalEnv: ["R2_ENDPOINT"],
-      note: "Writes to R2 only with --confirm-write; adapter inactive without env",
+      optionalEnv: [],
+      note: "Writes to S3-compatible object storage (B2) only with --confirm-write; adapter inactive without env",
     },
     steps,
     writeRequires: "--confirm-write",
@@ -266,7 +267,7 @@ function barLine(row) {
 }
 
 /**
- * Execute write migration. Requires distinct SOURCE/TARGET and R2 env.
+ * Execute write migration. Requires distinct SOURCE/TARGET and OBJECT_STORAGE_* env.
  * @param {{
  *   sourceUrl: string,
  *   targetUrl: string,
@@ -283,32 +284,32 @@ export async function executeMigrationWrite(opts) {
   const distinct = assertDistinctSourceTarget(opts.sourceUrl, opts.targetUrl);
   if (!distinct.ok) throw new Error(distinct.reason);
 
-  const requiredR2 = [
-    "R2_ACCOUNT_ID",
-    "R2_ACCESS_KEY_ID",
-    "R2_SECRET_ACCESS_KEY",
-    "R2_BUCKET",
+  const requiredObjectStorage = [
+    "OBJECT_STORAGE_ENDPOINT",
+    "OBJECT_STORAGE_REGION",
+    "OBJECT_STORAGE_ACCESS_KEY_ID",
+    "OBJECT_STORAGE_SECRET_ACCESS_KEY",
+    "OBJECT_STORAGE_BUCKET",
   ];
-  const missing = requiredR2.filter((k) => !env[k]?.trim());
+  const missing = requiredObjectStorage.filter((k) => !env[k]?.trim());
   if (missing.length) {
-    throw new Error(`R2 inactive for write: missing ${missing.join(", ")}`);
+    throw new Error(`Object storage inactive for write: missing ${missing.join(", ")}`);
   }
 
   const { S3Client, PutObjectCommand } = await import("@aws-sdk/client-s3");
-  const accountId = env.R2_ACCOUNT_ID.trim();
-  const endpoint =
-    (env.R2_ENDPOINT && env.R2_ENDPOINT.trim()) ||
-    `https://${accountId}.r2.cloudflarestorage.com`;
-  const bucket = env.R2_BUCKET.trim();
+  const endpoint = env.OBJECT_STORAGE_ENDPOINT.trim();
+  const region = env.OBJECT_STORAGE_REGION.trim();
+  const bucket = env.OBJECT_STORAGE_BUCKET.trim();
+  // Do not set forcePathStyle (B2 S3 virtual-host).
   const s3 = new S3Client({
-    region: "auto",
+    region,
     endpoint,
     credentials: {
-      accessKeyId: env.R2_ACCESS_KEY_ID.trim(),
-      secretAccessKey: env.R2_SECRET_ACCESS_KEY.trim(),
+      accessKeyId: env.OBJECT_STORAGE_ACCESS_KEY_ID.trim(),
+      secretAccessKey: env.OBJECT_STORAGE_SECRET_ACCESS_KEY.trim(),
     },
   });
-  const r2 = {
+  const objectStore = {
     async putObject(key, text) {
       await s3.send(
         new PutObjectCommand({
@@ -338,6 +339,11 @@ export async function executeMigrationWrite(opts) {
       "utf8",
     );
     await targetPool.query(migrationSql);
+    const widenSql = readFileSync(
+      join(ROOT, "migrations/0014_storage_backend_object.sql"),
+      "utf8",
+    );
+    await targetPool.query(widenSql);
 
     await targetPool.query(
       `insert into storage_job (job_id, kind, source_label, target_label, mode, started_at, notes)
@@ -345,10 +351,10 @@ export async function executeMigrationWrite(opts) {
        on conflict (job_id) do update set mode = 'write', started_at = now(), finished_at = null, notes = excluded.notes`,
       [
         opts.jobId,
-        "neon_to_aiven_r2",
+        "neon_to_aiven_s3",
         redactDatabaseUrl(opts.sourceUrl),
         redactDatabaseUrl(opts.targetUrl),
-        "discovery_bars → R2 JSONL + manifest",
+        "discovery_bars → S3/B2 JSONL + manifest",
       ],
     );
 
@@ -382,11 +388,11 @@ export async function executeMigrationWrite(opts) {
       const text = lines.join("\n") + "\n";
       const key = discoveryDayObjectKey(assetId, tf, day);
       const byteSize = Buffer.byteLength(text, "utf8");
-      await r2.putObject(key, text);
+      await objectStore.putObject(key, text);
       await targetPool.query(
         `insert into storage_manifest
            (object_key, asset_id, tf, day, content_sha256, byte_size, row_count, backend, created_at, updated_at)
-         values ($1,$2,$3,$4::date,$5,$6,$7,'r2',now(),now())
+         values ($1,$2,$3,$4::date,$5,$6,$7,'s3',now(),now())
          on conflict (object_key) do update set
            content_sha256 = excluded.content_sha256,
            byte_size = excluded.byte_size,
@@ -394,7 +400,7 @@ export async function executeMigrationWrite(opts) {
            updated_at = now()`,
         [key, assetId, tf, day, shaHex, byteSize, rowCount],
       );
-      log(`[r2] wrote ${key} rows=${rowCount} sha=${shaHex.slice(0, 12)}…`);
+      log(`[s3] wrote ${key} rows=${rowCount} sha=${shaHex.slice(0, 12)}…`);
     }
 
     async function saveCheckpoint(status, extra = {}) {
@@ -479,7 +485,7 @@ export async function executeMigrationWrite(opts) {
     log("[done] migration write finished");
   } finally {
     if (sourceClient) sourceClient.release();
-    r2.destroy();
+    objectStore.destroy();
     await sourcePool.end().catch(() => {});
     await targetPool.end().catch(() => {});
   }
@@ -504,12 +510,12 @@ export async function runDevStorageMigrateCli(opts = {}) {
   if (parsed.help) {
     log(`Usage: node scripts/dev-storage-migrate.mjs [--confirm-write] [--job-id ID] [--page-size N]
 
-Neon → Aiven/R2 migrator. Default mode is plan/dry-run (no writes).
+Neon → Aiven/S3-compatible (B2) migrator. Default mode is plan/dry-run (no writes).
 
 Required env (names only; values never printed):
   SOURCE_DATABASE_URL   Neon (read-only session)
   TARGET_DATABASE_URL   Aiven (must differ from source)
-  R2_*                  only needed for --confirm-write
+  OBJECT_STORAGE_*      only needed for --confirm-write
 
 Without --confirm-write: prints plan and exits 0 (or 2 if misconfigured).
 `);
@@ -536,7 +542,7 @@ Without --confirm-write: prints plan and exits 0 (or 2 if misconfigured).
 
   if (!parsed.confirmWrite) {
     log(
-      "\n[dry-run] No writes performed. Pass --confirm-write to execute copy to target/R2.",
+      "\n[dry-run] No writes performed. Pass --confirm-write to execute copy to target/object storage.",
     );
     return 0;
   }

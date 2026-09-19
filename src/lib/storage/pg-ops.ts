@@ -142,7 +142,7 @@ export async function upsertStorageManifest(
     contentSha256: string;
     byteSize: number;
     rowCount: number;
-    backend: "r2" | "pg";
+    backend: "r2" | "s3" | "pg";
   },
 ): Promise<void> {
   await sql.query(
