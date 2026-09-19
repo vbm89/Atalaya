@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DEFAULT_PLAN_SCOPES,
   assertDistinctSourceTarget,
   buildDiscoveryPageSql,
   buildMigrationPlan,
   normalizeDbIdentity,
   parseMigrateArgs,
+  parseScopeToken,
   redactDatabaseUrl,
+  resolveMigrateScopes,
   runDevStorageMigrateCli,
 } from "./dev-storage-migrate.mjs";
 
@@ -319,4 +322,131 @@ test("migration plan includes verify-manifest against object storage", () => {
   const verify = plan.steps.find((s) => s.id === "verify-manifest");
   assert.ok(verify);
   assert.match(String(verify.detail), /HEAD|SHA-256|manifest/i);
+});
+
+
+test("parseScopeToken normalizes XAUUSD/15m", () => {
+  const r = parseScopeToken("XAUUSD/15m");
+  assert.equal(r.ok, true);
+  assert.deepEqual(r, { ok: true, assetId: "XAUUSD", tf: "15m" });
+});
+
+test("--scope XAUUSD/15m yields exactly 1 scope", () => {
+  const parsed = parseMigrateArgs([
+    "node",
+    "dev-storage-migrate.mjs",
+    "--scope",
+    "XAUUSD/15m",
+  ]);
+  assert.equal(parsed.scopeError, null);
+  assert.ok(parsed.scopes);
+  assert.equal(parsed.scopes.length, 1);
+  assert.deepEqual(parsed.scopes[0], { assetId: "XAUUSD", tf: "15m" });
+});
+
+test("invalid --scope rejected before any connection", async () => {
+  let planCalled = false;
+  let writeCalled = false;
+  const lines = [];
+  const code = await runDevStorageMigrateCli({
+    sourceUrl: SRC,
+    targetUrl: DST,
+    argv: ["node", "dev-storage-migrate.mjs", "--scope", "NOPE/99m"],
+    log: (s) => lines.push(s),
+    executeWrite: async () => {
+      writeCalled = true;
+    },
+  });
+  assert.equal(code, 2);
+  assert.equal(writeCalled, false);
+  assert.match(lines.join("\n"), /Unknown --scope|invalid-scope|NOPE\/99m/i);
+  // buildMigrationPlan not reached with valid URLs path for invalid scope —
+  // plan would need distinct URLs; ensure error mode is invalid-scope
+  assert.match(lines.join("\n"), /invalid-scope|Unknown --scope/i);
+});
+
+test("without --scope keeps all DEFAULT_PLAN_SCOPES (16)", () => {
+  const parsed = parseMigrateArgs(["node", "dev-storage-migrate.mjs"]);
+  assert.equal(parsed.scopeError, null);
+  assert.equal(parsed.scopes, null); // null → CLI uses DEFAULT
+  assert.equal(DEFAULT_PLAN_SCOPES.length, 16);
+  const resolved = resolveMigrateScopes(null);
+  assert.equal(resolved.ok, true);
+  assert.equal(resolved.scopes.length, 16);
+});
+
+test("buildMigrationPlan receives explicit single scope", () => {
+  const plan = buildMigrationPlan({
+    sourceUrl: SRC,
+    targetUrl: DST,
+    confirmWrite: false,
+    jobId: "j-scope",
+    pageSize: 2000,
+    scopes: [{ assetId: "XAUUSD", tf: "15m" }],
+  });
+  assert.equal(plan.ok, true);
+  assert.equal(plan.scopeCount, 1);
+  assert.deepEqual(plan.scopes, [{ assetId: "XAUUSD", tf: "15m" }]);
+  const copies = plan.steps.filter((s) => s.action === "copy_discovery_bars_by_day");
+  assert.equal(copies.length, 1);
+  assert.equal(copies[0].assetId, "XAUUSD");
+  assert.equal(copies[0].tf, "15m");
+});
+
+test("confirmWrite + --scope does not fall back to DEFAULT_PLAN_SCOPES", async () => {
+  /** @type {unknown} */
+  let writeArgs = null;
+  const code = await runDevStorageMigrateCli({
+    sourceUrl: SRC,
+    targetUrl: DST,
+    argv: [
+      "node",
+      "dev-storage-migrate.mjs",
+      "--confirm-write",
+      "--scope",
+      "BTCUSD/1h",
+      "--page-size",
+      "2000",
+    ],
+    log: () => {},
+    executeWrite: async (args) => {
+      writeArgs = args;
+    },
+  });
+  assert.equal(code, 0);
+  assert.ok(writeArgs);
+  assert.equal(writeArgs.scopes.length, 1);
+  assert.deepEqual(writeArgs.scopes[0], { assetId: "BTCUSD", tf: "1h" });
+  assert.notEqual(writeArgs.scopes.length, DEFAULT_PLAN_SCOPES.length);
+});
+
+test("dry-run with --scope XAUUSD/15m plans exactly 1 copy step", async () => {
+  const lines = [];
+  const code = await runDevStorageMigrateCli({
+    sourceUrl: SRC,
+    targetUrl: DST,
+    argv: ["node", "dev-storage-migrate.mjs", "--scope", "XAUUSD/15m", "--page-size", "2000"],
+    log: (s) => lines.push(s),
+  });
+  assert.equal(code, 0);
+  const joined = lines.join("\n");
+  assert.match(joined, /dry-run/i);
+  const planLine = lines.find((l) => l.includes('"scopeCount"') || l.includes('"mode"'));
+  // plan is JSON dumped as one blob
+  const blob = lines.find((l) => l.trim().startsWith("{"));
+  assert.ok(blob);
+  const plan = JSON.parse(blob);
+  assert.equal(plan.scopeCount, 1);
+  assert.equal(plan.confirmWrite, false);
+  const copies = plan.steps.filter((s) => s.action === "copy_discovery_bars_by_day");
+  assert.equal(copies.length, 1);
+});
+
+test("CLI documents single --scope only (no multi-scope flag)", () => {
+  // Design: one --scope ASSET/TF per invocation; multi-scope = omit --scope (all 16).
+  const a = parseMigrateArgs(["node", "x", "--scope", "XAUUSD/15m"]);
+  const b = parseMigrateArgs(["node", "x", "--scope", "BTCUSD/15m"]);
+  assert.equal(a.scopes.length, 1);
+  assert.equal(b.scopes.length, 1);
+  assert.notDeepEqual(a.scopes[0], b.scopes[0]);
 });

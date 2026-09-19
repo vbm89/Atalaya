@@ -100,12 +100,77 @@ export function redactDatabaseUrl(url) {
  * @param {string[]} argv
  * @returns {{ confirmWrite: boolean, jobId: string, pageSize: number, help: boolean }}
  */
+/**
+ * Parse ASSET/TF token for --scope (e.g. XAUUSD/15m).
+ * @param {string} raw
+ * @returns {{ ok: true, assetId: string, tf: string } | { ok: false, reason: string }}
+ */
+export function parseScopeToken(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s) {
+    return { ok: false, reason: 'Invalid --scope: empty. Expected ASSET/TF (e.g. XAUUSD/15m).' };
+  }
+  const parts = s.split("/");
+  if (parts.length !== 2 || !parts[0].trim() || !parts[1].trim()) {
+    return {
+      ok: false,
+      reason: `Invalid --scope "${raw}". Expected ASSET/TF (e.g. XAUUSD/15m).`,
+    };
+  }
+  return { ok: true, assetId: parts[0].trim(), tf: parts[1].trim() };
+}
+
+/**
+ * Resolve CLI --scope against DEFAULT_PLAN_SCOPES.
+ * - null/undefined/"" → full DEFAULT_PLAN_SCOPES
+ * - valid token → single canonical scope from DEFAULT_PLAN_SCOPES
+ * CLI accepts at most one --scope (single ASSET/TF). Multiple scopes per run = omit --scope.
+ * @param {string | null | undefined} scopeRaw
+ * @returns {{ ok: true, scopes: readonly { assetId: string, tf: string }[] } | { ok: false, reason: string }}
+ */
+export function resolveMigrateScopes(scopeRaw) {
+  if (scopeRaw == null || String(scopeRaw).trim() === "") {
+    return { ok: true, scopes: DEFAULT_PLAN_SCOPES };
+  }
+  const parsed = parseScopeToken(scopeRaw);
+  if (!parsed.ok) return parsed;
+  const hit = DEFAULT_PLAN_SCOPES.find(
+    (s) =>
+      s.assetId.toUpperCase() === parsed.assetId.toUpperCase() &&
+      s.tf === parsed.tf,
+  );
+  if (!hit) {
+    const allowed = DEFAULT_PLAN_SCOPES.map((s) => `${s.assetId}/${s.tf}`).join(", ");
+    return {
+      ok: false,
+      reason: `Unknown --scope "${scopeRaw}". Allowed scopes: ${allowed}`,
+    };
+  }
+  return { ok: true, scopes: Object.freeze([hit]) };
+}
+
+/**
+ * @param {string[]} argv
+ * @returns {{
+ *   confirmWrite: boolean,
+ *   jobId: string,
+ *   pageSize: number,
+ *   help: boolean,
+ *   scopeRaw: string | null,
+ *   scopes: readonly { assetId: string, tf: string }[] | null,
+ *   scopeError: string | null,
+ * }}
+ */
 export function parseMigrateArgs(argv) {
   const args = argv.slice(2);
   let confirmWrite = false;
   let help = false;
   let jobId = "dev-storage-migrate";
   let pageSize = 2000;
+  /** @type {string | null} */
+  let scopeRaw = null;
+  /** @type {string | null} */
+  let scopeError = null;
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
     if (a === "--confirm-write") confirmWrite = true;
@@ -113,9 +178,29 @@ export function parseMigrateArgs(argv) {
     else if (a === "--job-id" && args[i + 1]) jobId = args[++i];
     else if (a === "--page-size" && args[i + 1]) {
       pageSize = Math.max(1, Math.min(10_000, Number(args[++i]) || 2000));
+    } else if (a === "--scope") {
+      const next = args[i + 1];
+      if (!next || next.startsWith("--")) {
+        scopeError =
+          'Missing value for --scope. Expected ASSET/TF (e.g. XAUUSD/15m).';
+      } else {
+        scopeRaw = args[++i];
+      }
     }
   }
-  return { confirmWrite, jobId, pageSize, help };
+
+  /** @type {readonly { assetId: string, tf: string }[] | null} */
+  let scopes = null;
+  if (!scopeError && scopeRaw != null) {
+    const resolved = resolveMigrateScopes(scopeRaw);
+    if (!resolved.ok) {
+      scopeError = resolved.reason;
+    } else {
+      scopes = resolved.scopes;
+    }
+  }
+
+  return { confirmWrite, jobId, pageSize, help, scopeRaw, scopes, scopeError };
 }
 
 export const DEFAULT_PLAN_SCOPES = Object.freeze([
@@ -222,6 +307,8 @@ export function buildMigrationPlan(opts) {
     ok: true,
     mode,
     jobId: opts.jobId,
+    scopes,
+    scopeCount: scopes.length,
     source: redactDatabaseUrl(opts.sourceUrl),
     target: redactDatabaseUrl(opts.targetUrl),
     sourceIdentity: normalizeDbIdentity(opts.sourceUrl),
@@ -786,9 +873,15 @@ export async function runDevStorageMigrateCli(opts = {}) {
   const parsed = parseMigrateArgs(argv);
 
   if (parsed.help) {
-    log(`Usage: node scripts/dev-storage-migrate.mjs [--confirm-write] [--job-id ID] [--page-size N]
+    const nScopes = DEFAULT_PLAN_SCOPES.length;
+    log(`Usage: node scripts/dev-storage-migrate.mjs [--confirm-write] [--job-id ID] [--page-size N] [--scope ASSET/TF]
 
 Neon → Aiven/S3-compatible (B2) migrator. Default mode is plan/dry-run (no writes).
+
+Options:
+  --scope ASSET/TF   Limit to one DEFAULT_PLAN_SCOPES entry (e.g. XAUUSD/15m).
+                     Omit to use all ${nScopes} default scopes.
+                     Only a single --scope is accepted per invocation.
 
 Required env (names only; values never printed):
   SOURCE_DATABASE_URL   Neon (read-only session)
@@ -800,6 +893,14 @@ Without --confirm-write: prints plan and exits 0 (or 2 if misconfigured).
     return 0;
   }
 
+  // Reject invalid --scope before opening SOURCE/TARGET or touching B2/checkpoints.
+  if (parsed.scopeError) {
+    log(JSON.stringify({ ok: false, error: parsed.scopeError, mode: "invalid-scope" }, null, 2));
+    return 2;
+  }
+
+  const scopes = parsed.scopes ?? DEFAULT_PLAN_SCOPES;
+
   const sourceUrl = opts.sourceUrl ?? env.SOURCE_DATABASE_URL ?? "";
   const targetUrl = opts.targetUrl ?? env.TARGET_DATABASE_URL ?? "";
 
@@ -809,6 +910,7 @@ Without --confirm-write: prints plan and exits 0 (or 2 if misconfigured).
     confirmWrite: parsed.confirmWrite,
     jobId: parsed.jobId,
     pageSize: parsed.pageSize,
+    scopes,
   });
 
   if (!plan.ok) {
@@ -831,6 +933,7 @@ Without --confirm-write: prints plan and exits 0 (or 2 if misconfigured).
     targetUrl,
     jobId: parsed.jobId,
     pageSize: parsed.pageSize,
+    scopes,
     env,
     log,
   });
