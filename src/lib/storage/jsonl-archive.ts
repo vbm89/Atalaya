@@ -1,6 +1,11 @@
 /**
  * Archive discovery OHLC as JSONL by asset / tf / UTC day.
  * Streaming / chunked writes; SHA-256 of content; never load full history into RAM.
+ *
+ * Canonical JSONL object schema (stable key order):
+ *   { assetId, tf, t, o, h, l, c, v, source? }
+ * camelCase `assetId` is required. Postgres `asset_id` is mapped at read time.
+ * Object key: discovery/{assetId}/{tf}/{YYYY-MM-DD}.jsonl
  */
 import { createHash } from "node:crypto";
 import type { ArchiveBar, JsonlDayArchiveMeta } from "./types";

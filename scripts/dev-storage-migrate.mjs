@@ -183,7 +183,7 @@ export function buildMigrationPlan(opts) {
     id: "ensure-target-schema",
     action: "apply_migration_file",
     target: "target",
-    file: "migrations/0013_dev_storage_manifest.sql (+ 0014_storage_backend_object.sql)",
+    file: "migrations/0013_dev_storage_manifest.sql",
     note: "CREATE IF NOT EXISTS + widen backend check for s3; no scientific tables",
     skippedUnlessWrite: true,
   });
@@ -203,7 +203,7 @@ export function buildMigrationPlan(opts) {
       assetId: scope.assetId,
       tf: scope.tf,
       pageSize: opts.pageSize,
-      cursor: "afterT ascending; group by UTC day → S3/B2 JSONL",
+      cursor: "durable afterT = last flushed day only; open currentDay rewound on resume → S3/B2 JSONL",
       estimatedRows: opts.estimatedCounts?.[key] ?? null,
       verify: ["row_count", "content_sha256"],
       skippedUnlessWrite: true,
@@ -212,8 +212,9 @@ export function buildMigrationPlan(opts) {
 
   steps.push({
     id: "verify-manifest",
-    action: "verify",
-    detail: "Compare source counts vs storage_manifest row_count / sha256",
+    action: "verify_manifest_against_object_storage",
+    detail:
+      "For each storage_manifest row: HEAD object (size) + GET body SHA-256 vs content_sha256; row_count from non-empty JSONL lines",
     skippedUnlessWrite: true,
   });
 
@@ -242,16 +243,68 @@ export function buildMigrationPlan(opts) {
   };
 }
 
-function utcDayFromT(t) {
+
+/**
+ * Canonical discovery JSONL line schema (matches src/lib/storage/jsonl-archive.ts ArchiveBar):
+ *   { assetId, tf, t, o, h, l, c, v, source? }
+ * Field names are camelCase. `asset_id` is NOT part of the object-storage contract
+ * (Postgres columns remain snake_case; mapping happens at read time).
+ */
+
+/** @param {number} t unix seconds or ms */
+export function utcDayFromT(t) {
   const ms = t > 1e12 ? t : t * 1000;
   return new Date(ms).toISOString().slice(0, 10);
 }
 
-function discoveryDayObjectKey(assetId, tf, day) {
+/** Exclusive lower bound for `t > afterT` to include all bars of UTC day. */
+export function afterTBeforeUtcDay(day, timeUnit = "s") {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+    throw new Error(`Invalid UTC day: ${day}`);
+  }
+  const startMs = Date.parse(`${day}T00:00:00.000Z`);
+  if (!Number.isFinite(startMs)) throw new Error(`Invalid UTC day: ${day}`);
+  if (timeUnit === "ms") return startMs - 1;
+  return Math.floor(startMs / 1000) - 1;
+}
+
+/**
+ * Safe resume: if an open currentDay was checkpointed, rewind afterT to the
+ * start of that UTC day so the day is regenerated in full. Clears currentDay.
+ * @param {{ scopeIndex?: number, afterT?: number, currentDay?: string | null }} raw
+ * @param {"s"|"ms"} [timeUnit]
+ */
+export function resolveResumeCursor(raw, timeUnit = "s") {
+  const scopeIndex = Number(raw?.scopeIndex) || 0;
+  let afterT = Number(raw?.afterT) || 0;
+  const currentDay = raw?.currentDay ?? null;
+  if (currentDay) {
+    // Infer ms vs s from afterT magnitude when possible
+    const unit = afterT > 1e12 ? "ms" : timeUnit;
+    afterT = afterTBeforeUtcDay(currentDay, unit);
+    return {
+      scopeIndex,
+      afterT,
+      currentDay: null,
+      rewoundDay: currentDay,
+      durable: true,
+    };
+  }
+  return {
+    scopeIndex,
+    afterT,
+    currentDay: null,
+    rewoundDay: null,
+    durable: true,
+  };
+}
+
+export function discoveryDayObjectKey(assetId, tf, day) {
   return `discovery/${assetId}/${tf}/${day}.jsonl`;
 }
 
-function barLine(row) {
+/** Map a discovery_bars row → canonical JSONL line (no trailing newline). */
+export function barLine(row) {
   const o = {
     assetId: row.asset_id,
     tf: row.tf,
@@ -264,6 +317,200 @@ function barLine(row) {
   };
   if (row.source != null) o.source = row.source;
   return JSON.stringify(o);
+}
+
+/**
+ * Pure day-copy loop for tests: pages rows, groups by UTC day, flushes complete days.
+ * Checkpoint semantics:
+ *   - afterT stored in checkpoints is ONLY advanced after a day flush succeeds
+ *     (durableAfterT = last t of last flushed day).
+ *   - While a day is open, checkpoints may record currentDay but afterT stays
+ *     at durableAfterT (or the rewound day bound).
+ * @param {{
+ *   assetId: string,
+ *   tf: string,
+ *   pageSize: number,
+ *   initialAfterT?: number,
+ *   initialCurrentDay?: string | null,
+ *   fetchPage: (afterT: number, limit: number) => Promise<Array<Record<string, unknown>>>,
+ *   flushDay: (day: string, text: string, meta: { sha256: string, byteSize: number, rowCount: number, lastT: number }) => Promise<void>,
+ *   saveCheckpoint: (cursor: { afterT: number, currentDay: string | null, openDayRows?: number }) => Promise<void>,
+ *   shouldCrash?: (info: { phase: string, afterT: number, currentDay: string | null, durableAfterT: number }) => boolean,
+ * }} opts
+ */
+export async function copyDiscoveryScopeByDay(opts) {
+  const resumed = resolveResumeCursor({
+    afterT: opts.initialAfterT ?? 0,
+    currentDay: opts.initialCurrentDay ?? null,
+  });
+  let durableAfterT = resumed.afterT;
+  let afterT = durableAfterT;
+  let currentDay = null;
+  /** @type {string[]} */
+  let dayLines = [];
+  let dayHash = createHash("sha256");
+  let dayRows = 0;
+  let lastTInDay = 0;
+
+  const crash = (phase) => {
+    if (
+      opts.shouldCrash?.({
+        phase,
+        afterT,
+        currentDay,
+        durableAfterT,
+      })
+    ) {
+      const err = new Error(`simulated crash at ${phase}`);
+      err.name = "SimulatedMigratorCrash";
+      throw err;
+    }
+  };
+
+  async function flushOpenDay() {
+    if (!currentDay || !dayLines.length) {
+      currentDay = null;
+      dayLines = [];
+      dayRows = 0;
+      return;
+    }
+    const text = dayLines.join("\n") + "\n";
+    const sha256 = dayHash.digest("hex");
+    const byteSize = Buffer.byteLength(text, "utf8");
+    const rowCount = dayRows;
+    const lastT = lastTInDay;
+    const day = currentDay;
+    await opts.flushDay(day, text, { sha256, byteSize, rowCount, lastT });
+    // Durable advance ONLY after successful flush
+    durableAfterT = lastT;
+    afterT = durableAfterT;
+    currentDay = null;
+    dayLines = [];
+    dayHash = createHash("sha256");
+    dayRows = 0;
+    lastTInDay = 0;
+    await opts.saveCheckpoint({
+      afterT: durableAfterT,
+      currentDay: null,
+    });
+    crash("after-flush-checkpoint");
+  }
+
+  await opts.saveCheckpoint({
+    afterT: durableAfterT,
+    currentDay: null,
+  });
+
+  for (;;) {
+    const rows = await opts.fetchPage(afterT, opts.pageSize);
+    if (!rows.length) break;
+
+    for (const row of rows) {
+      const t = Number(row.t);
+      const day = utcDayFromT(t);
+      if (currentDay != null && day !== currentDay) {
+        await flushOpenDay();
+      }
+      if (currentDay == null) {
+        currentDay = day;
+        dayLines = [];
+        dayHash = createHash("sha256");
+        dayRows = 0;
+      }
+      const line = barLine(row);
+      dayLines.push(line);
+      dayHash.update(line + "\n");
+      dayRows += 1;
+      lastTInDay = t;
+      // In-memory read cursor may move; durable afterT stays until flush.
+      afterT = t;
+      // Persist open-day marker with durable afterT (NOT mid-day afterT).
+      await opts.saveCheckpoint({
+        afterT: durableAfterT,
+        currentDay,
+        openDayRows: dayRows,
+      });
+      crash("mid-day-after-row");
+    }
+
+    // Page boundary checkpoint (same durable rule).
+    await opts.saveCheckpoint({
+      afterT: durableAfterT,
+      currentDay,
+      openDayRows: dayRows,
+    });
+    crash("after-page-checkpoint");
+
+    if (rows.length < opts.pageSize) break;
+  }
+
+  await flushOpenDay();
+  return { durableAfterT, flushed: true };
+}
+
+/**
+ * Verify storage_manifest rows against object storage (HEAD size + GET sha256 + line count).
+ * @param {{
+ *   listManifest: () => Promise<Array<{ object_key: string, content_sha256: string, byte_size: number|string, row_count: number|string }>>,
+ *   headObject: (key: string) => Promise<{ contentLength: number } | null>,
+ *   getObjectText: (key: string) => Promise<string>,
+ * }} deps
+ */
+export async function verifyManifestAgainstObjectStorage(deps) {
+  const rows = await deps.listManifest();
+  /** @type {Array<Record<string, unknown>>} */
+  const results = [];
+  let ok = true;
+  for (const row of rows) {
+    const key = row.object_key;
+    const head = await deps.headObject(key);
+    if (!head) {
+      ok = false;
+      results.push({ key, ok: false, reason: "missing_object" });
+      continue;
+    }
+    const expectedSize = Number(row.byte_size);
+    if (head.contentLength !== expectedSize) {
+      ok = false;
+      results.push({
+        key,
+        ok: false,
+        reason: "byte_size_mismatch",
+        expected: expectedSize,
+        actual: head.contentLength,
+      });
+      continue;
+    }
+    const text = await deps.getObjectText(key);
+    const sha = createHash("sha256").update(text, "utf8").digest("hex");
+    if (sha !== row.content_sha256) {
+      ok = false;
+      results.push({
+        key,
+        ok: false,
+        reason: "sha256_mismatch",
+        expected: row.content_sha256,
+        actual: sha,
+      });
+      continue;
+    }
+    const lineCount = text.endsWith("\n")
+      ? text.slice(0, -1).split("\n").filter((l) => l.length).length
+      : text.split("\n").filter((l) => l.length).length;
+    if (lineCount !== Number(row.row_count)) {
+      ok = false;
+      results.push({
+        key,
+        ok: false,
+        reason: "row_count_mismatch",
+        expected: Number(row.row_count),
+        actual: lineCount,
+      });
+      continue;
+    }
+    results.push({ key, ok: true });
+  }
+  return { ok, checked: results.length, results };
 }
 
 /**
@@ -296,7 +543,8 @@ export async function executeMigrationWrite(opts) {
     throw new Error(`Object storage inactive for write: missing ${missing.join(", ")}`);
   }
 
-  const { S3Client, PutObjectCommand } = await import("@aws-sdk/client-s3");
+  const { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand } =
+    await import("@aws-sdk/client-s3");
   const endpoint = env.OBJECT_STORAGE_ENDPOINT.trim();
   const region = env.OBJECT_STORAGE_REGION.trim();
   const bucket = env.OBJECT_STORAGE_BUCKET.trim();
@@ -319,6 +567,23 @@ export async function executeMigrationWrite(opts) {
           ContentType: "application/x-ndjson",
         }),
       );
+    },
+    async headObject(key) {
+      try {
+        const out = await s3.send(
+          new HeadObjectCommand({ Bucket: bucket, Key: key }),
+        );
+        return { contentLength: Number(out.ContentLength ?? 0) };
+      } catch (err) {
+        const status = err?.$metadata?.httpStatusCode;
+        const name = err?.name || "";
+        if (status === 404 || name === "NotFound" || name === "NoSuchKey") return null;
+        throw err;
+      }
+    },
+    async getObjectText(key) {
+      const out = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+      return await out.Body.transformToString("utf8");
     },
     destroy() {
       s3.destroy();
@@ -354,7 +619,7 @@ export async function executeMigrationWrite(opts) {
         "neon_to_aiven_s3",
         redactDatabaseUrl(opts.sourceUrl),
         redactDatabaseUrl(opts.targetUrl),
-        "discovery_bars → S3/B2 JSONL + manifest",
+        "discovery_bars → S3/B2 JSONL + manifest (safe day resume)",
       ],
     );
 
@@ -363,52 +628,38 @@ export async function executeMigrationWrite(opts) {
        where job_id = $1 and phase = $2 limit 1`,
       [opts.jobId, "discovery_bars_jsonl"],
     );
-    /** @type {{ scopeIndex: number, afterT: number, currentDay: string | null, dayLines: string[], daySha: import('node:crypto').Hash | null, dayRows: number }} */
-    let cursor = {
-      scopeIndex: 0,
-      afterT: 0,
-      currentDay: null,
-      dayLines: [],
-      daySha: null,
-      dayRows: 0,
-    };
+
+    let scopeIndex = 0;
+    let seedAfterT = 0;
+    let resumedScopeIndex = 0;
     if (cpRes.rows[0]?.cursor_json) {
       const raw =
         typeof cpRes.rows[0].cursor_json === "string"
           ? JSON.parse(cpRes.rows[0].cursor_json)
           : cpRes.rows[0].cursor_json;
-      cursor.scopeIndex = Number(raw.scopeIndex) || 0;
-      cursor.afterT = Number(raw.afterT) || 0;
-      cursor.currentDay = raw.currentDay ?? null;
-      log(`[resume] scopeIndex=${cursor.scopeIndex} afterT=${cursor.afterT}`);
+      scopeIndex = Number(raw.scopeIndex) || 0;
+      resumedScopeIndex = scopeIndex;
+      seedAfterT = Number(raw.afterT) || 0;
+      const resolved = resolveResumeCursor({
+        scopeIndex,
+        afterT: seedAfterT,
+        currentDay: raw.currentDay ?? null,
+      });
+      if (resolved.rewoundDay) {
+        log(
+          `[resume] rewound open day ${resolved.rewoundDay} → afterT=${resolved.afterT} (full day regenerate)`,
+        );
+      } else {
+        log(`[resume] scopeIndex=${scopeIndex} afterT=${resolved.afterT}`);
+      }
+      seedAfterT = resolved.afterT;
     }
 
-    async function flushDay(assetId, tf, day, lines, shaHex, rowCount) {
-      if (!day || !lines.length) return;
-      const text = lines.join("\n") + "\n";
-      const key = discoveryDayObjectKey(assetId, tf, day);
-      const byteSize = Buffer.byteLength(text, "utf8");
-      await objectStore.putObject(key, text);
-      await targetPool.query(
-        `insert into storage_manifest
-           (object_key, asset_id, tf, day, content_sha256, byte_size, row_count, backend, created_at, updated_at)
-         values ($1,$2,$3,$4::date,$5,$6,$7,'s3',now(),now())
-         on conflict (object_key) do update set
-           content_sha256 = excluded.content_sha256,
-           byte_size = excluded.byte_size,
-           row_count = excluded.row_count,
-           updated_at = now()`,
-        [key, assetId, tf, day, shaHex, byteSize, rowCount],
-      );
-      log(`[s3] wrote ${key} rows=${rowCount} sha=${shaHex.slice(0, 12)}…`);
-    }
-
-    async function saveCheckpoint(status, extra = {}) {
+    async function saveCheckpoint(status, cursor) {
       const payload = {
         scopeIndex: cursor.scopeIndex,
         afterT: cursor.afterT,
         currentDay: cursor.currentDay,
-        ...extra,
       };
       await targetPool.query(
         `insert into storage_checkpoints (job_id, phase, cursor_json, status, updated_at)
@@ -421,62 +672,98 @@ export async function executeMigrationWrite(opts) {
       );
     }
 
-    await saveCheckpoint("running");
+    await saveCheckpoint("running", {
+      scopeIndex,
+      afterT: seedAfterT,
+      currentDay: null,
+    });
 
-    for (; cursor.scopeIndex < scopes.length; cursor.scopeIndex += 1) {
-      const scope = scopes[cursor.scopeIndex];
-      let dayLines = [];
-      let dayHash = createHash("sha256");
-      let dayRows = 0;
-      let currentDay = cursor.currentDay;
-      // Do not resume mid-day buffer across process restarts (buffer not persisted).
-      if (cursor.scopeIndex > 0 || cursor.afterT === 0) {
-        currentDay = null;
-        cursor.currentDay = null;
-      }
+    for (; scopeIndex < scopes.length; scopeIndex += 1) {
+      const scope = scopes[scopeIndex];
+      // Only the resumed scope keeps seedAfterT; later scopes start at 0.
+      const startAfterT = scopeIndex === resumedScopeIndex ? seedAfterT : 0;
 
-      for (;;) {
-        const { text, params } = buildDiscoveryPageSql(
-          scope.assetId,
-          scope.tf,
-          cursor.afterT,
-          opts.pageSize,
-        );
-        const page = await sourceClient.query(text, params);
-        if (!page.rows.length) break;
+      await copyDiscoveryScopeByDay({
 
-        for (const row of page.rows) {
-          const t = Number(row.t);
-          const day = utcDayFromT(t);
-          if (currentDay != null && day !== currentDay) {
-            const sha = dayHash.digest("hex");
-            await flushDay(scope.assetId, scope.tf, currentDay, dayLines, sha, dayRows);
-            dayLines = [];
-            dayHash = createHash("sha256");
-            dayRows = 0;
-          }
-          currentDay = day;
-          cursor.currentDay = day;
-          const line = barLine(row);
-          dayLines.push(line);
-          dayHash.update(line + "\n");
-          dayRows += 1;
-          cursor.afterT = t;
-        }
-        await saveCheckpoint("running");
-        if (page.rows.length < opts.pageSize) break;
-      }
+        assetId: scope.assetId,
+        tf: scope.tf,
+        pageSize: opts.pageSize,
+        initialAfterT: startAfterT,
+        initialCurrentDay: null,
+        fetchPage: async (afterT, limit) => {
+          const { text, params } = buildDiscoveryPageSql(
+            scope.assetId,
+            scope.tf,
+            afterT,
+            limit,
+          );
+          const page = await sourceClient.query(text, params);
+          return page.rows;
+        },
+        flushDay: async (day, text, meta) => {
+          const key = discoveryDayObjectKey(scope.assetId, scope.tf, day);
+          await objectStore.putObject(key, text);
+          await targetPool.query(
+            `insert into storage_manifest
+               (object_key, asset_id, tf, day, content_sha256, byte_size, row_count, backend, created_at, updated_at)
+             values ($1,$2,$3,$4::date,$5,$6,$7,'s3',now(),now())
+             on conflict (object_key) do update set
+               content_sha256 = excluded.content_sha256,
+               byte_size = excluded.byte_size,
+               row_count = excluded.row_count,
+               updated_at = now()`,
+            [
+              key,
+              scope.assetId,
+              scope.tf,
+              day,
+              meta.sha256,
+              meta.byteSize,
+              meta.rowCount,
+            ],
+          );
+          log(`[s3] wrote ${key} rows=${meta.rowCount} sha=${meta.sha256.slice(0, 12)}…`);
+        },
+        saveCheckpoint: async (c) => {
+          await saveCheckpoint("running", {
+            scopeIndex,
+            afterT: c.afterT,
+            currentDay: c.currentDay,
+          });
+        },
+      });
 
-      if (currentDay && dayLines.length) {
-        const sha = dayHash.digest("hex");
-        await flushDay(scope.assetId, scope.tf, currentDay, dayLines, sha, dayRows);
-      }
-      cursor.afterT = 0;
-      cursor.currentDay = null;
-      await saveCheckpoint("running", { completedScope: `${scope.assetId}/${scope.tf}` });
+      seedAfterT = 0;
+      await saveCheckpoint("running", {
+        scopeIndex: scopeIndex + 1,
+        afterT: 0,
+        currentDay: null,
+      });
     }
 
-    await saveCheckpoint("done", { finished: true });
+    // verify-manifest (real)
+    const verification = await verifyManifestAgainstObjectStorage({
+      listManifest: async () => {
+        const res = await targetPool.query(
+          `select object_key, content_sha256, byte_size, row_count from storage_manifest`,
+        );
+        return res.rows;
+      },
+      headObject: (key) => objectStore.headObject(key),
+      getObjectText: (key) => objectStore.getObjectText(key),
+    });
+    if (!verification.ok) {
+      throw new Error(
+        `verify-manifest failed: ${JSON.stringify(verification.results.filter((r) => !r.ok))}`,
+      );
+    }
+    log(`[verify-manifest] ok checked=${verification.checked}`);
+
+    await saveCheckpoint("done", {
+      scopeIndex: scopes.length,
+      afterT: 0,
+      currentDay: null,
+    });
     await targetPool.query(
       `update storage_job set finished_at = now(), notes = coalesce(notes,'') || ' done'
        where job_id = $1`,
@@ -491,16 +778,7 @@ export async function executeMigrationWrite(opts) {
   }
 }
 
-/**
- * @param {{
- *   sourceUrl?: string,
- *   targetUrl?: string,
- *   argv?: string[],
- *   log?: (s: string) => void,
- *   env?: NodeJS.ProcessEnv,
- *   executeWrite?: typeof executeMigrationWrite,
- * }} [opts]
- */
+
 export async function runDevStorageMigrateCli(opts = {}) {
   const log = opts.log ?? ((s) => console.log(s));
   const env = opts.env ?? process.env;

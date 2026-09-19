@@ -69,3 +69,30 @@ Do not commit `.env*` or place secrets in the repo.
 - No copy-ops / export-bars / ingest against live SOURCE/TARGET/B2 in validation.
 - No Vercel / PROD push or deploy from this workstream.
 - No live B2 / R2 / Aiven object IO from this research commit’s validation.
+
+
+## JSONL contract (canonical)
+
+Each object `discovery/{assetId}/{tf}/{YYYY-MM-DD}.jsonl` is UTF-8 NDJSON.
+
+Per line (stable field order):
+
+```json
+{"assetId":"XAUUSD","tf":"15m","t":1704067200,"o":1,"h":2,"l":0.5,"c":1.5,"v":9,"source":"..."}
+```
+
+- **camelCase** `assetId` (not `asset_id`). DB columns stay snake_case; the migrator/`barToJsonlLine` map at the boundary.
+- Manual B2 smokes that used `asset_id` were non-canonical probes only.
+
+## Migrator resume (safe mid-day)
+
+Checkpoints store:
+
+- `afterT`: **durable** — last `t` of the last **fully flushed** UTC day (or `0`)
+- `currentDay`: open day being built (buffer is **not** persisted)
+
+On resume, if `currentDay` is set, the migrator **rewinds** `afterT` to just before that UTC day and regenerates the entire day, overwriting the object. Durable `afterT` never advances past an incomplete day.
+
+## verify-manifest
+
+After write, the migrator runs `verifyManifestAgainstObjectStorage`: for each `storage_manifest` row, HEAD (byte size), GET (SHA-256 + row count) must match the manifest. Failure aborts the job.
