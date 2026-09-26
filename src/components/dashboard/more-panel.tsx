@@ -1,30 +1,16 @@
-import { useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
-/**
- * HOME Más screen. Research items (Aprendizaje, Estado del laboratorio,
- * Previsión del día) are rows here — they must not replace the HOME shell.
- * See docs/HOME_SHELL.md.
- */
+import type { ReactNode } from "react";
 import {
   Bell,
   BookOpen,
   CalendarDays,
   ChevronRight,
-  FlaskConical,
   GraduationCap,
   Info,
   Settings,
   Activity,
-  Compass,
-  ArrowLeft,
 } from "lucide-react";
 import { AtalayaMark } from "./marks";
 import { cn } from "@/lib/utils";
-import { getMarketAnalysis } from "@/lib/market/analysis.fn";
-import { getDailyForecastTracking } from "@/lib/watch/watch.fn";
-import { forecastAll, type DailyForecast } from "@/lib/learn/day-forecast";
-import type { AssetAnalysis } from "@/lib/trading/types";
-
 const LABELS: Record<string, string> = {
   XAUUSD: "Oro",
   BTCUSD: "Bitcoin",
@@ -40,7 +26,6 @@ export function MorePanel({
   onCalendar,
   onSettings,
   onStatus,
-  onLab,
   statusHint,
 }: {
   onInfo: () => void;
@@ -50,18 +35,8 @@ export function MorePanel({
   onCalendar: () => void;
   onSettings: () => void;
   onStatus: () => void;
-  onLab: () => void;
   statusHint: string;
 }) {
-  const forecast = useQuery({
-    queryKey: ["day-forecast"],
-    queryFn: () => getMarketAnalysis({ data: { force: false } }),
-    staleTime: 45_000,
-    retry: 1,
-  });
-  const forecasts = forecast.data ? forecastAll(forecast.data.assets, forecast.data.generatedAt) : [];
-  const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
-
   return (
     <div className="space-y-4" data-more-panel>
       <div>
@@ -71,9 +46,7 @@ export function MorePanel({
       <div className="overflow-hidden rounded-[var(--radius-lg)] bg-elevated shadow-[var(--shadow-border)]">
         <MoreRow icon={<Info className="size-4 text-cyan" />} title="Información" hint="Sobre Atalaya" onClick={onInfo} />
         <MoreRow icon={<BookOpen className="size-4 text-muted" />} title="Historial" hint="Episodios registrados" onClick={onHistory} />
-        <MoreRow icon={<GraduationCap className="size-4 text-muted" />} title="Aprendizaje" hint="Shadow y análisis" onClick={onLearn} />
-        <MoreRow icon={<Compass className="size-4 text-cyan" />} title="Previsión del día" hint="Sesgo diario experimental" />
-        <MoreRow icon={<FlaskConical className="size-4 text-muted" />} title="Estado del laboratorio" hint="Captura e integridad" onClick={onLab} />
+        <MoreRow icon={<GraduationCap className="size-4 text-muted" />} title="Aprendizaje" hint="Resultados del bot PAPER" onClick={onLearn} />
         <MoreRow icon={<Bell className="size-4 text-muted" />} title="Alertas" hint="Notificaciones" onClick={onAlerts} />
         <MoreRow icon={<CalendarDays className="size-4 text-muted" />} title="Calendario" hint="Eventos de mercado" onClick={onCalendar} />
         <MoreRow icon={<Settings className="size-4 text-muted" />} title="Configuración" hint="Preferencias" onClick={onSettings} />
@@ -251,4 +224,4 @@ function formatPrice(value: number | null): string {
 
 function MoreRow({ icon, title, hint, onClick, last }: { icon: ReactNode; title: string; hint: string; onClick?: () => void; last?: boolean }) {
   return <button type="button" onClick={onClick} disabled={!onClick} className={cn("atalaya-more-row", !last && "border-b border-border/70", !onClick && "cursor-default opacity-90")}><span className="flex size-9 items-center justify-center rounded-[var(--radius-md)] bg-surface">{icon}</span><span className="min-w-0 flex-1 text-left"><span className="block text-sm font-medium">{title}</span><span className="block text-xs text-subtle">{hint}</span></span>{onClick ? <ChevronRight className="size-4 text-subtle" /> : null}</button>;
-}
+}\n}\n
