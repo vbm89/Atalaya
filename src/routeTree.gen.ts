@@ -10,20 +10,67 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ShadowActivosRouteImport } from './routes/shadow-activos'
+import { Route as ShadowRadarRouteImport } from './routes/shadow-radar'
+import { Route as ApiBotRouteImport } from './routes/api/bot'
+import { Route as ApiLabV1StatsRouteImport } from './routes/api/lab/v1-stats'
 import { Route as ApiLearnShadowReplayRouteImport } from './routes/api/learn/shadow-replay'
+import { Route as ApiPaperCronRouteImport } from './routes/api/paper/cron'
+import { Route as ApiShadowDiscoveryRouteImport } from './routes/api/shadow/discovery'
+import { Route as ApiShadowDiscoveryExploreRouteImport } from './routes/api/shadow/discovery-explore'
+import { Route as ApiShadowRadarRouteImport } from './routes/api/shadow/radar'
 import { Route as ApiWatchHealthRouteImport } from './routes/api/watch/health'
 import { Route as ApiWatchTickRouteImport } from './routes/api/watch/tick'
-import { Route as ApiBotRouteImport } from './routes/api/bot'
-import { Route as ApiPaperCronRouteImport } from './routes/api/paper/cron'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ShadowActivosRoute = ShadowActivosRouteImport.update({
+  id: '/shadow-activos',
+  path: '/shadow-activos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShadowRadarRoute = ShadowRadarRouteImport.update({
+  id: '/shadow-radar',
+  path: '/shadow-radar',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiBotRoute = ApiBotRouteImport.update({
+  id: '/api/bot',
+  path: '/api/bot',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiLabV1StatsRoute = ApiLabV1StatsRouteImport.update({
+  id: '/api/lab/v1-stats',
+  path: '/api/lab/v1-stats',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiLearnShadowReplayRoute = ApiLearnShadowReplayRouteImport.update({
   id: '/api/learn/shadow-replay',
   path: '/api/learn/shadow-replay',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPaperCronRoute = ApiPaperCronRouteImport.update({
+  id: '/api/paper/cron',
+  path: '/api/paper/cron',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiShadowDiscoveryRoute = ApiShadowDiscoveryRouteImport.update({
+  id: '/api/shadow/discovery',
+  path: '/api/shadow/discovery',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiShadowDiscoveryExploreRoute =
+  ApiShadowDiscoveryExploreRouteImport.update({
+    id: '/api/shadow/discovery-explore',
+    path: '/api/shadow/discovery-explore',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiShadowRadarRoute = ApiShadowRadarRouteImport.update({
+  id: '/api/shadow/radar',
+  path: '/api/shadow/radar',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiWatchHealthRoute = ApiWatchHealthRouteImport.update({
@@ -36,57 +83,108 @@ const ApiWatchTickRoute = ApiWatchTickRouteImport.update({
   path: '/api/watch/tick',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiBotRoute = ApiBotRouteImport.update({
-  id: '/api/bot',
-  path: '/api/bot',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPaperCronRoute = ApiPaperCronRouteImport.update({
-  id: '/api/paper/cron',
-  path: '/api/paper/cron',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/shadow-activos': typeof ShadowActivosRoute
+  '/shadow-radar': typeof ShadowRadarRoute
+  '/api/bot': typeof ApiBotRoute
+  '/api/lab/v1-stats': typeof ApiLabV1StatsRoute
   '/api/learn/shadow-replay': typeof ApiLearnShadowReplayRoute
+  '/api/paper/cron': typeof ApiPaperCronRoute
+  '/api/shadow/discovery': typeof ApiShadowDiscoveryRoute
+  '/api/shadow/discovery-explore': typeof ApiShadowDiscoveryExploreRoute
+  '/api/shadow/radar': typeof ApiShadowRadarRoute
   '/api/watch/health': typeof ApiWatchHealthRoute
   '/api/watch/tick': typeof ApiWatchTickRoute
-  '/api/bot': typeof ApiBotRoute
-  '/api/paper/cron': typeof ApiPaperCronRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/shadow-activos': typeof ShadowActivosRoute
+  '/shadow-radar': typeof ShadowRadarRoute
+  '/api/bot': typeof ApiBotRoute
+  '/api/lab/v1-stats': typeof ApiLabV1StatsRoute
   '/api/learn/shadow-replay': typeof ApiLearnShadowReplayRoute
+  '/api/paper/cron': typeof ApiPaperCronRoute
+  '/api/shadow/discovery': typeof ApiShadowDiscoveryRoute
+  '/api/shadow/discovery-explore': typeof ApiShadowDiscoveryExploreRoute
+  '/api/shadow/radar': typeof ApiShadowRadarRoute
   '/api/watch/health': typeof ApiWatchHealthRoute
   '/api/watch/tick': typeof ApiWatchTickRoute
-  '/api/bot': typeof ApiBotRoute
-  '/api/paper/cron': typeof ApiPaperCronRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/shadow-activos': typeof ShadowActivosRoute
+  '/shadow-radar': typeof ShadowRadarRoute
+  '/api/bot': typeof ApiBotRoute
+  '/api/lab/v1-stats': typeof ApiLabV1StatsRoute
   '/api/learn/shadow-replay': typeof ApiLearnShadowReplayRoute
+  '/api/paper/cron': typeof ApiPaperCronRoute
+  '/api/shadow/discovery': typeof ApiShadowDiscoveryRoute
+  '/api/shadow/discovery-explore': typeof ApiShadowDiscoveryExploreRoute
+  '/api/shadow/radar': typeof ApiShadowRadarRoute
   '/api/watch/health': typeof ApiWatchHealthRoute
   '/api/watch/tick': typeof ApiWatchTickRoute
-  '/api/bot': typeof ApiBotRoute
-  '/api/paper/cron': typeof ApiPaperCronRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/learn/shadow-replay' | '/api/watch/health' | '/api/watch/tick' | '/api/bot' | '/api/paper/cron'
+  fullPaths:
+    | '/'
+    | '/shadow-activos'
+    | '/shadow-radar'
+    | '/api/bot'
+    | '/api/lab/v1-stats'
+    | '/api/learn/shadow-replay'
+    | '/api/paper/cron'
+    | '/api/shadow/discovery'
+    | '/api/shadow/discovery-explore'
+    | '/api/shadow/radar'
+    | '/api/watch/health'
+    | '/api/watch/tick'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/learn/shadow-replay' | '/api/watch/health' | '/api/watch/tick' | '/api/bot' | '/api/paper/cron'
-  id: '__root__' | '/' | '/api/learn/shadow-replay' | '/api/watch/health' | '/api/watch/tick' | '/api/bot' | '/api/paper/cron'
+  to:
+    | '/'
+    | '/shadow-activos'
+    | '/shadow-radar'
+    | '/api/bot'
+    | '/api/lab/v1-stats'
+    | '/api/learn/shadow-replay'
+    | '/api/paper/cron'
+    | '/api/shadow/discovery'
+    | '/api/shadow/discovery-explore'
+    | '/api/shadow/radar'
+    | '/api/watch/health'
+    | '/api/watch/tick'
+  id:
+    | '__root__'
+    | '/'
+    | '/shadow-activos'
+    | '/shadow-radar'
+    | '/api/bot'
+    | '/api/lab/v1-stats'
+    | '/api/learn/shadow-replay'
+    | '/api/paper/cron'
+    | '/api/shadow/discovery'
+    | '/api/shadow/discovery-explore'
+    | '/api/shadow/radar'
+    | '/api/watch/health'
+    | '/api/watch/tick'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ShadowActivosRoute: typeof ShadowActivosRoute
+  ShadowRadarRoute: typeof ShadowRadarRoute
+  ApiBotRoute: typeof ApiBotRoute
+  ApiLabV1StatsRoute: typeof ApiLabV1StatsRoute
   ApiLearnShadowReplayRoute: typeof ApiLearnShadowReplayRoute
+  ApiPaperCronRoute: typeof ApiPaperCronRoute
+  ApiShadowDiscoveryRoute: typeof ApiShadowDiscoveryRoute
+  ApiShadowDiscoveryExploreRoute: typeof ApiShadowDiscoveryExploreRoute
+  ApiShadowRadarRoute: typeof ApiShadowRadarRoute
   ApiWatchHealthRoute: typeof ApiWatchHealthRoute
   ApiWatchTickRoute: typeof ApiWatchTickRoute
-  ApiBotRoute: typeof ApiBotRoute
-  ApiPaperCronRoute: typeof ApiPaperCronRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -98,11 +196,67 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/shadow-activos': {
+      id: '/shadow-activos'
+      path: '/shadow-activos'
+      fullPath: '/shadow-activos'
+      preLoaderRoute: typeof ShadowActivosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shadow-radar': {
+      id: '/shadow-radar'
+      path: '/shadow-radar'
+      fullPath: '/shadow-radar'
+      preLoaderRoute: typeof ShadowRadarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/bot': {
+      id: '/api/bot'
+      path: '/api/bot'
+      fullPath: '/api/bot'
+      preLoaderRoute: typeof ApiBotRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/lab/v1-stats': {
+      id: '/api/lab/v1-stats'
+      path: '/api/lab/v1-stats'
+      fullPath: '/api/lab/v1-stats'
+      preLoaderRoute: typeof ApiLabV1StatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/learn/shadow-replay': {
       id: '/api/learn/shadow-replay'
       path: '/api/learn/shadow-replay'
       fullPath: '/api/learn/shadow-replay'
       preLoaderRoute: typeof ApiLearnShadowReplayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/paper/cron': {
+      id: '/api/paper/cron'
+      path: '/api/paper/cron'
+      fullPath: '/api/paper/cron'
+      preLoaderRoute: typeof ApiPaperCronRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/shadow/discovery': {
+      id: '/api/shadow/discovery'
+      path: '/api/shadow/discovery'
+      fullPath: '/api/shadow/discovery'
+      preLoaderRoute: typeof ApiShadowDiscoveryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/shadow/discovery-explore': {
+      id: '/api/shadow/discovery-explore'
+      path: '/api/shadow/discovery-explore'
+      fullPath: '/api/shadow/discovery-explore'
+      preLoaderRoute: typeof ApiShadowDiscoveryExploreRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/shadow/radar': {
+      id: '/api/shadow/radar'
+      path: '/api/shadow/radar'
+      fullPath: '/api/shadow/radar'
+      preLoaderRoute: typeof ApiShadowRadarRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/watch/health': {
@@ -119,30 +273,22 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWatchTickRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/bot': {
-      id: '/api/bot'
-      path: '/api/bot'
-      fullPath: '/api/bot'
-      preLoaderRoute: typeof ApiBotRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/paper/cron': {
-      id: '/api/paper/cron'
-      path: '/api/paper/cron'
-      fullPath: '/api/paper/cron'
-      preLoaderRoute: typeof ApiPaperCronRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ShadowActivosRoute: ShadowActivosRoute,
+  ShadowRadarRoute: ShadowRadarRoute,
+  ApiBotRoute: ApiBotRoute,
+  ApiLabV1StatsRoute: ApiLabV1StatsRoute,
   ApiLearnShadowReplayRoute: ApiLearnShadowReplayRoute,
+  ApiPaperCronRoute: ApiPaperCronRoute,
+  ApiShadowDiscoveryRoute: ApiShadowDiscoveryRoute,
+  ApiShadowDiscoveryExploreRoute: ApiShadowDiscoveryExploreRoute,
+  ApiShadowRadarRoute: ApiShadowRadarRoute,
   ApiWatchHealthRoute: ApiWatchHealthRoute,
   ApiWatchTickRoute: ApiWatchTickRoute,
-  ApiBotRoute: ApiBotRoute,
-  ApiPaperCronRoute: ApiPaperCronRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { House, BarChart3, BookOpen, Ellipsis, Bell } from "lucide-react";
+import { House, BarChart3, BookOpen, Ellipsis, CalendarDays, RefreshCw } from "lucide-react";
 import { getMarketAnalysis } from "@/lib/market/analysis.fn";
 import { getWatchHealth, getWatchEpisode, getWatchSnapshots, type WatchEpisodeView } from "@/lib/watch/watch.fn";
 import type { AnalysisSnapshot, AssetAnalysis, AssetId } from "@/lib/trading/types";
@@ -100,13 +100,40 @@ function OperativoPill({
     Date.now(),
   );
   const ok = hint === "Todo funcionando";
-  const label = ok ? "Operativo" : hint;
+  const label = compactHeaderStatus(hint);
   return (
-    <span className={ok ? "atalaya-pill is-ok" : watch.lamp === "error" || data.lamp === "unavailable" ? "atalaya-pill is-bad" : "atalaya-pill is-warn"}>
+    <span
+      className={ok ? "atalaya-pill is-ok" : watch.lamp === "error" || data.lamp === "unavailable" ? "atalaya-pill is-bad" : "atalaya-pill is-warn"}
+      title={hint}
+      aria-label={hint}
+    >
       <span className="atalaya-status-dot" />
-      <span className="max-w-[9.5rem] truncate">{label}</span>
+      <span>{label}</span>
     </span>
   );
+}
+
+function compactHeaderStatus(hint: string): string {
+  switch (hint) {
+    case "Todo funcionando":
+      return "DATOS OK";
+    case "Falta el secreto del servidor":
+      return "SIN SECRETO";
+    case "Vigilancia con error":
+      return "ERROR";
+    case "Vigilancia retrasada":
+      return "RETRASADA";
+    case "No disponible":
+      return "NO DISPONIBLE";
+    case "DATOS NO DISPONIBLES":
+      return "SIN DATOS";
+    case "DATOS RETRASADOS":
+      return "RETRASADOS";
+    case "DATOS OK · subyacente cerrado":
+      return "DATOS OK";
+    default:
+      return hint;
+  }
 }
 
 function systemHint(
@@ -552,27 +579,31 @@ export function Dashboard() {
   };
 
   return (
-    <div className="atalaya-shell" data-chrome={tab === "charts" && chartMode === "workspace" ? "chart" : "home"}>
+    <div className="atalaya-shell is-app" data-chrome={tab === "charts" && chartMode === "workspace" ? "chart" : "home"}>
       {tab !== "charts" || chartMode !== "workspace" ? (
       <header className="atalaya-header">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2 text-cyan">
-            <AtalayaMark className="size-6 shrink-0" />
-            <h1 className="atalaya-title text-[15px] font-semibold tracking-[0.18em] uppercase">Atalaya</h1>
+        <div className="atalaya-brand-row">
+          <div className="atalaya-brand">
+            <AtalayaMark className="atalaya-logo text-cyan" />
+            <h1 className="atalaya-title">Atalaya</h1>
           </div>
-          <div className="flex min-w-0 items-center gap-2">
-            <OperativoPill
-              snapshot={snapshot}
-              server={health.data ?? null}
-            />
-            <p className="atalaya-header-sub shrink-0 font-mono text-[10px] tabular text-subtle">
-              {health.data?.lastEvalMs
-                ? formatMadridClock(health.data.lastEvalMs)
-                : lastEvalMs
-                  ? formatMadridClock(lastEvalMs)
-                  : "—"}
-            </p>
+          <div className="atalaya-status-cluster">
+            <button
+              type="button"
+              className="atalaya-refresh"
+              aria-label="Actualizar"
+              disabled={refresh.isPending}
+              onClick={() => refresh.mutate()}
+            >
+              <RefreshCw className={refresh.isPending ? "size-3.5 animate-spin" : "size-3.5"} />
+            </button>
+            <HeaderClock fallbackMs={lastEvalMs} />
           </div>
+        </div>
+        <p className="atalaya-kicker">Tiempo real · XAU · BTC · US100 · WTI</p>
+        <div className="atalaya-status-line">
+          <OperativoPill snapshot={snapshot} server={health.data ?? null} />
+          <p className="atalaya-vigilancia">Vigilancia 24/7</p>
         </div>
       </header>
       ) : null}
@@ -606,6 +637,11 @@ export function Dashboard() {
                 visible={visible}
                 watching={!busy && visible}
                 server={health.data ?? null}
+                events={snapshot.calendar}
+                onCalendar={() => {
+                  setTab("calendar");
+                  setChartIntent(null);
+                }}
               />
             ) : tab === "markets" ? (
               <Skeleton className="h-14 rounded-[var(--radius-lg)]" />
@@ -619,10 +655,26 @@ export function Dashboard() {
             ) : null}
 
             {tab === "markets" ? (
-              <div className="atalaya-markets mt-4">
-                <p className="atalaya-markets-label pt-1 text-xs font-medium tracking-wider text-muted uppercase">
-                  Mercados
-                </p>
+              <div className="atalaya-markets mt-3">
+                {snapshot ? (
+                  <BestOpportunityCard
+                    snapshot={snapshot}
+                    asset={presentedOpportunity.asset}
+                    presentedId={presentedOpportunity.asset?.id ?? null}
+                    presentedNote={presentedOpportunity.note}
+                    onDetail={() => {
+                      if (presentedOpportunity.asset) openMarket(presentedOpportunity.asset.id);
+                    }}
+                  />
+                ) : (
+                  <Skeleton className="atalaya-markets-span h-28 rounded-[var(--radius-lg)]" />
+                )}
+                <div className="atalaya-markets-head">
+                  <p className="atalaya-markets-label text-xs font-semibold tracking-[0.16em] text-muted uppercase">
+                    Mercados
+                  </p>
+                  <span className="atalaya-tf-pill">15m</span>
+                </div>
                 <div className="atalaya-markets-grid">
                 {snapshot
                   ? snapshot.assets.map((a) => {
@@ -639,19 +691,6 @@ export function Dashboard() {
                       <Skeleton key={i} className="atalaya-market-tile" />
                     ))}
                 </div>
-                {snapshot ? (
-                  <BestOpportunityCard
-                    snapshot={snapshot}
-                    asset={presentedOpportunity.asset}
-                    presentedId={presentedOpportunity.asset?.id ?? null}
-                    presentedNote={presentedOpportunity.note}
-                    onDetail={() => {
-                      if (presentedOpportunity.asset) openMarket(presentedOpportunity.asset.id);
-                    }}
-                  />
-                ) : (
-                  <Skeleton className="atalaya-markets-span h-28 rounded-[var(--radius-lg)]" />
-                )}
                 {!snapshot && loading ? (
                   <p className="atalaya-markets-label px-1 text-center text-sm text-muted">
                     Obteniendo precios y noticias reales…
@@ -798,17 +837,17 @@ export function Dashboard() {
       <nav className="atalaya-dock" aria-label="Navegación">
         <DockBtn
           active={tab === "markets"}
-          label="Inicio"
+          label="Atalaya"
           onClick={() => {
             setTab("markets");
             setChartIntent(null);
           }}
         >
-          <House className="size-4" />
+          <House className="size-[1.15rem]" strokeWidth={1.75} />
         </DockBtn>
         <DockBtn
           active={tab === "charts"}
-          label="Mercados"
+          label="Gráficos"
           onClick={() => {
             setOpenId(null);
             setChartIntent(null);
@@ -817,7 +856,17 @@ export function Dashboard() {
             setTab("charts");
           }}
         >
-          <BarChart3 className="size-4" />
+          <BarChart3 className="size-[1.15rem]" strokeWidth={1.75} />
+        </DockBtn>
+        <DockBtn
+          active={tab === "calendar"}
+          label="Calendario"
+          onClick={() => {
+            setTab("calendar");
+            setChartIntent(null);
+          }}
+        >
+          <CalendarDays className="size-[1.15rem]" strokeWidth={1.75} />
         </DockBtn>
         <DockBtn
           active={tab === "history"}
@@ -827,30 +876,43 @@ export function Dashboard() {
             setChartIntent(null);
           }}
         >
-          <BookOpen className="size-4" />
+          <BookOpen className="size-[1.15rem]" strokeWidth={1.75} />
         </DockBtn>
         <DockBtn
-          active={tab === "alerts"}
-          label="Alertas"
-          onClick={() => {
-            setTab("alerts");
-            setChartIntent(null);
-          }}
-        >
-          <Bell className="size-4" />
-        </DockBtn>
-        <DockBtn
-          active={tab === "more" || tab === "learn" || tab === "settings" || tab === "info" || tab === "calendar" || tab === "status"}
+          active={tab === "more" || tab === "learn" || tab === "settings" || tab === "info" || tab === "alerts" || tab === "status"}
           label="Más"
           onClick={() => {
             setTab("more");
             setChartIntent(null);
           }}
         >
-          <Ellipsis className="size-4" />
+          <Ellipsis className="size-[1.15rem]" strokeWidth={1.75} />
         </DockBtn>
       </nav>
     </div>
+  );
+}
+
+function HeaderClock({ fallbackMs }: { fallbackMs: number | null }) {
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    const tick = () => setNow(new Date());
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  const at = now ?? (fallbackMs != null ? new Date(fallbackMs) : null);
+  const time = at ? formatMadridClock(at) : "—";
+  const zone = at
+    ? new Intl.DateTimeFormat("es-ES", { timeZone: "Europe/Madrid", timeZoneName: "short" })
+        .formatToParts(at)
+        .find((part) => part.type === "timeZoneName")?.value ?? ""
+    : "";
+  return (
+    <p className="atalaya-clock">
+      <span className="atalaya-clock-time">{time}</span>
+      <span className="atalaya-clock-zone">{zone}</span>
+    </p>
   );
 }
 

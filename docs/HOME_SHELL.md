@@ -25,7 +25,7 @@ HOME and research stay independent. A capture fix must not resurrect
 - `src/components/dashboard/session-state.tsx`
 - `src/styles.css` — `.atalaya-*` chrome
 
-Dock (order): **Inicio · Mercados · Historial · Alertas · Más**.
+Dock (order): **Atalaya · Gráficos · Calendario · Historial · Más**.
 
 Más includes **Estado del laboratorio** (`LabIntegrityPanel`) as a destination,
 not as a replacement for HOME.

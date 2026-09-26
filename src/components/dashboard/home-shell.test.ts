@@ -11,22 +11,22 @@ function read(name: string): string {
 }
 
 describe("HOME shell contract", () => {
-  it("dock is Inicio · Mercados · Historial · Alertas · Más, not TERMINAL chrome", () => {
+  it("dock is Atalaya · Gráficos · Calendario · Historial · Más", () => {
     const dash = read("dashboard.tsx");
     const nav = dash.slice(dash.indexOf("atalaya-dock"));
-    const labels = [...nav.matchAll(/label="(Inicio|Mercados|Historial|Alertas|Más)"/g)].map((m) => m[1]);
-    assert.deepEqual(labels, ["Inicio", "Mercados", "Historial", "Alertas", "Más"]);
+    const labels = [...nav.matchAll(/label="(Atalaya|Gráficos|Calendario|Historial|Más)"/g)].map((m) => m[1]);
+    assert.deepEqual(labels, ["Atalaya", "Gráficos", "Calendario", "Historial", "Más"]);
     assert.doesNotMatch(dash, /TERMINAL/);
     assert.match(dash, /AtalayaMark/);
     assert.match(dash, /OperativoPill/);
     assert.match(dash, /atalaya-markets-grid/);
   });
 
-  it("HOME heading is Mercado en vigilancia with Oportunidades", () => {
+  it("HOME shows the live opportunity card and the empty state", () => {
     const feed = read("home-feed.tsx");
-    assert.match(feed, /Mercado en vigilancia/);
-    assert.match(feed, /Oportunidades/);
+    assert.match(feed, /Mejor oportunidad ahora/);
     assert.match(feed, /Sin entradas activas/);
+    assert.match(feed, /Mercado en vigilancia/);
   });
 
   it("tiles show session CERRADO and AssetMark identity", () => {
@@ -35,13 +35,14 @@ describe("HOME shell contract", () => {
     assert.match(card, /CERRADO/);
   });
 
-  it("Más keeps Estado del laboratorio as a destination, not a HOME replacement", () => {
+  it("Más stays a destination list and does not replace HOME", () => {
     const more = read("more-panel.tsx");
     const dash = read("dashboard.tsx");
-    assert.match(more, /Estado del laboratorio/);
-    assert.match(dash, /LabIntegrityPanel/);
-    assert.match(dash, /tab === "lab"/);
-    assert.match(dash, /onLab=/);
+    assert.match(more, /Alertas/);
+    assert.match(more, /Calendario/);
+    assert.match(more, /data-more-panel/);
+    assert.match(dash, /MorePanel/);
+    assert.doesNotMatch(dash, /tab === "lab"/);
   });
 
   it("Pattern Discovery states COMMON_4 / INSUFFICIENT and never ranks", () => {
