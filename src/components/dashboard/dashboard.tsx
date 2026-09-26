@@ -29,13 +29,12 @@ import { parseWatchLink } from "@/lib/watch/link";
 import { AlertsPanel } from "./alerts-panel";
 import { HistoryPanel } from "./history-panel";
 import { ExplainSheet } from "./explain-sheet";
-import { LearnPanel } from "./learn-panel";
+import { LearningPanel } from "./learning-panel";
 import { explainFromAnalysis, explainFromHistory, type ExplainView } from "@/lib/learn/explain";
 import type { HistoryRow } from "@/lib/watch/store";
 import { InboxPanel } from "./inbox-panel";
 import { InfoPanel } from "./info-panel";
 import { MorePanel } from "./more-panel";
-import { LabIntegrityPanel } from "./lab-integrity-panel";
 import { AtalayaMark } from "./marks";
 import { sheetJournalEpisodeId } from "@/lib/memory/journal";
 import { formatMadridClock } from "@/lib/watch/clock";
@@ -289,7 +288,7 @@ function overlayWatch(
 
 export function Dashboard() {
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"markets" | "calendar" | "charts" | "history" | "learn" | "settings" | "info" | "alerts" | "more" | "status" | "lab">("markets");
+  const [tab, setTab] = useState<"markets" | "calendar" | "charts" | "history" | "learn" | "settings" | "info" | "alerts" | "more" | "status">("markets");
   const [openId, setOpenId] = useState<AssetId | null>(null);
   const [chartIntent, setChartIntent] = useState<ChartIntent | null>(null);
   const [chartBrowse, setChartBrowse] = useState(0);
@@ -669,7 +668,7 @@ export function Dashboard() {
                 />
               </div>
             ) : tab === "learn" ? (
-              <LearnPanel />
+              <LearningPanel />
             ) : tab === "settings" ? (
               <div className="mt-4 space-y-3 atalaya-markets-span">
                 <AccountPanel
@@ -737,16 +736,10 @@ export function Dashboard() {
                     setTab("status");
                     setChartIntent(null);
                   }}
-                  onLab={() => {
-                    setTab("lab");
-                    setChartIntent(null);
-                  }}
                 />
               </div>
             ) : tab === "status" ? (
               <SystemStatusPanel snapshot={snapshot} server={health.data ?? null} lastEvalMs={lastEvalMs} />
-            ) : tab === "lab" ? (
-              <LabIntegrityPanel />
             ) : (
               <div className="mt-4">
                 {snapshot ? (
@@ -847,7 +840,7 @@ export function Dashboard() {
           <Bell className="size-4" />
         </DockBtn>
         <DockBtn
-          active={tab === "more" || tab === "learn" || tab === "settings" || tab === "info" || tab === "calendar" || tab === "status" || tab === "lab"}
+          active={tab === "more" || tab === "learn" || tab === "settings" || tab === "info" || tab === "calendar" || tab === "status"}
           label="Más"
           onClick={() => {
             setTab("more");
