@@ -266,6 +266,12 @@ export function assessRisk(args: {
   return { ok: true, reason: "READY", stop, target: args.target, targetSource: args.targetSource, rr, risk, detail: "Riesgo detrás de la estructura y objetivo ya existente." };
 }
 
+/**
+ * Niveles estructurales ya existentes, del más cercano al más lejano.
+ * Si el más cercano no paga el R:R mínimo, se prueba el siguiente.
+ * Si ninguno llega, se conserva el más cercano. El fallback de ATR solo
+ * entra cuando no hay ningún nivel en la dirección. No se fabrican precios.
+ */
 export function selectTarget(
   direction: Side,
   entry: number,
@@ -273,13 +279,15 @@ export function selectTarget(
   sessionHigh: number | null,
   sessionLow: number | null,
   atr: number,
+  defended: number | null = null,
 ): { price: number; source: string } | null {
-  const above: { price: number; source: string }[] = [];
-  const below: { price: number; source: string }[] = [];
+  const pool: { price: number; source: string }[] = [];
   const add = (price: number | null | undefined, source: string) => {
     if (price == null || !Number.isFinite(price)) return;
-    if (price > entry) above.push({ price, source });
-    if (price < entry) below.push({ price, source });
+    const inDirection = direction === "LONG" ? price > entry : price < entry;
+    if (!inDirection) return;
+    if (pool.some((row) => row.price === price)) return;
+    pool.push({ price, source });
   };
   add(structure.lastHigh?.price, "swing_high");
   add(structure.prevHigh?.price, "prev_swing_high");
@@ -291,12 +299,31 @@ export function selectTarget(
   add(structure.recentLow, "recent_low");
   add(sessionHigh, "session_high");
   add(sessionLow, "session_low");
-  if (direction === "LONG") {
-    if (above.length) return above.reduce((best, row) => (row.price < best.price ? row : best));
-    return { price: entry + PARAMS.targetAtrFallback * atr, source: "ATR_FALLBACK" };
+  pool.sort((a, b) => (direction === "LONG" ? a.price - b.price : b.price - a.price));
+
+  const level =
+    defended != null && Number.isFinite(defended) && (direction === "LONG" ? defended < entry : defended > entry)
+      ? defended
+      : null;
+  const stop =
+    level != null && atr > 0
+      ? direction === "LONG"
+        ? level - PARAMS.atrBufferFrac * atr
+        : level + PARAMS.atrBufferFrac * atr
+      : null;
+  const risk = stop == null ? null : direction === "LONG" ? entry - stop : stop - entry;
+  if (risk != null && risk > 0 && atr > 0 && risk >= PARAMS.minRiskAtr * atr && risk <= PARAMS.maxRiskAtr * atr) {
+    for (const row of pool) {
+      const reward = direction === "LONG" ? row.price - entry : entry - row.price;
+      if (reward > 0 && reward / risk >= PARAMS.minRr) return row;
+    }
   }
-  if (below.length) return below.reduce((best, row) => (row.price > best.price ? row : best));
-  return { price: entry - PARAMS.targetAtrFallback * atr, source: "ATR_FALLBACK" };
+
+  if (pool.length) return pool[0]!;
+  if (!(atr > 0)) return null;
+  return direction === "LONG"
+    ? { price: entry + PARAMS.targetAtrFallback * atr, source: "ATR_FALLBACK" }
+    : { price: entry - PARAMS.targetAtrFallback * atr, source: "ATR_FALLBACK" };
 }
 
 export function decide(bars: readonly Bar[], i: number, asset: AssetId): Decision {
@@ -350,7 +377,7 @@ export function decide(bars: readonly Bar[], i: number, asset: AssetId): Decisio
       const partial = partialAt(bars, i, state, structure, events, ctx);
       if (partial) {
         const entry = bars[i]!.c;
-        const target = selectTarget(partial.direction, entry, structure, ctx.sessionHigh, ctx.sessionLow, ctx.atr);
+        const target = selectTarget(partial.direction, entry, structure, ctx.sessionHigh, ctx.sessionLow, ctx.atr, partial.defended);
         const risk = assessRisk({
           direction: partial.direction,
           entry,
@@ -466,7 +493,7 @@ export function decide(bars: readonly Bar[], i: number, asset: AssetId): Decisio
   }
 
   const entry = bars[i]!.c;
-  const target = selectTarget(chosen.direction, entry, structure, ctx.sessionHigh, ctx.sessionLow, ctx.atr);
+  const target = selectTarget(chosen.direction, entry, structure, ctx.sessionHigh, ctx.sessionLow, ctx.atr, chosen.defended);
   const risk = assessRisk({
     direction: chosen.direction,
     entry,

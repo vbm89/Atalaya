@@ -4,9 +4,8 @@ import { ArrowDown, ArrowUp, CalendarDays, ChevronRight, Star } from "lucide-rea
  * See docs/HOME_SHELL.md.
  */
 import { useEffect, useState } from "react";
-import type { AnalysisSnapshot, AssetAnalysis, AssetId, CalendarEvent, SetupState } from "@/lib/trading/types";
+import type { AssetAnalysis, AssetId, CalendarEvent } from "@/lib/trading/types";
 import { cn, formatPrice } from "@/lib/utils";
-import { displayEntryPrice } from "@/lib/chart/labels";
 import { DataLampChip } from "./data-lamp";
 import { formatCountdown, formatMadridClock } from "@/lib/watch/clock";
 import { nextWatchEvalMs } from "@/lib/watch/schedule";
@@ -34,34 +33,107 @@ function useLocalNow() {
   return now;
 }
 
+const PAPER_ORDER: AssetId[] = ["XAUUSD", "BTCUSD", "US100", "WTI"];
+
+export interface PaperAssetDecision {
+  asset: AssetId;
+  status: string;
+  provider: string | null;
+  action: "COMPRA" | "VENTA" | "ESPERAR";
+  entry: number | null;
+  stop: number | null;
+  target: number | null;
+  rr: number | null;
+  setup: string | null;
+  rationale: string;
+  wait: string;
+  candles?: { c: number }[];
+}
+
+export interface PaperBoard {
+  updatedAt: number;
+  assets: PaperAssetDecision[];
+}
+
+const SETUP_LABEL: Record<string, string> = {
+  TREND_PULLBACK: "Retroceso en tendencia",
+  BREAKOUT_ACCEPTANCE: "Aceptación de ruptura",
+  SWEEP_RECLAIM: "Barrido y recuperación",
+  FAILED_BREAKOUT: "Ruptura fallida",
+  EXPANSION_CONTINUATION: "Continuación tras expansión",
+};
+
+function paperDigits(asset: AssetId): number {
+  return asset === "BTCUSD" || asset === "US100" ? 1 : 2;
+}
+
+function paperVenue(provider: string | null): string {
+  const head = (provider ?? "").split(":")[0]?.toLowerCase() ?? "";
+  if (head.includes("yahoo")) return "Yahoo";
+  if (head.includes("okx")) return "OKX";
+  if (head.includes("kraken")) return "Kraken";
+  return head ? head : "—";
+}
+
+function isPaperEntry(row: PaperAssetDecision): boolean {
+  return (
+    (row.action === "COMPRA" || row.action === "VENTA") &&
+    row.status === "DATA_OK" &&
+    row.entry != null &&
+    row.stop != null &&
+    row.target != null &&
+    row.rr != null
+  );
+}
+
+/** Elige una decisión ya emitida por PAPER. No recalcula el mercado. */
+export function pickPaperOpportunity(assets: readonly PaperAssetDecision[]): PaperAssetDecision | null {
+  const signals = assets.filter(isPaperEntry);
+  if (!signals.length) return null;
+  return signals.slice().sort((a, b) => {
+    const byRr = (b.rr ?? 0) - (a.rr ?? 0);
+    if (byRr !== 0) return byRr;
+    return PAPER_ORDER.indexOf(a.asset) - PAPER_ORDER.indexOf(b.asset);
+  })[0]!;
+}
+
+function waitNote(assets: readonly PaperAssetDecision[]): string {
+  if (!assets.length) return "No hay ninguna entrada clara ahora.";
+  const stale = assets.find((row) => row.status === "DATA_STALE");
+  if (stale) return stale.wait || "Datos desactualizados";
+  const broken = assets.find((row) => row.status === "DATA_ERROR");
+  if (broken) return broken.wait || "Datos no disponibles";
+  const waiting = assets.find((row) => row.action === "ESPERAR" && row.wait);
+  return waiting?.wait || "No hay ninguna entrada clara ahora.";
+}
+
 export function BestOpportunityCard({
-  snapshot,
-  asset,
-  presentedId,
-  presentedNote,
+  board,
   onDetail,
 }: {
-  snapshot: AnalysisSnapshot;
-  asset: AssetAnalysis | null;
-  presentedId?: AssetId | null;
-  presentedNote?: string;
-  onDetail: () => void;
+  board: PaperBoard | null;
+  onDetail: (asset: AssetId | null) => void;
 }) {
-  const setup = asset?.setup ?? null;
-  const state: SetupState = asset?.setupState ?? "wait";
-  const isEntry = state === "entry" && setup != null;
-  const shownId = presentedId === undefined ? snapshot.bestOpportunityId ?? null : presentedId;
-  const note = presentedNote ?? snapshot.bestOpportunityNote;
-  const updated = Date.parse(snapshot.generatedAt);
-  const stateLabel =
-    state === "pending" ? "TRIGGER PENDIENTE" : state === "entry" ? "ENTRADA" : state === "map" ? "MAPA" : "ESPERAR";
-  const qualityBars = setup?.quality === "alta" ? 4 : 3;
+  const assets = board?.assets ?? [];
+  const picked = pickPaperOpportunity(assets);
+  const shownId = picked?.asset ?? null;
+  const updated = board ? board.updatedAt * (board.updatedAt < 1e12 ? 1000 : 1) : NaN;
+  const note = waitNote(assets);
+  const digits = picked ? paperDigits(picked.asset) : 2;
 
   return (
     <section
       className="atalaya-best atalaya-markets-span"
+      data-paper-source="api-bot"
       data-best-opportunity={shownId ?? "none"}
-      data-operable-opportunity={shownId && isEntry ? shownId : "none"}
+      data-operable-opportunity={shownId ?? "none"}
+      data-paper-action={picked?.action ?? "ESPERAR"}
+      data-paper-entry={picked?.entry ?? ""}
+      data-paper-stop={picked?.stop ?? ""}
+      data-paper-target={picked?.target ?? ""}
+      data-paper-rr={picked?.rr ?? ""}
+      data-paper-setup={picked?.setup ?? ""}
+      data-paper-provider={picked?.provider ?? ""}
     >
       <div className="flex items-center justify-between gap-3">
         <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-[0.14em] text-wait uppercase">
@@ -72,78 +144,59 @@ export function BestOpportunityCard({
           {Number.isFinite(updated) ? `Actualizado ${formatMadridClock(updated)}` : "Actualizado —"}
         </p>
       </div>
-      {!asset || !setup ? (
+      {!picked ? (
         <div className="atalaya-empty mt-3">
           <p className="text-sm font-medium">Sin entradas activas</p>
-          <p className="mt-1 text-sm leading-snug text-subtle">
-            {note || "Atalaya está vigilando el mercado."}
-          </p>
+          <p className="mt-1 text-sm leading-snug text-subtle">{note}</p>
+          <p className="mt-2 text-[11px] uppercase tracking-[0.14em] text-subtle">ESPERAR</p>
         </div>
       ) : (
         <div className="mt-3">
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2.5">
-              <AssetMark id={asset.id} size="sm" />
+              <AssetMark id={picked.asset} size="sm" />
               <div className="min-w-0">
-                <p className="text-lg font-semibold tracking-tight">{asset.label}</p>
-                <p className="text-xs text-subtle">{ASSET_SUBTITLE[asset.id]}</p>
+                <p className="text-lg font-semibold tracking-tight">{picked.asset}</p>
+                <p className="text-xs text-subtle">{ASSET_SUBTITLE[picked.asset]}</p>
               </div>
             </div>
-            <span className={cn("atalaya-state-pill", state === "pending" && "is-pending", state === "entry" && "is-entry")}>
-              {stateLabel}
-            </span>
+            <span className="atalaya-state-pill is-entry">PAPER</span>
           </div>
-          <span
-            className={cn(
-              "atalaya-dir",
-              setup.direction === "buy" ? "is-buy" : "is-sell",
-            )}
-          >
-            {setup.direction === "buy" ? <ArrowUp className="size-3.5" /> : <ArrowDown className="size-3.5" />}
-            {setup.direction === "buy" ? "COMPRA" : "VENTA"}
+          <span className={cn("atalaya-dir", picked.action === "COMPRA" ? "is-buy" : "is-sell")}>
+            {picked.action === "COMPRA" ? <ArrowUp className="size-3.5" /> : <ArrowDown className="size-3.5" />}
+            {picked.action}
           </span>
           <dl className="atalaya-levels">
             <div>
               <dt>Entrada</dt>
-              <dd data-entry-px>
-                {formatPrice(displayEntryPrice(setup.direction, setup.zone.low, setup.zone.high), asset.digits)}
-              </dd>
+              <dd data-entry-px>{formatPrice(picked.entry!, digits)}</dd>
             </div>
             <div>
               <dt>SL</dt>
-              <dd className="is-sl">{formatPrice(setup.stopLoss, asset.digits)}</dd>
+              <dd className="is-sl">{formatPrice(picked.stop!, digits)}</dd>
             </div>
             <div>
-              <dt>TP1</dt>
-              <dd className="is-tp">{formatPrice(setup.takeProfit1, asset.digits)}</dd>
+              <dt>TP</dt>
+              <dd className="is-tp">{formatPrice(picked.target!, digits)}</dd>
             </div>
             <div>
-              <dt>TP2</dt>
-              <dd className="is-tp">{setup.takeProfit2 == null ? "—" : formatPrice(setup.takeProfit2, asset.digits)}</dd>
+              <dt>R:R</dt>
+              <dd className="atalaya-rr">{formatRatio(picked.rr!)}</dd>
             </div>
           </dl>
-          <div className="atalaya-quality-row">
-            <div>
-              <p>R:R</p>
-              <p className="atalaya-rr">{formatRatio(setup.riskReward)}</p>
+          <p className="mt-3 text-sm leading-snug">{picked.rationale}</p>
+          <p className="mt-2 text-xs text-subtle">
+            {SETUP_LABEL[picked.setup ?? ""] ?? picked.setup ?? "Setup"} · {paperVenue(picked.provider)} · 15m
+          </p>
+          {picked.candles && picked.candles.length > 1 ? (
+            <div className="atalaya-hero-spark mt-3">
+              <Sparkline values={picked.candles.map((bar) => bar.c)} positive={picked.action === "COMPRA"} variant="area" />
             </div>
-            <div>
-              <p>Calidad {setup.quality}</p>
-              <span className="atalaya-bars" aria-hidden>
-                {Array.from({ length: 4 }, (_, i) => (
-                  <span key={i} className={i < qualityBars ? "is-on" : ""} />
-                ))}
-              </span>
-            </div>
-          </div>
-          <div className="atalaya-hero-spark mt-3">
-            <Sparkline values={asset.sparkline} positive={setup.direction === "buy"} variant="area" />
-          </div>
-          <button type="button" onClick={onDetail} className="atalaya-detail-btn mt-3">
+          ) : null}
+          <button type="button" onClick={() => onDetail(picked.asset)} className="atalaya-detail-btn mt-3">
             Ver detalle
             <ChevronRight className="size-4" />
           </button>
-          <p className="sr-only">Oportunidades. Solo ENTRY con mercado abierto. PENDING y MAPA no son operaciones.</p>
         </div>
       )}
     </section>

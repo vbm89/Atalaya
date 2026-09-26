@@ -7,7 +7,7 @@ import type { AnalysisSnapshot, AssetAnalysis, AssetId } from "@/lib/trading/typ
 import type { SnapshotDraft } from "@/lib/watch/episode";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarketTile } from "./asset-card";
-import { BestOpportunityCard, FeedStatus } from "./home-feed";
+import { BestOpportunityCard, FeedStatus, type PaperBoard } from "./home-feed";
 import { AssetSheet } from "./asset-sheet";
 import { CalendarList } from "./calendar-list";
 import { AccountPanel, useAccountSettings, useCosts } from "./account-panel";
@@ -39,7 +39,7 @@ import { AtalayaMark } from "./marks";
 import { sheetJournalEpisodeId } from "@/lib/memory/journal";
 import { formatMadridClock } from "@/lib/watch/clock";
 import { watchLamp, worstDataLamp } from "@/lib/watch/feed-lamp";
-import { pickPresentedOpportunity, marketSessionKind, marketSessionLabel } from "@/lib/watch/market-session";
+import { marketSessionKind, marketSessionLabel } from "@/lib/watch/market-session";
 
 /**
  * HOME / app-shell composer. Presentation only.
@@ -54,6 +54,7 @@ const CACHE_KEY = "atalaya:last-analysis:v5";
 const QUERY_KEY = ["market-analysis"] as const;
 const HEALTH_KEY = ["watch-health"] as const;
 const SNAPS_KEY = ["watch-snapshots"] as const;
+const PAPER_KEY = ["paper-bot"] as const;
 
 function readCache(): AnalysisSnapshot | null {
   if (typeof window === "undefined") return null;
@@ -359,6 +360,18 @@ export function Dashboard() {
     retry: 0,
   });
 
+  const paper = useQuery({
+    queryKey: PAPER_KEY,
+    queryFn: async (): Promise<PaperBoard> => {
+      const response = await fetch("/api/bot");
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json() as Promise<PaperBoard>;
+    },
+    staleTime: 15_000,
+    refetchInterval: 20_000,
+    retry: 1,
+  });
+
   useEffect(() => {
     if (query.data) writeCache(query.data);
   }, [query.data]);
@@ -370,6 +383,7 @@ export function Dashboard() {
       writeCache(data);
       void qc.invalidateQueries({ queryKey: HEALTH_KEY });
       void qc.invalidateQueries({ queryKey: SNAPS_KEY });
+      void qc.invalidateQueries({ queryKey: PAPER_KEY });
       void qc.invalidateQueries({ queryKey: ["watch-inbox"] });
     },
   });
@@ -523,10 +537,6 @@ export function Dashboard() {
         ? query.error.message
         : null;
 
-  const presentedOpportunity = snapshot
-    ? pickPresentedOpportunity(snapshot.assets, snapshot.bestOpportunityId)
-    : { asset: null as AssetAnalysis | null, note: "" };
-
   const openMarket = (id: AssetId) => {
     const row = snapshot?.assets.find((a) => a.id === id);
     const shown = row ? overlayAsset(row, episodeFocus) : null;
@@ -656,14 +666,11 @@ export function Dashboard() {
 
             {tab === "markets" ? (
               <div className="atalaya-markets mt-3">
-                {snapshot ? (
+                {paper.data || paper.isError ? (
                   <BestOpportunityCard
-                    snapshot={snapshot}
-                    asset={presentedOpportunity.asset}
-                    presentedId={presentedOpportunity.asset?.id ?? null}
-                    presentedNote={presentedOpportunity.note}
-                    onDetail={() => {
-                      if (presentedOpportunity.asset) openMarket(presentedOpportunity.asset.id);
+                    board={paper.data ?? null}
+                    onDetail={(id) => {
+                      if (id) openMarket(id);
                     }}
                   />
                 ) : (
