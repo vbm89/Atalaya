@@ -59,6 +59,6 @@ export function shortWait(decision: Decision): string {
   if (decision.event === "NO_EVENT") return "Sin evento claro";
   if (decision.marketState.state === "UNCLEAR") return "Sin estructura";
   if (decision.event.startsWith("BREAKOUT")) return "Ruptura sin confirmación";
-  if (decision.reason === "INCOMPLETE" || decision.reason === "NO_SETUP") return "Confirmación incompleta";
+  if (decision.reason === "INCOMPLETE" || decision.reason === "NO_SETUP" || decision.reason === "ASSET_CONFIRM") return "Confirmación incompleta";
   return "Sin lectura suficiente";
 }

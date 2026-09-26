@@ -45,7 +45,8 @@ export type WaitReason =
   | "INVALIDATION"
   | "RR_INSUFFICIENT"
   | "NO_TARGET"
-  | "DATA";
+  | "DATA"
+  | "ASSET_CONFIRM";
 
 export interface Bar {
   t: number;

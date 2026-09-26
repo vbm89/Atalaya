@@ -1,3 +1,4 @@
+import { assetConfirmFail } from "./asset-confirm.ts";
 import { candleAt } from "./candle.ts";
 import { contextAt } from "./context.ts";
 import { eventsAt, primaryEvent } from "./events.ts";
@@ -14,6 +15,7 @@ import type {
   MarketState,
   PriceEvent,
   SetupHit,
+  SetupId,
   Side,
   StructureView,
   WaitReason,
@@ -280,6 +282,7 @@ export function selectTarget(
   sessionLow: number | null,
   atr: number,
   defended: number | null = null,
+  walk = true,
 ): { price: number; source: string } | null {
   const pool: { price: number; source: string }[] = [];
   const add = (price: number | null | undefined, source: string) => {
@@ -312,7 +315,7 @@ export function selectTarget(
         : level + PARAMS.atrBufferFrac * atr
       : null;
   const risk = stop == null ? null : direction === "LONG" ? entry - stop : stop - entry;
-  if (risk != null && risk > 0 && atr > 0 && risk >= PARAMS.minRiskAtr * atr && risk <= PARAMS.maxRiskAtr * atr) {
+  if (walk && risk != null && risk > 0 && atr > 0 && risk >= PARAMS.minRiskAtr * atr && risk <= PARAMS.maxRiskAtr * atr) {
     for (const row of pool) {
       const reward = direction === "LONG" ? row.price - entry : entry - row.price;
       if (reward > 0 && reward / risk >= PARAMS.minRr) return row;
@@ -326,7 +329,56 @@ export function selectTarget(
     : { price: entry - PARAMS.targetAtrFallback * atr, source: "ATR_FALLBACK" };
 }
 
-export function decide(bars: readonly Bar[], i: number, asset: AssetId): Decision {
+function blockedByAsset(args: {
+  enabled: boolean;
+  asset: AssetId;
+  bars: readonly Bar[];
+  i: number;
+  side: Side;
+  setup: SetupId;
+  structure: StructureView;
+  state: MarketState;
+  events: PriceEvent[];
+  atr: number;
+}): Decision | null {
+  if (!args.enabled) return null;
+  const why = assetConfirmFail({
+    asset: args.asset,
+    bars: args.bars,
+    i: args.i,
+    side: args.side,
+    setup: args.setup,
+    structure: args.structure,
+    state: args.state,
+    events: args.events,
+    atr: args.atr,
+  });
+  if (!why) return null;
+  return waiting({
+    asset: args.asset,
+    bars: args.bars,
+    i: args.i,
+    reason: "ASSET_CONFIRM",
+    detail: why,
+    state: args.state,
+    events: args.events,
+    direction: args.side,
+    setup: null,
+    narrative: `${why} ESPERAR.`,
+  });
+}
+
+/** Replay 60d: ninguna confirmación mejoró H8 y H32 en TRAIN y TEST a la vez. Ningún activo activado. */
+export const ENABLED_ASSET_CONFIRM: Partial<Record<AssetId, true>> = {};
+
+export interface DecideOptions {
+  /** false = solo el nivel estructural más cercano. Por defecto se recorre hasta RR 1.5. */
+  targetWalk?: boolean;
+  /** true fuerza la confirmación por activo. false la apaga. Omitido = ENABLED_ASSET_CONFIRM. */
+  assetConfirm?: boolean;
+}
+
+export function decide(bars: readonly Bar[], i: number, asset: AssetId, options: DecideOptions = {}): Decision {
   if (i < PARAMS.warmup || i >= bars.length) {
     return waiting({
       asset,
@@ -377,7 +429,7 @@ export function decide(bars: readonly Bar[], i: number, asset: AssetId): Decisio
       const partial = partialAt(bars, i, state, structure, events, ctx);
       if (partial) {
         const entry = bars[i]!.c;
-        const target = selectTarget(partial.direction, entry, structure, ctx.sessionHigh, ctx.sessionLow, ctx.atr, partial.defended);
+        const target = selectTarget(partial.direction, entry, structure, ctx.sessionHigh, ctx.sessionLow, ctx.atr, partial.defended, options.targetWalk !== false);
         const risk = assessRisk({
           direction: partial.direction,
           entry,
@@ -421,6 +473,19 @@ export function decide(bars: readonly Bar[], i: number, asset: AssetId): Decisio
           };
         }
         const action = partial.direction === "LONG" ? "COMPRA" : "VENTA";
+        const assetBlock = blockedByAsset({
+          enabled: options.assetConfirm ?? ENABLED_ASSET_CONFIRM[asset] === true,
+          asset,
+          bars,
+          i,
+          side: partial.direction,
+          setup: partial.setup,
+          structure,
+          state,
+          events,
+          atr: ctx.atr,
+        });
+        if (assetBlock) return assetBlock;
         const absentNote = absent.length ? ` No hace falta ${absent.join(", ")}: la lectura ya tiene estructura, evento y confirmación.` : "";
         const narrativa = `${STATE_ES[state.state]}. ${EVENT_ES[partial.event]}. Lectura parcial de ${SETUP_ES[partial.setup]}: dirección clara, vela de confirmación y riesgo detrás de la estructura.${absentNote} Hipótesis operativa. El edge no está validado.`;
         return {
@@ -493,7 +558,7 @@ export function decide(bars: readonly Bar[], i: number, asset: AssetId): Decisio
   }
 
   const entry = bars[i]!.c;
-  const target = selectTarget(chosen.direction, entry, structure, ctx.sessionHigh, ctx.sessionLow, ctx.atr, chosen.defended);
+  const target = selectTarget(chosen.direction, entry, structure, ctx.sessionHigh, ctx.sessionLow, ctx.atr, chosen.defended, options.targetWalk !== false);
   const risk = assessRisk({
     direction: chosen.direction,
     entry,
@@ -534,6 +599,19 @@ export function decide(bars: readonly Bar[], i: number, asset: AssetId): Decisio
   }
 
   const action = chosen.direction === "LONG" ? "COMPRA" : "VENTA";
+  const assetBlock = blockedByAsset({
+    enabled: options.assetConfirm ?? ENABLED_ASSET_CONFIRM[asset] === true,
+    asset,
+    bars,
+    i,
+    side: chosen.direction,
+    setup: chosen.id,
+    structure,
+    state,
+    events,
+    atr: ctx.atr,
+  });
+  if (assetBlock) return assetBlock;
   const event = primaryEvent(events);
   const htfNote =
     ctx.htf1h === "UNKNOWN"
@@ -589,7 +667,7 @@ export function decide(bars: readonly Bar[], i: number, asset: AssetId): Decisio
   };
 }
 
-export function latestDecision(bars: readonly Bar[], asset: AssetId): Decision {
+export function latestDecision(bars: readonly Bar[], asset: AssetId, options: DecideOptions = {}): Decision {
   if (!bars.length) {
     return waiting({
       asset,
@@ -600,5 +678,5 @@ export function latestDecision(bars: readonly Bar[], asset: AssetId): Decision {
       narrative: "Sin velas no hay lectura.",
     });
   }
-  return decide(bars, bars.length - 1, asset);
+  return decide(bars, bars.length - 1, asset, options);
 }
