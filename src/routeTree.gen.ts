@@ -13,6 +13,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiLearnShadowReplayRouteImport } from './routes/api/learn/shadow-replay'
 import { Route as ApiWatchHealthRouteImport } from './routes/api/watch/health'
 import { Route as ApiWatchTickRouteImport } from './routes/api/watch/tick'
+import { Route as ApiBotRouteImport } from './routes/api/bot'
+import { Route as ApiPaperCronRouteImport } from './routes/api/paper/cron'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -34,18 +36,32 @@ const ApiWatchTickRoute = ApiWatchTickRouteImport.update({
   path: '/api/watch/tick',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiBotRoute = ApiBotRouteImport.update({
+  id: '/api/bot',
+  path: '/api/bot',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPaperCronRoute = ApiPaperCronRouteImport.update({
+  id: '/api/paper/cron',
+  path: '/api/paper/cron',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/learn/shadow-replay': typeof ApiLearnShadowReplayRoute
   '/api/watch/health': typeof ApiWatchHealthRoute
   '/api/watch/tick': typeof ApiWatchTickRoute
+  '/api/bot': typeof ApiBotRoute
+  '/api/paper/cron': typeof ApiPaperCronRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/learn/shadow-replay': typeof ApiLearnShadowReplayRoute
   '/api/watch/health': typeof ApiWatchHealthRoute
   '/api/watch/tick': typeof ApiWatchTickRoute
+  '/api/bot': typeof ApiBotRoute
+  '/api/paper/cron': typeof ApiPaperCronRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +69,15 @@ export interface FileRoutesById {
   '/api/learn/shadow-replay': typeof ApiLearnShadowReplayRoute
   '/api/watch/health': typeof ApiWatchHealthRoute
   '/api/watch/tick': typeof ApiWatchTickRoute
+  '/api/bot': typeof ApiBotRoute
+  '/api/paper/cron': typeof ApiPaperCronRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/learn/shadow-replay' | '/api/watch/health' | '/api/watch/tick'
+  fullPaths: '/' | '/api/learn/shadow-replay' | '/api/watch/health' | '/api/watch/tick' | '/api/bot' | '/api/paper/cron'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/learn/shadow-replay' | '/api/watch/health' | '/api/watch/tick'
-  id: '__root__' | '/' | '/api/learn/shadow-replay' | '/api/watch/health' | '/api/watch/tick'
+  to: '/' | '/api/learn/shadow-replay' | '/api/watch/health' | '/api/watch/tick' | '/api/bot' | '/api/paper/cron'
+  id: '__root__' | '/' | '/api/learn/shadow-replay' | '/api/watch/health' | '/api/watch/tick' | '/api/bot' | '/api/paper/cron'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,6 +85,8 @@ export interface RootRouteChildren {
   ApiLearnShadowReplayRoute: typeof ApiLearnShadowReplayRoute
   ApiWatchHealthRoute: typeof ApiWatchHealthRoute
   ApiWatchTickRoute: typeof ApiWatchTickRoute
+  ApiBotRoute: typeof ApiBotRoute
+  ApiPaperCronRoute: typeof ApiPaperCronRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -99,6 +119,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWatchTickRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/bot': {
+      id: '/api/bot'
+      path: '/api/bot'
+      fullPath: '/api/bot'
+      preLoaderRoute: typeof ApiBotRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/paper/cron': {
+      id: '/api/paper/cron'
+      path: '/api/paper/cron'
+      fullPath: '/api/paper/cron'
+      preLoaderRoute: typeof ApiPaperCronRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -107,6 +141,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiLearnShadowReplayRoute: ApiLearnShadowReplayRoute,
   ApiWatchHealthRoute: ApiWatchHealthRoute,
   ApiWatchTickRoute: ApiWatchTickRoute,
+  ApiBotRoute: ApiBotRoute,
+  ApiPaperCronRoute: ApiPaperCronRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

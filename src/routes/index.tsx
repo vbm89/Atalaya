@@ -1,13 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Dashboard } from "@/components/dashboard/dashboard";
-import { QueryProvider } from "@/components/query-provider";
+import { BotScreen } from "@/components/bot-screen";
 
 export const Route = createFileRoute("/")({ component: Home });
 
 function Home() {
-  return (
-    <QueryProvider>
-      <Dashboard />
-    </QueryProvider>
-  );
+  return <BotScreen />;
 }
