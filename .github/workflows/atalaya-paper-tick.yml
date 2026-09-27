@@ -1,0 +1,18 @@
+name: Atalaya Paper Tick
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Trigger durable paper tick
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 90 \
+            -H "Cache-Control: no-cache" \
+            "https://atalaya-dev.vercel.app/api/bot"
