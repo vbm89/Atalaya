@@ -5,6 +5,7 @@ import { resolveOutcome } from "./outcome";
 import { computePostEntryMetrics, mergePostEntry, parsePostEntry, watchOutcomeOpenedSlot } from "./post-entry";
 import { diagnoseBornFreeze, logCaptureIssues } from "./capture-issues";
 import { FEED_GRACE_MS } from "./schedule";
+import { buildMomentumContinuation } from "./continuation";
 import type { WatchStore } from "./store";
 
 export const FEED_RETRY_MS = 20_000;
@@ -158,8 +159,41 @@ export async function runWatchTick(args: {
     const born: EpisodeDraft[] = [];
     const touched: EpisodeDraft[] = [];
     for (const asset of loaded.assets) {
-      const prev = await args.store.getOpenEpisode(asset.id);
-      const folded = foldEpisode(prev, asset, slot, args.nowMs);
+      // Research overlay: adds a momentum-continuation entry without changing V1.
+      // It is evaluated only on the newly closed 15M bar, so it cannot spam the same slot.
+      let effectiveAsset = asset;
+      if (asset.setupState !== "entry") {
+        const continuation = buildMomentumContinuation({
+          id: asset.id,
+          m15: loaded.m15ByAsset[asset.id] ?? [],
+          h1: loaded.h1ByAsset?.[asset.id] ?? [],
+          h4: loaded.h4ByAsset?.[asset.id] ?? [],
+          nowMs: args.nowMs,
+          basis: asset.freeze?.basis ?? null,
+          digits: asset.digits,
+        });
+        if (continuation) {
+          effectiveAsset = {
+            ...asset,
+            setupState: "entry",
+            setup: continuation,
+            waitReason: null,
+            freeze: asset.freeze
+              ? {
+                  ...asset.freeze,
+                  setupKind: continuation.kind,
+                  setupState: "entry",
+                  direction: continuation.direction,
+                  riskReward: continuation.riskReward,
+                  missingForEntry: null,
+                }
+              : null,
+          };
+        }
+      }
+
+      const prev = await args.store.getOpenEpisode(effectiveAsset.id);
+      const folded = foldEpisode(prev, effectiveAsset, slot, args.nowMs);
       if (folded.closePrevious) await args.store.upsertEpisode(folded.closePrevious);
       if (folded.episode && folded.episode !== folded.closePrevious) {
         await args.store.upsertEpisode(folded.episode);
