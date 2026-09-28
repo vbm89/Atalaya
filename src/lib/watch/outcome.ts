@@ -37,7 +37,9 @@ export interface OutcomeResult {
 }
 
 function laterBars(candles: Candle[], openedSlot: number): Candle[] {
-  return candles.filter((c) => c.time >= openedSlot).sort((a, b) => a.time - b.time);
+  // The opening slot is the decision/entry candle and must not be used to
+  // manufacture an SL/TP before the signal actually existed.
+  return candles.filter((c) => c.time > openedSlot).sort((a, b) => a.time - b.time);
 }
 
 function touches(direction: "buy" | "sell", c: Candle, level: number, side: "sl" | "tp"): boolean {
