@@ -29,6 +29,8 @@ export const PARAMS = {
   minRr: 1.5,
   targetAtrFallback: 2,
   eventLookback: 6,
+  /** Breakout must close materially beyond the range, not merely by one tick. */
+  breakoutBufferAtr: 0.10,
   warmup: 48,
   splitTrain: 0.7,
   horizons: [1, 4, 8, 32],
