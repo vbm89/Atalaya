@@ -58,14 +58,12 @@ export interface LevelFields {
  */
 export function sameOpportunity(prev: LevelFields, setup: SetupProposal, digits: number): boolean {
   if (prev.direction !== setup.direction || prev.kind !== setup.kind) return false;
-  const tp2 = setup.takeProfit2 == null ? setup.takeProfit1 : setup.takeProfit2;
-  const prevTp2 = prev.tp2 == null ? prev.tp1 : prev.tp2;
+  // TP is a management level and may be re-anchored as structure evolves.
+  // It must not manufacture a second ENTRY for the same opportunity.
   const pairs: Array<[number, number]> = [
     [prev.zoneLow, setup.zone.low],
     [prev.zoneHigh, setup.zone.high],
     [prev.sl, setup.stopLoss],
-    [prev.tp1, setup.takeProfit1],
-    [prevTp2, tp2],
   ];
   return pairs.every(([a, b]) => nearPrice(a, b, digits));
 }
