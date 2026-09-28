@@ -96,3 +96,58 @@ export function buildMomentumContinuation(args: {
     ? applyBasisToSetup(setup, args.basis, args.digits)
     : setup;
 }
+
+
+/**
+ * Re-anchors an existing Watch setup to the nearest reachable structural
+ * target. It never lowers the RR floor; it only replaces an unnecessarily
+ * distant target when a closer 15M/1H structure already pays >= 1.5R.
+ */
+export function adaptWatchTarget(args: {
+  setup: SetupProposal;
+  m15: Candle[];
+  h1: Candle[];
+  h4: Candle[];
+  currentPrice: number;
+  basis?: number | null;
+  digits: number;
+}): SetupProposal {
+  const { setup } = args;
+  const entry = setup.direction === "sell" ? setup.zone.low : setup.zone.high;
+  const risk = Math.abs(entry - setup.stopLoss);
+  if (!(risk > 0)) return setup;
+
+  const shift = (p: number) => p - (setup.direction === "sell" || setup.direction === "buy" ? (args.basis ?? 0) : 0);
+  const current = args.currentPrice - (args.basis ?? 0);
+  const levels = setup.direction === "sell"
+    ? [
+        ...swingLows(args.m15).map((s) => shift(s.price)),
+        ...swingLows(args.h1).map((s) => shift(s.price)),
+        ...swingLows(args.h4).map((s) => shift(s.price)),
+      ].filter((p) => p < entry && p < current)
+    : [
+        ...swingHighs(args.m15).map((s) => shift(s.price)),
+        ...swingHighs(args.h1).map((s) => shift(s.price)),
+        ...swingHighs(args.h4).map((s) => shift(s.price)),
+      ].filter((p) => p > entry && p > current);
+
+  const unique = [...new Set(levels.map((p) => Number(p.toFixed(args.digits))))];
+  const sorted = unique.sort((a, b) => setup.direction === "sell" ? b - a : a - b);
+  const reachable = sorted.find((p) => Math.abs(p - entry) / risk >= MIN_RR);
+  if (reachable == null) return setup;
+
+  const originalDistance = Math.abs(setup.takeProfit1 - entry);
+  const newDistance = Math.abs(reachable - entry);
+  if (newDistance >= originalDistance) return setup;
+
+  const tp2 = setup.takeProfit2 != null && Math.abs(setup.takeProfit2 - entry) > newDistance
+    ? setup.takeProfit2
+    : setup.takeProfit1;
+  return {
+    ...setup,
+    takeProfit1: reachable,
+    takeProfit2: tp2,
+    riskReward: newDistance / risk,
+    warnings: [...setup.warnings, "TP adaptado a estructura alcanzable 15M/1H"],
+  };
+}
