@@ -5,7 +5,7 @@ import { resolveOutcome } from "./outcome";
 import { computePostEntryMetrics, mergePostEntry, parsePostEntry, watchOutcomeOpenedSlot } from "./post-entry";
 import { diagnoseBornFreeze, logCaptureIssues } from "./capture-issues";
 import { FEED_GRACE_MS } from "./schedule";
-import { buildMomentumContinuation } from "./continuation";
+import { adaptWatchTarget, buildMomentumContinuation } from "./continuation";
 import type { WatchStore } from "./store";
 
 export const FEED_RETRY_MS = 20_000;
@@ -173,23 +173,49 @@ export async function runWatchTick(args: {
           digits: asset.digits,
         });
         if (continuation) {
+          const tuned = adaptWatchTarget({
+            setup: continuation,
+            m15: loaded.m15ByAsset[asset.id] ?? [],
+            h1: loaded.h1ByAsset?.[asset.id] ?? [],
+            h4: loaded.h4ByAsset?.[asset.id] ?? [],
+            currentPrice: (loaded.m15ByAsset[asset.id] ?? []).at(-1)?.close ?? continuation.zone.low,
+            basis: asset.freeze?.basis ?? null,
+            digits: asset.digits,
+          });
           effectiveAsset = {
             ...asset,
             setupState: "entry",
-            setup: continuation,
+            setup: tuned,
             waitReason: null,
             freeze: asset.freeze
               ? {
                   ...asset.freeze,
-                  setupKind: continuation.kind,
+                  setupKind: tuned.kind,
                   setupState: "entry",
-                  direction: continuation.direction,
-                  riskReward: continuation.riskReward,
+                  direction: tuned.direction,
+                  riskReward: tuned.riskReward,
                   missingForEntry: null,
                 }
               : null,
           };
         }
+      }
+
+      // Any real V1 entry also gets the same reachable-target audit. This
+      // changes only TP1/TP2, never the protected entry/SL logic.
+      if (effectiveAsset.setupState === "entry" && effectiveAsset.setup) {
+        effectiveAsset = {
+          ...effectiveAsset,
+          setup: adaptWatchTarget({
+            setup: effectiveAsset.setup,
+            m15: loaded.m15ByAsset[asset.id] ?? [],
+            h1: loaded.h1ByAsset?.[asset.id] ?? [],
+            h4: loaded.h4ByAsset?.[asset.id] ?? [],
+            currentPrice: (loaded.m15ByAsset[asset.id] ?? []).at(-1)?.close ?? effectiveAsset.setup.zone.low,
+            basis: asset.freeze?.basis ?? null,
+            digits: asset.digits,
+          }),
+        };
       }
 
       const prev = await args.store.getOpenEpisode(effectiveAsset.id);
