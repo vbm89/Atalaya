@@ -52,7 +52,7 @@ export function eventsAt(bars: readonly Bar[], i: number, structure: StructureVi
 
   if (
     rangeHigh != null &&
-    bar.c > rangeHigh &&
+    bar.c > rangeHigh + PARAMS.breakoutBufferAtr * atr &&
     candle.closeLocation >= 0.6 &&
     candle.upperWick / candle.range < PARAMS.rejectionMaxOppositeWick
   ) {
@@ -60,7 +60,7 @@ export function eventsAt(bars: readonly Bar[], i: number, structure: StructureVi
   }
   if (
     rangeLow != null &&
-    bar.c < rangeLow &&
+    bar.c < rangeLow - PARAMS.breakoutBufferAtr * atr &&
     candle.closeLocation <= 0.4 &&
     candle.lowerWick / candle.range < PARAMS.rejectionMaxOppositeWick
   ) {
