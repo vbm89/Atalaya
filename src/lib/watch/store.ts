@@ -351,6 +351,9 @@ export function createPgStore(sql: SqlQuery): WatchStore {
     },
 
     async insertEvent(row) {
+      // Only real ENTRY transitions belong in the public event history.
+      // MAP/PENDING/WAIT remain internal episode state.
+      if (row.toState !== "entry") return false;
       const rows = await sql.query(
         `insert into signal_events (episode_id, from_state, to_state, at, slot, notified)
          values ($1, $2, $3, $4::timestamptz, $5, $6)
@@ -609,6 +612,7 @@ export function createPgStore(sql: SqlQuery): WatchStore {
                 e.asset_id, e.direction, e.closed_at
          from signal_events ev
          join signal_episodes e on e.episode_id = ev.episode_id
+         where ev.to_state = 'entry'
          order by ev.at desc
          limit $1`,
         [limit],
@@ -637,6 +641,7 @@ export function createPgStore(sql: SqlQuery): WatchStore {
          from signal_events ev
          join signal_episodes e on e.episode_id = ev.episode_id
          where ev.episode_id = $1
+           and ev.to_state = 'entry'
          order by ev.at asc, ev.slot asc, ev.id asc`,
         [episodeId],
       );
