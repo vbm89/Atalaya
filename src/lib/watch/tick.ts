@@ -227,7 +227,8 @@ export async function runWatchTick(args: {
       }
       let written = 0;
       for (const ev of folded.events) {
-        await args.store.insertEvent(ev);
+        const inserted = await args.store.insertEvent(ev);
+        if (!inserted) continue;
         written += 1;
         notifyQueue.push(ev);
       }
