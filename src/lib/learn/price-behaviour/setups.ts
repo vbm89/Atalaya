@@ -47,6 +47,24 @@ export function setupsAt(
   const rangeOrCompression = state.state === "RANGE" || state.state === "COMPRESSION" || hasEvent(events, "COMPRESSION");
   const priorCompressed = priorCompression(bars, i, atr);
 
+  const strongContinuationLong =
+    state.state === "TREND_UP" &&
+    structure.hh &&
+    structure.hl &&
+    !structure.bosDown &&
+    dispUp &&
+    structure.lastHigh != null &&
+    bar.c > structure.lastHigh.price;
+
+  const strongContinuationShort =
+    state.state === "TREND_DOWN" &&
+    structure.lh &&
+    structure.ll &&
+    !structure.bosUp &&
+    dispDown &&
+    structure.lastLow != null &&
+    bar.c < structure.lastLow.price;
+
   const longLocation =
     near(ctx.distEmaAtr) ||
     (structure.lastLow != null && atr > 0 && Math.abs(bar.c - structure.lastLow.price) / atr <= PARAMS.locationAtr) ||
@@ -63,10 +81,10 @@ export function setupsAt(
       {
         trend: state.state === "TREND_UP",
         structure: structure.hh && structure.hl && !structure.bosDown,
-        pullback,
-        reclaim: reactionLow(events),
+        pullback: pullback || strongContinuationLong,
+        reclaim: reactionLow(events) || strongContinuationLong,
         displacement: dispUp,
-        location: longLocation,
+        location: longLocation || strongContinuationLong,
       },
       ["trend", "structure", "pullback", "reclaim", "displacement", "location"],
       Math.min(bar.l, structure.lastLow?.price ?? bar.l),
@@ -79,10 +97,10 @@ export function setupsAt(
       {
         trend: state.state === "TREND_DOWN",
         structure: structure.lh && structure.ll && !structure.bosUp,
-        pullback,
-        reclaim: reactionHigh(events),
+        pullback: pullback || strongContinuationShort,
+        reclaim: reactionHigh(events) || strongContinuationShort,
         displacement: dispDown,
-        location: shortLocation,
+        location: shortLocation || strongContinuationShort,
       },
       ["trend", "structure", "pullback", "reclaim", "displacement", "location"],
       Math.max(bar.h, structure.lastHigh?.price ?? bar.h),
