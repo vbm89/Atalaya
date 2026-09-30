@@ -252,7 +252,7 @@ export async function runCycle(opts: { dir?: string; ledger?: PaperLedger; nowSe
       if (await recordDecision(ledger, { asset, lastBarT: missed, decision: "ESPERAR", reason, provider, dataStatus: "DATA_OK", mode: "LIVE_CATCHUP", evaluatedAt: nowSec })) report.decisions += 1;
     }
 
-    const board = presentAsset({
+    const rawBoard = presentAsset({
       asset,
       bars: closed.map((bar) => ({ t: bar.t, o: bar.o, h: bar.h, l: bar.l, c: bar.c, v: bar.v })),
       provider,
@@ -261,6 +261,25 @@ export async function runCycle(opts: { dir?: string; ledger?: PaperLedger; nowSe
       attempts,
       nowSec,
     });
+
+    // XAUUSD paper profile: keep only complete setups while we collect evidence.
+    // The recent tape showed the gold winners as FULL and the losing gold trade as PARTIAL.
+    // This is PAPER-only; protected V1 is untouched.
+    const board: AssetBoard =
+      asset === "XAUUSD" && rawBoard.action !== "ESPERAR" && rawBoard.tier === "PARTIAL"
+        ? {
+            ...rawBoard,
+            action: "ESPERAR",
+            direction: rawBoard.direction,
+            entry: null,
+            stop: null,
+            target: null,
+            rr: null,
+            rationale: "XAUUSD PAPER: setup parcial descartado. Se exige setup completo para esta fase.",
+            wait: "Setup parcial descartado",
+          }
+        : rawBoard;
+
     const decisionReason = board.action === "ESPERAR" ? board.wait : board.rationale;
     if (await recordDecision(ledger, { asset, lastBarT: expected, decision: board.action, reason: decisionReason, provider: board.provider, dataStatus: board.status, mode: "LIVE", evaluatedAt: nowSec, ...levels(board) })) {
       report.decisions += 1;
