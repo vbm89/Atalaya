@@ -142,7 +142,24 @@ export function sqlLedger(sql: Sql): PaperLedger {
       await sql.query(
         `update paper_bot_signal
          set result = $2,
-             body = jsonb_set(body, '{result}', to_jsonb($2::text))
+             body = case
+               when jsonb_typeof(body->'study') = 'object' then
+                 jsonb_set(
+                   jsonb_set(
+                     jsonb_set(body, '{result}', to_jsonb($2::text)),
+                     '{resultR}',
+                     case when $2 = 'TP' then to_jsonb((body->>'RR')::double precision) when $2 = 'SL' then '-1'::jsonb else 'null'::jsonb end
+                   ),
+                   '{study,resultR}',
+                   case when $2 = 'TP' then to_jsonb((body->>'RR')::double precision) when $2 = 'SL' then '-1'::jsonb else 'null'::jsonb end
+                 )
+               else
+                 jsonb_set(
+                   jsonb_set(body, '{result}', to_jsonb($2::text)),
+                   '{resultR}',
+                   case when $2 = 'TP' then to_jsonb((body->>'RR')::double precision) when $2 = 'SL' then '-1'::jsonb else 'null'::jsonb end
+                 )
+             end
          where signal_id = $1 and result = 'ABIERTA'`,
         [signalId, result],
       );
@@ -182,6 +199,8 @@ export function paperViewFrom(state: PaperState, signals: StoredSignal[], nowMs 
       provider: row.provider,
       revisionOf: row.revisionOf,
       result: row.result,
+      resultR: row.resultR ?? null,
+      study: row.study ?? null,
       createdAt: row.createdAt,
     }));
   return {

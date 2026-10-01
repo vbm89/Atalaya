@@ -2,6 +2,7 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSyn
 import { join } from "node:path";
 import type { AssetBoard } from "../learn/price-behaviour/board.ts";
 import type { AssetId } from "../learn/price-behaviour/types.ts";
+import type { PaperStudy } from "./study.ts";
 
 export const ASSETS: readonly AssetId[] = ["XAUUSD", "US100", "WTI", "BTCUSD"];
 export const HEARTBEAT_STALE_MS = 90_000;
@@ -48,6 +49,8 @@ export interface StoredSignal {
   createdAt: number;
   tier: "FULL" | "PARTIAL";
   result: "ABIERTA" | "SL" | "TP";
+  resultR: number | null;
+  study: PaperStudy | null;
   revisionOf: string | null;
 }
 
@@ -223,7 +226,15 @@ export function readSignals(dir = paperDir()): StoredSignal[] {
     const item = row as { kind?: string; signalId?: string; result?: StoredSignal["result"] };
     if (item.kind === "settle" && item.signalId && item.result) {
       const prev = book.get(item.signalId);
-      if (prev && prev.result === "ABIERTA") book.set(item.signalId, { ...prev, result: item.result });
+      if (prev && prev.result === "ABIERTA") {
+        const resultR = item.result === "TP" ? prev.RR : item.result === "SL" ? -1 : null;
+        book.set(item.signalId, {
+          ...prev,
+          result: item.result,
+          resultR,
+          study: prev.study ? { ...prev.study, resultR } : prev.study ?? null,
+        });
+      }
       continue;
     }
     if (item.signalId && (item.kind === "signal" || item.kind == null)) {
@@ -316,6 +327,8 @@ export interface PaperViewSignal {
   provider: string;
   revisionOf: string | null;
   result: "ABIERTA" | "SL" | "TP";
+  resultR: number | null;
+  study: PaperStudy | null;
   createdAt: number;
 }
 

@@ -3,6 +3,7 @@ import { admitSignal, settleSignal, type PaperSignal } from "../learn/price-beha
 import { PARAMS } from "../learn/price-behaviour/params.ts";
 import type { AssetId, Bar } from "../learn/price-behaviour/types.ts";
 import { fileLedger, type PaperLedger } from "./ledger.ts";
+import { captureStudy } from "./study.ts";
 import {
   ASSETS,
   type AssetSnapshot,
@@ -81,9 +82,24 @@ function toPaper(row: StoredSignal): PaperSignal {
   };
 }
 
-function fromBoard(board: AssetBoard, createdAt: number): StoredSignal | null {
+function fromBoard(board: AssetBoard, bars: readonly { t: number; o: number; h: number; l: number; c: number; v?: number | null }[], createdAt: number): StoredSignal | null {
   if (board.action === "ESPERAR") return null;
   if (board.lastBarT == null || board.entry == null || board.stop == null || board.target == null || board.rr == null || board.tier == null) return null;
+  const study = captureStudy(bars, {
+    asset: board.asset,
+    lastBarT: board.lastBarT,
+    marketState: board.marketState,
+    event: board.event,
+    setup: board.setup,
+    tier: board.tier,
+    direction: board.direction,
+    rr: board.rr,
+    entry: board.entry,
+    stop: board.stop,
+    target: board.target,
+    confirmation: board.confirmation,
+    evidence: board.evidence,
+  });
   return {
     kind: "signal",
     signalId: `${board.asset}|15m|${board.lastBarT}|${board.action}`,
@@ -106,6 +122,8 @@ function fromBoard(board: AssetBoard, createdAt: number): StoredSignal | null {
     createdAt,
     tier: board.tier,
     result: "ABIERTA",
+    resultR: null,
+    study,
     revisionOf: null,
   };
 }
@@ -285,7 +303,7 @@ export async function runCycle(opts: { dir?: string; ledger?: PaperLedger; nowSe
       report.decisions += 1;
     }
     if (board.status === "DATA_OK") {
-      const incoming = fromBoard(board, nowSec * 1000);
+      const incoming = fromBoard(board, closed, nowSec * 1000);
       if (incoming) {
         const book = (await ledger.readSignals()).map(toPaper);
         const admitted = admitSignal(book, toPaper(incoming));
