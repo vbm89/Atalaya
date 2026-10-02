@@ -121,13 +121,9 @@ describe("push policy", () => {
       },
       "entry",
     );
-    assert.equal(p.title, "ATALAYA · BTCUSD · ENTRADA V1");
-    assert.match(p.body, /VENTA · BTCUSDT · PROXY/);
-    assert.match(p.body, /Entrada de análisis: 77\.626,01/);
-    assert.match(p.body, /SL de análisis: 77\.747,00/);
-    assert.match(p.body, /TP1: 76\.888,00/);
-    assert.match(p.body, /TP2: 76\.670,01/);
-    assert.match(p.body, /NO ES PRECIO DE EJECUCIÓN T4TRADE/);
+    assert.equal(p.title, "🟢 BTCUSD · VENTA");
+    assert.equal(p.body, "Entrada: 77.626,01\nSL: 77.747,00\nTP: 76.888,00");
+    assert.doesNotMatch(`${p.title}\n${p.body}`, /PAPER|R:R|\bRR\b|PROXY|ENTRADA V1|TP1|TP2|T4TRADE/);
     assert.doesNotMatch(p.body, /Zona /);
     assert.doesNotMatch(p.body, /TRIGGER PENDIENTE/);
     assert.doesNotMatch(p.body, /no es orden/i);
@@ -160,13 +156,9 @@ describe("push policy", () => {
       },
       "entry",
     );
-    assert.equal(p.title, "ATALAYA · XAUUSD · ENTRADA V1");
-    assert.match(p.body, /VENTA · SPOT XAUUSD/);
-    assert.match(p.body, /Entrada de análisis: 4303,98/);
-    assert.match(p.body, /SL de análisis: 4339,89/);
-    assert.match(p.body, /TP1: 4223,41/);
-    assert.match(p.body, /TP2: 4170,69/);
-    assert.match(p.body, /NO ES PRECIO DE EJECUCIÓN T4TRADE/);
+    assert.equal(p.title, "🟢 XAUUSD · VENTA");
+    assert.equal(p.body, "Entrada: 4303,98\nSL: 4339,89\nTP: 4223,41");
+    assert.doesNotMatch(`${p.title}\n${p.body}`, /PAPER|PROXY|ENTRADA V1|TP2|T4TRADE/);
     assert.doesNotMatch(p.body, /TRIGGER PENDIENTE|no es orden/i);
   });
 });

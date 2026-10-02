@@ -246,14 +246,9 @@ describe("push still only on ENTRADA and names the analysis instrument", () => {
       freeze: null,
     };
     const p = buildPushPayload(ep, "entry");
-    assert.match(p.title, /WTI/);
-    assert.match(p.title, /ENTRADA V1/);
-    assert.match(p.body, /CLUSDT/);
-    assert.match(p.body, /PROXY/);
-    assert.match(p.body, /Entrada de análisis: 89,64/);
-    assert.match(p.body, /SL de análisis: 89,39/);
-    assert.match(p.body, /NO ES PRECIO DE EJECUCIÓN T4TRADE/i);
-    assert.doesNotMatch(p.body, /TRIGGER PENDIENTE/);
+    assert.equal(p.title, "🟢 WTI · COMPRA");
+    assert.equal(p.body, "Entrada: 89,64\nSL: 89,39\nTP: 91,05");
+    assert.doesNotMatch(`${p.title}\n${p.body}`, /PAPER|PROXY|T4TRADE|ENTRADA V1|TRIGGER PENDIENTE/);
     assert.equal(pushInstrumentLine("WTI", "COMPRA"), "COMPRA · CLUSDT · PROXY");
   });
 });
