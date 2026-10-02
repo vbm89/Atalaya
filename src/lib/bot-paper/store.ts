@@ -50,6 +50,8 @@ export interface StoredSignal {
   tier: "FULL" | "PARTIAL";
   result: "ABIERTA" | "SL" | "TP";
   resultR: number | null;
+  mfeR?: number | null;
+  maeR?: number | null;
   study: PaperStudy | null;
   revisionOf: string | null;
 }
@@ -228,11 +230,21 @@ export function readSignals(dir = paperDir()): StoredSignal[] {
       const prev = book.get(item.signalId);
       if (prev && prev.result === "ABIERTA") {
         const resultR = item.result === "TP" ? prev.RR : item.result === "SL" ? -1 : null;
+        const settle = item as { mfeR?: number | null; maeR?: number | null };
+        const hasExcursion = Object.prototype.hasOwnProperty.call(item, "mfeR");
         book.set(item.signalId, {
           ...prev,
           result: item.result,
           resultR,
-          study: prev.study ? { ...prev.study, resultR } : prev.study ?? null,
+          mfeR: hasExcursion ? (settle.mfeR ?? null) : (prev.mfeR ?? null),
+          maeR: hasExcursion ? (settle.maeR ?? null) : (prev.maeR ?? null),
+          study: prev.study
+            ? {
+                ...prev.study,
+                resultR,
+                ...(hasExcursion ? { mfeR: settle.mfeR ?? null, maeR: settle.maeR ?? null } : {}),
+              }
+            : prev.study ?? null,
         });
       }
       continue;
@@ -248,8 +260,20 @@ export function appendSignal(dir: string, row: StoredSignal): void {
   appendJsonl(paperPaths(dir).signals, row);
 }
 
-export function appendSettle(dir: string, signalId: string, result: StoredSignal["result"], at: number): void {
-  appendJsonl(paperPaths(dir).signals, { kind: "settle", signalId, result, at });
+export function appendSettle(
+  dir: string,
+  signalId: string,
+  result: StoredSignal["result"],
+  at: number,
+  excursion?: { mfeR: number | null; maeR: number | null },
+): void {
+  appendJsonl(paperPaths(dir).signals, {
+    kind: "settle",
+    signalId,
+    result,
+    at,
+    ...(excursion ? { mfeR: excursion.mfeR, maeR: excursion.maeR } : {}),
+  });
 }
 
 export function pidAlive(pid: number | null): boolean {
@@ -328,6 +352,8 @@ export interface PaperViewSignal {
   revisionOf: string | null;
   result: "ABIERTA" | "SL" | "TP";
   resultR: number | null;
+  mfeR: number | null;
+  maeR: number | null;
   study: PaperStudy | null;
   createdAt: number;
 }

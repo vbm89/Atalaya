@@ -30,12 +30,50 @@ export interface PaperStudy {
   stop: number | null;
   target: number | null;
   resultR: number | null;
+  /** R favorable antes del cierre. null = todavía abierta o no medida. */
+  mfeR?: number | null;
+  /** R adverso antes del cierre, negativo o cero. null = todavía abierta o no medida. */
+  maeR?: number | null;
 }
 
 export function resultROf(result: "ABIERTA" | "SL" | "TP", rr: number): number | null {
   if (result === "TP") return rr;
   if (result === "SL") return -1;
   return null;
+}
+
+/**
+ * MFE/MAE en R con velas posteriores a lastBarT, incluida la vela que cierra.
+ * No mira la vela de entrada ni las velas posteriores al SL o al TP.
+ * MAE es <= 0. No modifica la decisión ni el resultado.
+ */
+export function excursionR(
+  row: { direction: "COMPRA" | "VENTA"; entry: number; stop: number; target: number; lastBarT: number },
+  bars: readonly { t: number; h: number; l: number }[],
+): { mfeR: number | null; maeR: number | null } {
+  const risk = Math.abs(row.entry - row.stop);
+  if (!(risk > 0) || !Number.isFinite(row.entry) || !Number.isFinite(row.stop) || !Number.isFinite(row.target)) {
+    return { mfeR: null, maeR: null };
+  }
+  let mfe = 0;
+  let mae = 0;
+  let seen = false;
+  for (const bar of bars) {
+    if (!(bar.t > row.lastBarT) || !Number.isFinite(bar.h) || !Number.isFinite(bar.l)) continue;
+    seen = true;
+    if (row.direction === "COMPRA") {
+      mfe = Math.max(mfe, bar.h - row.entry);
+      mae = Math.max(mae, row.entry - bar.l);
+    } else {
+      mfe = Math.max(mfe, row.entry - bar.l);
+      mae = Math.max(mae, bar.h - row.entry);
+    }
+    const stopHit = row.direction === "COMPRA" ? bar.l <= row.stop : bar.h >= row.stop;
+    const targetHit = row.direction === "COMPRA" ? bar.h >= row.target : bar.l <= row.target;
+    if (stopHit || targetHit) break;
+  }
+  if (!seen) return { mfeR: null, maeR: null };
+  return { mfeR: mfe / risk, maeR: -mae / risk };
 }
 
 /** Presente en evidence: true o false medido. Ausente: no evaluado, nunca false. */
@@ -94,6 +132,8 @@ export function captureStudy(
     stop: board.stop,
     target: board.target,
     resultR: null,
+    mfeR: null,
+    maeR: null,
   };
 }
 

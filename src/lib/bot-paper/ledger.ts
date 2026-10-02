@@ -29,7 +29,12 @@ export interface PaperLedger {
   appendDecision(row: StoredDecision): Promise<boolean>;
   readSignals(): Promise<StoredSignal[]>;
   appendSignal(row: StoredSignal): Promise<boolean>;
-  appendSettle(signalId: string, result: StoredSignal["result"], at: number): Promise<void>;
+  appendSettle(
+    signalId: string,
+    result: StoredSignal["result"],
+    at: number,
+    excursion?: { mfeR: number | null; maeR: number | null },
+  ): Promise<void>;
 }
 
 export function fileLedger(dir: string): PaperLedger {
@@ -54,8 +59,8 @@ export function fileLedger(dir: string): PaperLedger {
       appendSignal(dir, row);
       return true;
     },
-    async appendSettle(signalId, result, at) {
-      appendSettle(dir, signalId, result, at);
+    async appendSettle(signalId, result, at, excursion) {
+      appendSettle(dir, signalId, result, at, excursion);
     },
   };
 }
@@ -138,7 +143,10 @@ export function sqlLedger(sql: Sql): PaperLedger {
       );
       return inserted.length > 0;
     },
-    async appendSettle(signalId, result) {
+    async appendSettle(signalId, result, _at, excursion) {
+      const mfe = JSON.stringify(excursion?.mfeR ?? null);
+      const mae = JSON.stringify(excursion?.maeR ?? null);
+      const outcome = `case when $2 = 'TP' then to_jsonb((body->>'RR')::double precision) when $2 = 'SL' then '-1'::jsonb else 'null'::jsonb end`;
       await sql.query(
         `update paper_bot_signal
          set result = $2,
@@ -146,22 +154,46 @@ export function sqlLedger(sql: Sql): PaperLedger {
                when jsonb_typeof(body->'study') = 'object' then
                  jsonb_set(
                    jsonb_set(
-                     jsonb_set(body, '{result}', to_jsonb($2::text)),
-                     '{resultR}',
-                     case when $2 = 'TP' then to_jsonb((body->>'RR')::double precision) when $2 = 'SL' then '-1'::jsonb else 'null'::jsonb end
+                     jsonb_set(
+                       jsonb_set(
+                         jsonb_set(
+                           jsonb_set(
+                             jsonb_set(body, '{result}', to_jsonb($2::text)),
+                             '{resultR}',
+                             ${outcome}
+                           ),
+                           '{study,resultR}',
+                           ${outcome}
+                         ),
+                         '{mfeR}',
+                         $3::jsonb
+                       ),
+                       '{maeR}',
+                       $4::jsonb
+                     ),
+                     '{study,mfeR}',
+                     $3::jsonb
                    ),
-                   '{study,resultR}',
-                   case when $2 = 'TP' then to_jsonb((body->>'RR')::double precision) when $2 = 'SL' then '-1'::jsonb else 'null'::jsonb end
+                   '{study,maeR}',
+                   $4::jsonb
                  )
                else
                  jsonb_set(
-                   jsonb_set(body, '{result}', to_jsonb($2::text)),
-                   '{resultR}',
-                   case when $2 = 'TP' then to_jsonb((body->>'RR')::double precision) when $2 = 'SL' then '-1'::jsonb else 'null'::jsonb end
+                   jsonb_set(
+                     jsonb_set(
+                       jsonb_set(body, '{result}', to_jsonb($2::text)),
+                       '{resultR}',
+                       ${outcome}
+                     ),
+                     '{mfeR}',
+                     $3::jsonb
+                   ),
+                   '{maeR}',
+                   $4::jsonb
                  )
              end
          where signal_id = $1 and result = 'ABIERTA'`,
-        [signalId, result],
+        [signalId, result, mfe, mae],
       );
     },
   };
@@ -200,6 +232,8 @@ export function paperViewFrom(state: PaperState, signals: StoredSignal[], nowMs 
       revisionOf: row.revisionOf,
       result: row.result,
       resultR: row.resultR ?? null,
+      mfeR: row.mfeR ?? null,
+      maeR: row.maeR ?? null,
       study: row.study ?? null,
       createdAt: row.createdAt,
     }));

@@ -3,7 +3,7 @@ import { admitSignal, settleSignal, type PaperSignal } from "../learn/price-beha
 import { PARAMS } from "../learn/price-behaviour/params.ts";
 import type { AssetId, Bar } from "../learn/price-behaviour/types.ts";
 import { fileLedger, type PaperLedger } from "./ledger.ts";
-import { captureStudy } from "./study.ts";
+import { captureStudy, excursionR } from "./study.ts";
 import {
   ASSETS,
   type AssetSnapshot,
@@ -324,7 +324,13 @@ export async function runCycle(opts: { dir?: string; ledger?: PaperLedger; nowSe
     for (const row of await ledger.readSignals()) {
       if (row.asset !== asset || row.result !== "ABIERTA") continue;
       const settled = settleSignal(toPaper(row), bars);
-      if (settled !== row.result) await ledger.appendSettle(row.signalId, settled, nowSec);
+      if (settled !== row.result) {
+        const path = excursionR(
+          { direction: row.direction, entry: row.entry, stop: row.stop, target: row.target, lastBarT: row.lastBarT },
+          bars,
+        );
+        await ledger.appendSettle(row.signalId, settled, nowSec, path);
+      }
     }
     state.assets[asset] = snapshot(board, "LIVE", nowSec);
     report.processed.push(asset);
