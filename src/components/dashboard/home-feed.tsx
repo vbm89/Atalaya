@@ -11,8 +11,8 @@ import { formatCountdown, formatMadridClock } from "@/lib/watch/clock";
 import { nextWatchEvalMs } from "@/lib/watch/schedule";
 import { watchLamp, worstDataLamp, watchGlyph, type WatchLampSnap } from "@/lib/watch/feed-lamp";
 import { countOperableEntries, marketSessionKind } from "@/lib/watch/market-session";
-import { AssetMark, ASSET_SUBTITLE } from "./marks";
-import { Sparkline } from "./sparkline";
+import { AssetMark } from "./marks";
+import { listPaperOpportunities, type PaperAssetDecision } from "./paper-opportunities";
 
 export function greetingFor(now: Date | null): string {
   if (!now) return "Hola";
@@ -33,68 +33,16 @@ function useLocalNow() {
   return now;
 }
 
-const PAPER_ORDER: AssetId[] = ["XAUUSD", "BTCUSD", "US100", "WTI"];
-
-export interface PaperAssetDecision {
-  asset: AssetId;
-  status: string;
-  provider: string | null;
-  action: "COMPRA" | "VENTA" | "ESPERAR";
-  entry: number | null;
-  stop: number | null;
-  target: number | null;
-  rr: number | null;
-  setup: string | null;
-  rationale: string;
-  wait: string;
-  candles?: { c: number }[];
-}
+export type { PaperAssetDecision };
+export { listPaperOpportunities, pickPaperOpportunity } from "./paper-opportunities";
 
 export interface PaperBoard {
   updatedAt: number;
   assets: PaperAssetDecision[];
 }
 
-const SETUP_LABEL: Record<string, string> = {
-  TREND_PULLBACK: "Retroceso en tendencia",
-  BREAKOUT_ACCEPTANCE: "Aceptación de ruptura",
-  SWEEP_RECLAIM: "Barrido y recuperación",
-  FAILED_BREAKOUT: "Ruptura fallida",
-  EXPANSION_CONTINUATION: "Continuación tras expansión",
-};
-
 function paperDigits(asset: AssetId): number {
   return asset === "BTCUSD" || asset === "US100" ? 1 : 2;
-}
-
-function paperVenue(provider: string | null): string {
-  const head = (provider ?? "").split(":")[0]?.toLowerCase() ?? "";
-  if (head.includes("yahoo")) return "Yahoo";
-  if (head.includes("okx")) return "OKX";
-  if (head.includes("kraken")) return "Kraken";
-  return head ? head : "—";
-}
-
-function isPaperEntry(row: PaperAssetDecision): boolean {
-  return (
-    (row.action === "COMPRA" || row.action === "VENTA") &&
-    row.status === "DATA_OK" &&
-    row.entry != null &&
-    row.stop != null &&
-    row.target != null &&
-    row.rr != null
-  );
-}
-
-/** Elige una decisión ya emitida por PAPER. No recalcula el mercado. */
-export function pickPaperOpportunity(assets: readonly PaperAssetDecision[]): PaperAssetDecision | null {
-  const signals = assets.filter(isPaperEntry);
-  if (!signals.length) return null;
-  return signals.slice().sort((a, b) => {
-    const byRr = (b.rr ?? 0) - (a.rr ?? 0);
-    if (byRr !== 0) return byRr;
-    return PAPER_ORDER.indexOf(a.asset) - PAPER_ORDER.indexOf(b.asset);
-  })[0]!;
 }
 
 function waitNote(assets: readonly PaperAssetDecision[]): string {
@@ -115,91 +63,114 @@ export function BestOpportunityCard({
   onDetail: (asset: AssetId | null) => void;
 }) {
   const assets = board?.assets ?? [];
-  const picked = pickPaperOpportunity(assets);
-  const shownId = picked?.asset ?? null;
+  const signals = listPaperOpportunities(assets);
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? signals : signals.slice(0, 3);
+  const hidden = Math.max(0, signals.length - visible.length);
+  const primary = signals[0] ?? null;
   const updated = board ? board.updatedAt * (board.updatedAt < 1e12 ? 1000 : 1) : NaN;
   const note = waitNote(assets);
-  const digits = picked ? paperDigits(picked.asset) : 2;
+  const title = signals.length > 1 ? "Oportunidades ahora" : "Mejor oportunidad ahora";
 
   return (
     <section
-      className="atalaya-best atalaya-markets-span"
+      className="atalaya-best atalaya-markets-span is-compact"
       data-paper-source="api-bot"
-      data-best-opportunity={shownId ?? "none"}
-      data-operable-opportunity={shownId ?? "none"}
-      data-paper-action={picked?.action ?? "ESPERAR"}
-      data-paper-entry={picked?.entry ?? ""}
-      data-paper-stop={picked?.stop ?? ""}
-      data-paper-target={picked?.target ?? ""}
-      data-paper-rr={picked?.rr ?? ""}
-      data-paper-setup={picked?.setup ?? ""}
-      data-paper-provider={picked?.provider ?? ""}
+      data-best-opportunity={primary?.asset ?? "none"}
+      data-opportunity-count={signals.length}
+      data-operable-opportunity={primary?.asset ?? "none"}
+      data-paper-action={primary?.action ?? "ESPERAR"}
+      data-paper-entry={primary?.entry ?? ""}
+      data-paper-stop={primary?.stop ?? ""}
+      data-paper-target={primary?.target ?? ""}
+      data-paper-rr={primary?.rr ?? ""}
+      data-paper-setup={primary?.setup ?? ""}
+      data-paper-provider={primary?.provider ?? ""}
     >
       <div className="flex items-center justify-between gap-3">
         <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-[0.14em] text-wait uppercase">
           <Star className="size-3.5 fill-wait" />
-          Mejor oportunidad ahora
+          {title}
         </p>
         <p className="text-[10px] text-subtle">
           {Number.isFinite(updated) ? `Actualizado ${formatMadridClock(updated)}` : "Actualizado —"}
         </p>
       </div>
-      {!picked ? (
-        <div className="atalaya-empty mt-3">
+      {!signals.length ? (
+        <div className="atalaya-empty is-wait mt-2">
           <p className="text-sm font-medium">Sin entradas activas</p>
-          <p className="mt-1 text-sm leading-snug text-subtle">{note}</p>
-          <p className="mt-2 text-[11px] uppercase tracking-[0.14em] text-subtle">ESPERAR</p>
+          <p className="mt-1 text-xs leading-snug text-subtle">{note}</p>
+          <p className="mt-1.5 text-[11px] uppercase tracking-[0.14em] text-subtle">ESPERAR</p>
         </div>
       ) : (
-        <div className="mt-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <AssetMark id={picked.asset} size="sm" />
-              <div className="min-w-0">
-                <p className="text-lg font-semibold tracking-tight">{picked.asset}</p>
-                <p className="text-xs text-subtle">{ASSET_SUBTITLE[picked.asset]}</p>
-              </div>
-            </div>
-            <span className="atalaya-state-pill is-entry">PAPER</span>
-          </div>
-          <span className={cn("atalaya-dir", picked.action === "COMPRA" ? "is-buy" : "is-sell")}>
-            {picked.action === "COMPRA" ? <ArrowUp className="size-3.5" /> : <ArrowDown className="size-3.5" />}
-            {picked.action}
-          </span>
-          <dl className="atalaya-levels">
-            <div>
-              <dt>Entrada</dt>
-              <dd data-entry-px>{formatPrice(picked.entry!, digits)}</dd>
-            </div>
-            <div>
-              <dt>SL</dt>
-              <dd className="is-sl">{formatPrice(picked.stop!, digits)}</dd>
-            </div>
-            <div>
-              <dt>TP</dt>
-              <dd className="is-tp">{formatPrice(picked.target!, digits)}</dd>
-            </div>
-            <div>
-              <dt>R:R</dt>
-              <dd className="atalaya-rr">{formatRatio(picked.rr!)}</dd>
-            </div>
-          </dl>
-          <p className="mt-3 text-sm leading-snug">{picked.rationale}</p>
-          <p className="mt-2 text-xs text-subtle">
-            {SETUP_LABEL[picked.setup ?? ""] ?? picked.setup ?? "Setup"} · {paperVenue(picked.provider)} · 15m
-          </p>
-          {picked.candles && picked.candles.length > 1 ? (
-            <div className="atalaya-hero-spark mt-3">
-              <Sparkline values={picked.candles.map((bar) => bar.c)} positive={picked.action === "COMPRA"} variant="area" />
-            </div>
+        <ul className="atalaya-now-list">
+          {visible.map((row) => (
+            <li key={row.asset}>
+              <OpportunityRow row={row} onDetail={onDetail} />
+            </li>
+          ))}
+          {hidden > 0 ? (
+            <li>
+              <button type="button" className="atalaya-now-more" onClick={() => setShowAll(true)}>
+                Ver {hidden} más
+              </button>
+            </li>
+          ) : showAll && signals.length > 3 ? (
+            <li>
+              <button type="button" className="atalaya-now-more" onClick={() => setShowAll(false)}>
+                Ver menos
+              </button>
+            </li>
           ) : null}
-          <button type="button" onClick={() => onDetail(picked.asset)} className="atalaya-detail-btn mt-3">
-            Ver detalle
-            <ChevronRight className="size-4" />
-          </button>
-        </div>
+        </ul>
       )}
     </section>
+  );
+}
+
+function OpportunityRow({
+  row,
+  onDetail,
+}: {
+  row: PaperAssetDecision;
+  onDetail: (asset: AssetId | null) => void;
+}) {
+  const digits = paperDigits(row.asset);
+  const buy = row.action === "COMPRA";
+  return (
+    <button
+      type="button"
+      className="atalaya-now-row"
+      onClick={() => onDetail(row.asset)}
+      data-paper-row={row.asset}
+      data-paper-action={row.action}
+      data-paper-entry={row.entry ?? ""}
+      data-paper-stop={row.stop ?? ""}
+      data-paper-target={row.target ?? ""}
+    >
+      <AssetMark id={row.asset} size="sm" />
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-semibold tracking-tight">{row.asset}</span>
+        <span className={cn("atalaya-now-dir", buy ? "is-buy" : "is-sell")}>
+          {buy ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />}
+          {row.action}
+        </span>
+      </span>
+      <dl className="atalaya-now-levels">
+        <div>
+          <dt>Entrada</dt>
+          <dd>{formatPrice(row.entry!, digits)}</dd>
+        </div>
+        <div>
+          <dt>SL</dt>
+          <dd className="is-sl">{formatPrice(row.stop!, digits)}</dd>
+        </div>
+        <div>
+          <dt>TP</dt>
+          <dd className="is-tp">{formatPrice(row.target!, digits)}</dd>
+        </div>
+      </dl>
+    </button>
   );
 }
 
@@ -221,11 +192,6 @@ function eventsToday(events: CalendarEvent[], now: Date | null): number {
     const t = Date.parse(event.at);
     return Number.isFinite(t) && fmt.format(new Date(t)) === today;
   }).length;
-}
-
-function formatRatio(value: number): string {
-  if (!Number.isFinite(value)) return "—";
-  return `1 : ${new Intl.NumberFormat("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value)}`;
 }
 
 const SESSION_CLOCKS = [

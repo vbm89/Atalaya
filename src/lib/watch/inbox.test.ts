@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AssetAnalysis, SetupProposal } from "../trading/types.ts";
 import { foldEpisode } from "./episode.ts";
-import { inboxItemKey, inboxPushLabel, inboxStateLabel } from "./inbox.ts";
+import { inboxItemKey, inboxPushLabel, inboxResultLabel, inboxStateLabel, inboxTradeStatus, presentInboxEntries } from "./inbox.ts";
 import { episodeShareText, setupShareText, shareContainsSecrets } from "./share-setup.ts";
 import { createMemoryStore } from "./store-memory.ts";
 import { dispatchEventPushes } from "./notify.ts";
@@ -35,6 +35,30 @@ describe("bandeja de avisos", () => {
     assert.equal(inboxStateLabel("pending"), "TRIGGER PENDIENTE");
     assert.equal(inboxStateLabel("map"), "MAPA");
     assert.equal(inboxStateLabel("wait"), "ESPERAR");
+  });
+
+  it("shows one row per entry and keeps the stored result", () => {
+    const older = {
+      episodeId: "ep-1",
+      assetId: "XAUUSD" as const,
+      direction: "buy" as const,
+      fromState: "pending" as const,
+      toState: "entry" as const,
+      atMs: 1_000,
+      slot: 10,
+      notified: false,
+      live: true,
+    };
+    const newer = { ...older, atMs: 2_000, slot: 11, live: false };
+    const other = { ...older, episodeId: "ep-2", atMs: 1_500 };
+    const rows = presentInboxEntries([older, newer, other, { ...other, toState: "map" }]);
+    assert.deepEqual(rows.map((row) => row.episodeId), ["ep-1", "ep-2"]);
+    assert.equal(rows[0]?.atMs, 2_000);
+    assert.equal(inboxTradeStatus(true), "ABIERTO");
+    assert.equal(inboxTradeStatus(false), "CERRADO");
+    assert.equal(inboxResultLabel("sl"), "SL");
+    assert.equal(inboxResultLabel("tp1"), "TP1");
+    assert.equal(inboxResultLabel(null), null);
   });
 
   it("push label keeps MAPA, PENDING and ESPERAR as bandeja-only", () => {

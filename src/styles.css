@@ -1636,6 +1636,93 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-border) 88%, transparent);
 }
 
+.atalaya-shell.is-app .atalaya-best.is-compact {
+  padding: 0.7rem 0.75rem 0.65rem;
+}
+
+.atalaya-empty.is-wait {
+  padding: 0.65rem 0.75rem;
+}
+
+.atalaya-now-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+}
+
+.atalaya-now-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 0.55rem;
+  row-gap: 0.35rem;
+  width: 100%;
+  align-items: center;
+  border-radius: 0.85rem;
+  background: var(--color-elevated);
+  padding: 0.5rem 0.6rem 0.45rem;
+  text-align: left;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-border) 80%, transparent);
+}
+
+.atalaya-now-dir {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-top: 0.1rem;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.atalaya-now-dir.is-buy {
+  color: var(--color-buy);
+}
+
+.atalaya-now-dir.is-sell {
+  color: #ffb4b4;
+}
+
+.atalaya-now-levels {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+.atalaya-now-levels dt {
+  color: var(--color-subtle);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.atalaya-now-levels dd {
+  margin-top: 0.05rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.atalaya-now-levels dd.is-sl {
+  color: #ff8f8f;
+}
+
+.atalaya-now-levels dd.is-tp {
+  color: var(--color-buy);
+}
+
+.atalaya-now-more {
+  width: 100%;
+  border-radius: 0.75rem;
+  padding: 0.45rem 0.6rem;
+  color: var(--color-subtle);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
 .atalaya-state-pill {
   display: inline-flex;
   align-items: center;

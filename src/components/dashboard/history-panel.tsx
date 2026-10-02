@@ -108,14 +108,22 @@ function HistoryRowCard({
           <div className="flex flex-col items-end gap-1">
             <div className="flex flex-wrap items-center justify-end gap-1.5">
               <span className={buy ? "text-xs font-semibold text-buy" : "text-xs font-semibold text-sell"}>{side}</span>
-              <span className={stateBadgeClass(card.episodeState)}>{card.episodeState}</span>
-              <span className="atalaya-badge atalaya-badge-muted">ENTRY V1: {card.entryV1Label}</span>
+              {card.hadV1Entry ? (
+                <span className={live ? "atalaya-badge atalaya-badge-open" : "atalaya-badge atalaya-badge-closed"}>
+                  {live ? "ABIERTO" : "CERRADO"}
+                </span>
+              ) : (
+                <>
+                  <span className={stateBadgeClass(card.episodeState)}>{card.episodeState}</span>
+                  <span className="atalaya-badge atalaya-badge-muted">ENTRY V1: {card.entryV1Label}</span>
+                </>
+              )}
               {showOutcomeBadge ? (
                 <span className={card.isTradeOutcome ? outcomeBadgeClass(card.outcomeCls) : "atalaya-badge atalaya-badge-muted"}>
                   {card.outcome}
                 </span>
               ) : null}
-              {market?.session === "closed" ? <SessionKindBadge kind="closed" compact /> : null}
+              {market?.session === "closed" && !card.hadV1Entry ? <SessionKindBadge kind="closed" compact /> : null}
             </div>
             <p className="font-mono text-[11px] tabular text-subtle">
               {card.rr ? `R:R ${card.rr}` : ""}
@@ -202,8 +210,11 @@ export function HistoryPanel({
   });
   const rows = q.data ?? [];
   const filtered = useMemo(() => {
+    const seen = new Set<string>();
     return rows.filter((row) => {
       if (assetFilter !== "all" && row.episode.assetId !== assetFilter) return false;
+      if (seen.has(row.episode.episodeId)) return false;
+      seen.add(row.episode.episodeId);
       return true;
     });
   }, [rows, assetFilter]);

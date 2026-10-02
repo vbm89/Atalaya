@@ -2,11 +2,11 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getWatchInbox, getWatchHistory } from "@/lib/watch/watch.fn";
 import { formatMadridClock } from "@/lib/watch/clock";
-import { inboxItemKey, inboxPushLabel, inboxStateLabel, type InboxItem } from "@/lib/watch/inbox";
+import { inboxItemKey, inboxPushLabel, inboxResultLabel, inboxStateLabel, inboxTradeStatus, presentInboxEntries, type InboxItem } from "@/lib/watch/inbox";
 import { loadReadKeys, markInboxRead } from "@/lib/watch/inbox-read";
 import type { AssetAnalysis, AssetId, DataStatus } from "@/lib/trading/types";
 import { ASSETS } from "@/lib/trading/assets";
-import { marketSessionKind, marketSessionLabel, episodeMarketView, setupBadgeLabel } from "@/lib/watch/market-session";
+import { marketSessionKind } from "@/lib/watch/market-session";
 import { cn } from "@/lib/utils";
 
 type Filter = "all" | "entry" | "result" | "system";
@@ -17,13 +17,6 @@ function timeAgo(atMs: number, now: number): string {
   if (d < 3600_000) return `Hace ${Math.max(1, Math.round(d / 60_000))} min`;
   if (d < 86400_000) return `Hace ${Math.max(1, Math.round(d / 3600_000))} h`;
   return formatMadridClock(atMs);
-}
-
-function toneForInbox(row: InboxItem): string {
-  if (row.toState === "entry") return "bg-buy";
-  if (row.toState === "pending") return "bg-wait";
-  if (row.toState === "map") return "bg-map";
-  return "bg-muted";
 }
 
 export function InboxPanel({
@@ -49,7 +42,8 @@ export function InboxPanel({
   const [read, setRead] = useState<Set<string>>(() => loadReadKeys());
   const [filter, setFilter] = useState<Filter>("all");
   const rows: InboxItem[] = q.data ?? [];
-  const unread = rows.filter((r) => !read.has(inboxItemKey(r))).length;
+  const entries = useMemo(() => presentInboxEntries(rows), [rows]);
+  const unread = entries.filter((r) => !read.has(inboxItemKey(r))).length;
   const now = Date.now();
   const sessionById = useMemo(() => {
     const map = new Map<AssetId, DataStatus | undefined>();
@@ -57,24 +51,16 @@ export function InboxPanel({
     return map;
   }, [assets]);
 
-  const results = useMemo(() => {
-    return (hist.data ?? [])
-      .filter((r) => r.hadV1Entry === true && (r.outcome === "tp1" || r.outcome === "tp2" || r.outcome === "sl"))
-      .map((r) => ({
-        id: `res-${r.episode.episodeId}`,
-        episodeId: r.episode.episodeId,
-        assetId: r.episode.assetId,
-        direction: r.episode.direction,
-        title: (r.outcome ?? "").toUpperCase(),
-        atMs: r.firstTouchAtMs ?? r.episode.closedAtMs ?? r.episode.openedAtMs,
-        tone: r.outcome === "sl" ? "bg-sell" : "bg-buy",
-      }));
+  const outcomeByEpisode = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const row of hist.data ?? []) map.set(row.episode.episodeId, row.outcome);
+    return map;
   }, [hist.data]);
 
-  const visibleInbox = rows.filter((r) => {
-    if (filter === "entry") return r.toState === "entry";
-    if (filter === "result") return false;
-    if (filter === "system") return r.toState === "wait";
+  const visibleInbox = entries.filter((r) => {
+    const result = inboxResultLabel(outcomeByEpisode.get(r.episodeId));
+    if (filter === "result") return result != null;
+    if (filter === "system") return false;
     return true;
   });
 
@@ -104,109 +90,52 @@ export function InboxPanel({
       </div>
       {q.isLoading ? (
         <p className="text-sm text-subtle">Cargando avisos…</p>
-      ) : filter === "result" ? (
-        results.length ? (
-          <ul className="space-y-1">
-            {results.map((row) => (
-              <li key={row.id}>
-                <button
-                  type="button"
-                  onClick={() => onOpen(row.episodeId, row.assetId)}
-                  className="atalaya-alert-row is-recorded"
-                >
-                  <span className={cn("atalaya-alert-dot", row.tone)} />
-                  <span className="min-w-0 flex-1 text-left">
-                    <span className="block text-[10px] font-semibold tracking-wide text-subtle uppercase">
-                      Evento registrado
-                    </span>
-                    <span className="block text-sm font-semibold">{row.title}</span>
-                    <span className="block text-xs text-subtle">
-                      {row.assetId} · {row.direction === "buy" ? "BUY" : "SELL"}
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-xs text-subtle">{timeAgo(row.atMs, now)}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-subtle">Sin resultados registrados todavía.</p>
-        )
       ) : !visibleInbox.length ? (
         <p className="text-sm text-subtle">
-          Todavía no hay avisos. Si el Push falla, el evento aparece aquí igual.
+          {filter === "result"
+            ? "Sin resultados registrados todavía."
+            : "Todavía no hay avisos. Si el Push falla, el evento aparece aquí igual."}
         </p>
       ) : (
         <ul className="space-y-1">
           {visibleInbox.map((row) => {
             const key = inboxItemKey(row);
             const isRead = read.has(key);
-            const isEntry = row.toState === "entry";
             const session = marketSessionKind({ id: row.assetId, dataStatus: sessionById.get(row.assetId) });
-            const market = episodeMarketView({
-              id: row.assetId,
-              setupState: row.toState,
-              dataStatus: sessionById.get(row.assetId),
-            });
-            const closedPending = Boolean(row.live) && market.closedPending;
-            const liveOperableEntry = Boolean(row.live) && isEntry && market.operable;
-            const recorded = !liveOperableEntry;
+            const result = inboxResultLabel(outcomeByEpisode.get(row.episodeId));
+            const status = inboxTradeStatus(row.live);
             return (
-              <li key={key}>
+              <li key={row.episodeId}>
                 <button
                   type="button"
                   onClick={() => {
                     setRead(markInboxRead(row, read));
                     onOpen(row.episodeId, row.assetId);
                   }}
-                  className={cn("atalaya-alert-row", recorded && "is-recorded")}
+                  className="atalaya-alert-row"
                   data-inbox-item={row.episodeId}
                   data-inbox-read={isRead ? "1" : "0"}
-                  data-inbox-kind={liveOperableEntry ? "entry" : "recorded"}
+                  data-inbox-kind="entry"
+                  data-entry-status={status}
+                  data-entry-result={result ?? ""}
                   data-asset-session={session}
-                  data-operable={row.live && market.operable ? "1" : "0"}
+                  data-operable={row.live ? "1" : "0"}
                 >
-                  <span className={cn("atalaya-alert-dot", toneForInbox(row))} />
+                  <span className={cn("atalaya-alert-dot", result === "SL" ? "bg-sell" : "bg-buy")} />
                   <span className="min-w-0 flex-1 text-left">
-                    <span className="block text-[10px] font-semibold tracking-wide text-subtle uppercase">
-                      {liveOperableEntry ? "Entrada" : "Evento registrado"}
-                    </span>
-                    <span className={cn("block text-sm", isRead && recorded ? "font-medium" : "font-semibold")}>
-                      {setupBadgeLabel(row.toState)}
+                    <span className={cn("block text-sm", isRead ? "font-medium" : "font-semibold")}>
+                      {row.assetId}
                     </span>
                     <span className="mt-0.5 block text-xs text-subtle">
-                      {row.assetId} · {row.direction === "buy" ? "BUY" : "SELL"}
+                      {row.direction === "buy" ? "BUY" : "SELL"}
+                      {" · "}
+                      {status}
+                      {result ? ` · ${result}` : ""}
                       {isRead ? "" : " · no leído"}
                     </span>
-                    {closedPending ? (
-                      <span className="mt-0.5 block text-[10px] text-subtle">
-                        {market.caption}
-                      </span>
-                    ) : null}
                     <span className="sr-only">{inboxStateLabel(row.toState)} · {inboxPushLabel(row)}</span>
                   </span>
-                  <span className="shrink-0 text-right">
-                    <span className="block text-xs text-subtle">{timeAgo(row.atMs, now)}</span>
-                    {row.live ? (
-                    <span
-                      className={cn(
-                        "mt-1 inline-flex items-center gap-1 text-[10px] font-semibold tracking-wide uppercase",
-                        session === "open" ? "text-buy" : session === "closed" ? "text-muted" : "text-wait",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "atalaya-session-dot",
-                          session === "open" && "is-open",
-                          session === "closed" && "is-closed",
-                          session === "unknown" && "is-unknown",
-                        )}
-                        aria-hidden
-                      />
-                      {session === "closed" ? "CERRADO" : marketSessionLabel(session, true)}
-                    </span>
-                    ) : null}
-                  </span>
+                  <span className="shrink-0 text-xs text-subtle">{timeAgo(row.atMs, now)}</span>
                 </button>
               </li>
             );
