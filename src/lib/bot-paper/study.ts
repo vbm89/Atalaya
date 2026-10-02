@@ -19,10 +19,10 @@ export interface PaperStudy {
   rr: number | null;
   atr: number | null;
   riskAtr: number | null;
-  displacement: boolean;
-  reclaim: boolean;
-  location: boolean;
-  structure: boolean;
+  displacement: boolean | null;
+  reclaim: boolean | null;
+  location: boolean | null;
+  structure: boolean | null;
   confirmation: boolean;
   hourUtc: number | null;
   session: string | null;
@@ -36,6 +36,12 @@ export function resultROf(result: "ABIERTA" | "SL" | "TP", rr: number): number |
   if (result === "TP") return rr;
   if (result === "SL") return -1;
   return null;
+}
+
+/** Presente en evidence: true o false medido. Ausente: no evaluado, nunca false. */
+export function measuredFlag(evidence: Record<string, boolean>, key: string): boolean | null {
+  if (!Object.prototype.hasOwnProperty.call(evidence, key)) return null;
+  return evidence[key] === true;
 }
 
 export function captureStudy(
@@ -77,10 +83,10 @@ export function captureStudy(
     rr: board.rr,
     atr,
     riskAtr,
-    displacement: board.evidence.displacement === true,
-    reclaim: board.evidence.reclaim === true,
-    location: board.evidence.location === true,
-    structure: board.evidence.structure === true,
+    displacement: measuredFlag(board.evidence, "displacement"),
+    reclaim: measuredFlag(board.evidence, "reclaim"),
+    location: measuredFlag(board.evidence, "location"),
+    structure: measuredFlag(board.evidence, "structure"),
     confirmation: board.confirmation,
     hourUtc: closeT == null ? null : new Date(closeT * 1000).getUTCHours(),
     session: closeT == null ? null : sessionId(closeT, board.asset),
@@ -133,6 +139,12 @@ function rrBucket(rr: number | null | undefined): string {
   return "RR:5+";
 }
 
+function flagLabel(value: boolean | null | undefined, hasStudy: boolean): string {
+  if (!hasStudy) return "MISSING";
+  if (value == null) return "UNEVALUATED";
+  return String(value);
+}
+
 function featuresOf(row: StoredSignal): string[] {
   const study = row.study;
   const hour = study?.hourUtc ?? new Date(row.timestamp * 1000).getUTCHours();
@@ -147,10 +159,10 @@ function featuresOf(row: StoredSignal): string[] {
     rrBucket(row.RR),
     `h1:${study?.h1 ?? "MISSING"}`,
     `h4:${study?.h4 ?? "MISSING"}`,
-    `displacement:${study ? String(study.displacement) : "MISSING"}`,
-    `reclaim:${study ? String(study.reclaim) : "MISSING"}`,
-    `location:${study ? String(study.location) : "MISSING"}`,
-    `structure:${study ? String(study.structure) : "MISSING"}`,
+    `displacement:${flagLabel(study?.displacement, study != null)}`,
+    `reclaim:${flagLabel(study?.reclaim, study != null)}`,
+    `location:${flagLabel(study?.location, study != null)}`,
+    `structure:${flagLabel(study?.structure, study != null)}`,
     `confirmation:${study ? String(study.confirmation) : String(row.confirmation)}`,
   ];
   return out;
@@ -224,6 +236,7 @@ export function renderStudyReport(signals: readonly StoredSignal[]): string {
     `Una celda solo se imprime si N >= ${STUDY_MIN_N}.`,
     "TRAIN/TEST es la mitad cronológica de la muestra disponible, no un régimen distinto.",
     "H1/H4 faltan en operaciones anteriores a esta telemetría y aparecen como MISSING.",
+    "Un flag ausente en evidence queda null (UNEVALUATED). No se reescriben operaciones ya guardadas.",
     "",
   ];
   for (const asset of assets) {

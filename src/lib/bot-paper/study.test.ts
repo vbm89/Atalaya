@@ -6,7 +6,7 @@ import { join } from "node:path";
 import type { Bar } from "../learn/price-behaviour/types.ts";
 import { appendSettle, appendSignal, readSignals } from "./store.ts";
 import type { StoredSignal } from "./store.ts";
-import { captureStudy, renderStudyReport, resultROf, STUDY_MIN_N } from "./study.ts";
+import { captureStudy, measuredFlag, renderStudyReport, resultROf, STUDY_MIN_N } from "./study.ts";
 
 function bars(n: number, step = 1): Bar[] {
   const out: Bar[] = [];
@@ -106,6 +106,32 @@ function signal(partial: Partial<StoredSignal> & Pick<StoredSignal, "asset" | "t
     assert.equal(resultROf("SL", 1.8), -1);
     assert.equal(resultROf("TP", 1.8), 1.8);
     assert.equal(resultROf("ABIERTA", 1.8), null);
+  });
+
+  it("keeps a missing evidence flag as null and a measured false as false", () => {
+    const tape = bars(80, 0.5);
+    const study = captureStudy(tape, {
+      asset: "WTI",
+      lastBarT: tape[tape.length - 1]!.t,
+      marketState: "REVERSAL_ATTEMPT",
+      event: "FAILED_BREAKOUT_DOWN",
+      setup: "FAILED_BREAKOUT",
+      tier: "PARTIAL",
+      direction: "LONG",
+      rr: 2.1,
+      entry: 70,
+      stop: 69,
+      target: 72.1,
+      confirmation: true,
+      evidence: { structure: true, location: true, confirmation: true, partial: true },
+    });
+    assert.equal(study.displacement, null);
+    assert.equal(study.reclaim, null);
+    assert.equal(study.location, true);
+    assert.equal(study.structure, true);
+    assert.equal(study.confirmation, true);
+    assert.equal(measuredFlag({ displacement: false }, "displacement"), false);
+    assert.equal(measuredFlag({}, "displacement"), null);
   });
 
   it("hides cells below the minimum and keeps train/test plus weeks", () => {
