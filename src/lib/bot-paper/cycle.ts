@@ -3,7 +3,7 @@ import { admitSignal, settleSignal, type PaperSignal } from "../learn/price-beha
 import { PARAMS } from "../learn/price-behaviour/params.ts";
 import type { AssetId, Bar } from "../learn/price-behaviour/types.ts";
 import { fileLedger, type PaperLedger } from "./ledger.ts";
-import { captureStudy, excursionR } from "./study.ts";
+import { captureStudy, closePath, episodeIdFor } from "./study.ts";
 import {
   ASSETS,
   type AssetSnapshot,
@@ -305,12 +305,23 @@ export async function runCycle(opts: { dir?: string; ledger?: PaperLedger; nowSe
     if (board.status === "DATA_OK") {
       const incoming = fromBoard(board, closed, nowSec * 1000);
       if (incoming) {
-        const book = (await ledger.readSignals()).map(toPaper);
+        const prior = await ledger.readSignals();
+        const book = prior.map(toPaper);
         const admitted = admitSignal(book, toPaper(incoming));
         if (admitted.status === "DUPLICATE") report.duplicates += 1;
         else {
           const created = admitted.book[admitted.book.length - 1]!;
-          const stored = { ...incoming, signalId: created.id, revisionOf: created.revisionOf };
+          const episodeId = episodeIdFor(
+            { signalId: created.id, asset: incoming.asset, direction: incoming.direction, lastBarT: incoming.lastBarT },
+            prior,
+          );
+          const stored = {
+            ...incoming,
+            signalId: created.id,
+            revisionOf: created.revisionOf,
+            episodeId,
+            study: incoming.study ? { ...incoming.study, episodeId } : incoming.study,
+          };
           const wrote = await ledger.appendSignal(stored);
           if (!wrote) report.duplicates += 1;
           else {
@@ -325,7 +336,7 @@ export async function runCycle(opts: { dir?: string; ledger?: PaperLedger; nowSe
       if (row.asset !== asset || row.result !== "ABIERTA") continue;
       const settled = settleSignal(toPaper(row), bars);
       if (settled !== row.result) {
-        const path = excursionR(
+        const path = closePath(
           { direction: row.direction, entry: row.entry, stop: row.stop, target: row.target, lastBarT: row.lastBarT },
           bars,
         );

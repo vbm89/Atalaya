@@ -30,16 +30,116 @@ export interface PaperStudy {
   stop: number | null;
   target: number | null;
   resultR: number | null;
+  /** Nombre de sesión sin fecha: LONDON, ASIA, NEW_YORK, OFF o BTC-0/8/16. */
+  sessionName: string | null;
+  /** Primera señal de la cadena. Misma cadena = mismo activo, dirección y hueco <= 15 min. */
+  episodeId?: string | null;
   /** R favorable antes del cierre. null = todavía abierta o no medida. */
   mfeR?: number | null;
   /** R adverso antes del cierre, negativo o cero. null = todavía abierta o no medida. */
   maeR?: number | null;
+  /** R favorable en velas posteriores a la entrada y anteriores a la vela de cierre. */
+  mfeBeforeExitR?: number | null;
+  /** Apertura de la vela en la que tocó SL o TP. */
+  exitBarT?: number | null;
+  /** Velas posteriores a la entrada, incluida la de cierre. */
+  barsHeld?: number | null;
 }
 
 export function resultROf(result: "ABIERTA" | "SL" | "TP", rr: number): number | null {
   if (result === "TP") return rr;
   if (result === "SL") return -1;
   return null;
+}
+
+/** Quita la fecha de `2026-10-02-LONDON`. No toca un nombre que ya venga limpio. */
+export function sessionNameOf(session: string | null | undefined): string | null {
+  if (session == null || session === "") return null;
+  return session.replace(/^\d{4}-\d{2}-\d{2}-/, "");
+}
+
+export const EPISODE_GAP_SEC = 900;
+
+export interface EpisodeRow {
+  signalId: string;
+  asset: string;
+  direction: "COMPRA" | "VENTA";
+  lastBarT: number;
+  episodeId?: string | null;
+}
+
+/**
+ * La señal nueva hereda el episodio de la anterior del mismo activo y dirección
+ * si esa anterior está como máximo a una vela de 15m. Si no, abre episodio.
+ * No fusiona direcciones opuestas ni reescribe el pasado.
+ */
+export function episodeIdFor(row: EpisodeRow, prior: readonly EpisodeRow[]): string {
+  let previous: EpisodeRow | null = null;
+  for (const item of prior) {
+    if (item.signalId === row.signalId) continue;
+    if (item.asset !== row.asset || item.direction !== row.direction) continue;
+    if (!(item.lastBarT < row.lastBarT)) continue;
+    if (previous == null || item.lastBarT > previous.lastBarT) previous = item;
+  }
+  if (previous && row.lastBarT - previous.lastBarT <= EPISODE_GAP_SEC) {
+    return previous.episodeId || previous.signalId;
+  }
+  return row.signalId;
+}
+
+export interface ClosePath {
+  mfeR: number | null;
+  maeR: number | null;
+  mfeBeforeExitR: number | null;
+  exitBarT: number | null;
+  barsHeld: number | null;
+}
+
+/**
+ * Recorrido en R con velas posteriores a lastBarT.
+ * mfeR/maeR incluyen la vela de cierre. mfeBeforeExitR no.
+ * Si el SL o el TP cae en la primera vela posterior, mfeBeforeExitR queda null:
+ * no hubo vela anterior que medir. No modifica la decisión ni el resultado.
+ */
+export function closePath(
+  row: { direction: "COMPRA" | "VENTA"; entry: number; stop: number; target: number; lastBarT: number },
+  bars: readonly { t: number; h: number; l: number }[],
+): ClosePath {
+  const empty: ClosePath = { mfeR: null, maeR: null, mfeBeforeExitR: null, exitBarT: null, barsHeld: null };
+  const risk = Math.abs(row.entry - row.stop);
+  if (!(risk > 0) || !Number.isFinite(row.entry) || !Number.isFinite(row.stop) || !Number.isFinite(row.target)) return empty;
+  let mfe = 0;
+  let mae = 0;
+  let before = 0;
+  let seen = false;
+  let beforeSeen = false;
+  let held = 0;
+  let exitBarT: number | null = null;
+  for (const bar of bars) {
+    if (!(bar.t > row.lastBarT) || !Number.isFinite(bar.h) || !Number.isFinite(bar.l)) continue;
+    seen = true;
+    held += 1;
+    const favorable = row.direction === "COMPRA" ? bar.h - row.entry : row.entry - bar.l;
+    const adverse = row.direction === "COMPRA" ? row.entry - bar.l : bar.h - row.entry;
+    mfe = Math.max(mfe, favorable);
+    mae = Math.max(mae, adverse);
+    const stopHit = row.direction === "COMPRA" ? bar.l <= row.stop : bar.h >= row.stop;
+    const targetHit = row.direction === "COMPRA" ? bar.h >= row.target : bar.l <= row.target;
+    if (stopHit || targetHit) {
+      exitBarT = bar.t;
+      break;
+    }
+    before = Math.max(before, favorable);
+    beforeSeen = true;
+  }
+  if (!seen) return empty;
+  return {
+    mfeR: mfe / risk,
+    maeR: -mae / risk,
+    mfeBeforeExitR: exitBarT != null && beforeSeen ? before / risk : null,
+    exitBarT,
+    barsHeld: exitBarT != null ? held : null,
+  };
 }
 
 /**
@@ -51,29 +151,8 @@ export function excursionR(
   row: { direction: "COMPRA" | "VENTA"; entry: number; stop: number; target: number; lastBarT: number },
   bars: readonly { t: number; h: number; l: number }[],
 ): { mfeR: number | null; maeR: number | null } {
-  const risk = Math.abs(row.entry - row.stop);
-  if (!(risk > 0) || !Number.isFinite(row.entry) || !Number.isFinite(row.stop) || !Number.isFinite(row.target)) {
-    return { mfeR: null, maeR: null };
-  }
-  let mfe = 0;
-  let mae = 0;
-  let seen = false;
-  for (const bar of bars) {
-    if (!(bar.t > row.lastBarT) || !Number.isFinite(bar.h) || !Number.isFinite(bar.l)) continue;
-    seen = true;
-    if (row.direction === "COMPRA") {
-      mfe = Math.max(mfe, bar.h - row.entry);
-      mae = Math.max(mae, row.entry - bar.l);
-    } else {
-      mfe = Math.max(mfe, row.entry - bar.l);
-      mae = Math.max(mae, bar.h - row.entry);
-    }
-    const stopHit = row.direction === "COMPRA" ? bar.l <= row.stop : bar.h >= row.stop;
-    const targetHit = row.direction === "COMPRA" ? bar.h >= row.target : bar.l <= row.target;
-    if (stopHit || targetHit) break;
-  }
-  if (!seen) return { mfeR: null, maeR: null };
-  return { mfeR: mfe / risk, maeR: -mae / risk };
+  const path = closePath(row, bars);
+  return { mfeR: path.mfeR, maeR: path.maeR };
 }
 
 /** Presente en evidence: true o false medido. Ausente: no evaluado, nunca false. */
@@ -128,12 +207,17 @@ export function captureStudy(
     confirmation: board.confirmation,
     hourUtc: closeT == null ? null : new Date(closeT * 1000).getUTCHours(),
     session: closeT == null ? null : sessionId(closeT, board.asset),
+    sessionName: closeT == null ? null : sessionNameOf(sessionId(closeT, board.asset)),
+    episodeId: null,
     entry: board.entry,
     stop: board.stop,
     target: board.target,
     resultR: null,
     mfeR: null,
     maeR: null,
+    mfeBeforeExitR: null,
+    exitBarT: null,
+    barsHeld: null,
   };
 }
 
@@ -188,7 +272,7 @@ function flagLabel(value: boolean | null | undefined, hasStudy: boolean): string
 function featuresOf(row: StoredSignal): string[] {
   const study = row.study;
   const hour = study?.hourUtc ?? new Date(row.timestamp * 1000).getUTCHours();
-  const session = study?.session ?? `hour-${hour}`;
+  const session = study?.sessionName ?? sessionNameOf(study?.session) ?? `hour-${hour}`;
   const out = [
     `tier:${row.tier}`,
     `setup:${row.setup}`,
@@ -277,6 +361,7 @@ export function renderStudyReport(signals: readonly StoredSignal[]): string {
     "TRAIN/TEST es la mitad cronológica de la muestra disponible, no un régimen distinto.",
     "H1/H4 faltan en operaciones anteriores a esta telemetría y aparecen como MISSING.",
     "Un flag ausente en evidence queda null (UNEVALUATED). No se reescriben operaciones ya guardadas.",
+    "La sesión del informe es el nombre (LONDON, ASIA, NEW_YORK, OFF, BTC-0/8/16), sin la fecha.",
     "",
   ];
   for (const asset of assets) {

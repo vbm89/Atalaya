@@ -2,7 +2,7 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSyn
 import { join } from "node:path";
 import type { AssetBoard } from "../learn/price-behaviour/board.ts";
 import type { AssetId } from "../learn/price-behaviour/types.ts";
-import type { PaperStudy } from "./study.ts";
+import type { ClosePath, PaperStudy } from "./study.ts";
 
 export const ASSETS: readonly AssetId[] = ["XAUUSD", "US100", "WTI", "BTCUSD"];
 export const HEARTBEAT_STALE_MS = 90_000;
@@ -52,6 +52,10 @@ export interface StoredSignal {
   resultR: number | null;
   mfeR?: number | null;
   maeR?: number | null;
+  mfeBeforeExitR?: number | null;
+  exitBarT?: number | null;
+  barsHeld?: number | null;
+  episodeId?: string | null;
   study: PaperStudy | null;
   revisionOf: string | null;
 }
@@ -230,19 +234,30 @@ export function readSignals(dir = paperDir()): StoredSignal[] {
       const prev = book.get(item.signalId);
       if (prev && prev.result === "ABIERTA") {
         const resultR = item.result === "TP" ? prev.RR : item.result === "SL" ? -1 : null;
-        const settle = item as { mfeR?: number | null; maeR?: number | null };
+        const settle = item as Partial<ClosePath>;
         const hasExcursion = Object.prototype.hasOwnProperty.call(item, "mfeR");
+        const hasClose = Object.prototype.hasOwnProperty.call(item, "exitBarT");
         book.set(item.signalId, {
           ...prev,
           result: item.result,
           resultR,
           mfeR: hasExcursion ? (settle.mfeR ?? null) : (prev.mfeR ?? null),
           maeR: hasExcursion ? (settle.maeR ?? null) : (prev.maeR ?? null),
+          mfeBeforeExitR: hasClose ? (settle.mfeBeforeExitR ?? null) : (prev.mfeBeforeExitR ?? null),
+          exitBarT: hasClose ? (settle.exitBarT ?? null) : (prev.exitBarT ?? null),
+          barsHeld: hasClose ? (settle.barsHeld ?? null) : (prev.barsHeld ?? null),
           study: prev.study
             ? {
                 ...prev.study,
                 resultR,
                 ...(hasExcursion ? { mfeR: settle.mfeR ?? null, maeR: settle.maeR ?? null } : {}),
+                ...(hasClose
+                  ? {
+                      mfeBeforeExitR: settle.mfeBeforeExitR ?? null,
+                      exitBarT: settle.exitBarT ?? null,
+                      barsHeld: settle.barsHeld ?? null,
+                    }
+                  : {}),
               }
             : prev.study ?? null,
         });
@@ -265,14 +280,26 @@ export function appendSettle(
   signalId: string,
   result: StoredSignal["result"],
   at: number,
-  excursion?: { mfeR: number | null; maeR: number | null },
+  excursion?: Partial<ClosePath> & { mfeR: number | null; maeR: number | null },
 ): void {
   appendJsonl(paperPaths(dir).signals, {
     kind: "settle",
     signalId,
     result,
     at,
-    ...(excursion ? { mfeR: excursion.mfeR, maeR: excursion.maeR } : {}),
+    ...(excursion
+      ? {
+          mfeR: excursion.mfeR,
+          maeR: excursion.maeR,
+          ...("exitBarT" in excursion
+            ? {
+                mfeBeforeExitR: excursion.mfeBeforeExitR ?? null,
+                exitBarT: excursion.exitBarT ?? null,
+                barsHeld: excursion.barsHeld ?? null,
+              }
+            : {}),
+        }
+      : {}),
   });
 }
 
@@ -354,6 +381,12 @@ export interface PaperViewSignal {
   resultR: number | null;
   mfeR: number | null;
   maeR: number | null;
+  mfeBeforeExitR: number | null;
+  exitBarT: number | null;
+  barsHeld: number | null;
+  episodeId: string | null;
+  /** true solo si este cierre escribió la telemetría de recorrido. */
+  pathRecorded: boolean;
   study: PaperStudy | null;
   createdAt: number;
 }
@@ -401,6 +434,15 @@ export function readPaperView(dir = paperDir(), nowMs = Date.now()): PaperView {
       provider: row.provider,
       revisionOf: row.revisionOf,
       result: row.result,
+      resultR: row.resultR ?? null,
+      mfeR: row.mfeR ?? null,
+      maeR: row.maeR ?? null,
+      mfeBeforeExitR: row.mfeBeforeExitR ?? null,
+      exitBarT: row.exitBarT ?? null,
+      barsHeld: row.barsHeld ?? null,
+      episodeId: row.episodeId ?? null,
+      pathRecorded: Object.prototype.hasOwnProperty.call(row, "exitBarT"),
+      study: row.study ?? null,
       createdAt: row.createdAt,
     }));
   return {

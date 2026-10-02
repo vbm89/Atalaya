@@ -102,6 +102,9 @@ function signal(partial: Partial<StoredSignal> & Pick<StoredSignal, "asset" | "t
     assert.ok(study.riskAtr != null && study.riskAtr > 0);
     assert.equal(study.hourUtc, new Date((tape.at(-1)!.t + 900) * 1000).getUTCHours());
     assert.match(study.session ?? "", /NEW_YORK|LONDON|ASIA|OFF/);
+    assert.equal(study.sessionName, (study.session ?? "").replace(/^\d{4}-\d{2}-\d{2}-/, ""));
+    assert.equal(study.episodeId, null);
+    assert.equal(study.exitBarT, null);
     assert.equal(study.resultR, null);
     assert.equal(resultROf("SL", 1.8), -1);
     assert.equal(resultROf("TP", 1.8), 1.8);

@@ -1,4 +1,6 @@
 import type { Sql } from "../db.ts";
+import type { AssetId } from "../learn/price-behaviour/types.ts";
+import type { ClosePath } from "./study.ts";
 import {
   ASSETS,
   appendDecision,
@@ -17,7 +19,6 @@ import {
   type StoredDecision,
   type StoredSignal,
 } from "./store.ts";
-import type { AssetId } from "../learn/price-behaviour/types.ts";
 
 /** Una pasada de cron puede llegar hasta 16 min después de la anterior. */
 export const SERVERLESS_FRESH_SEC = 16 * 60;
@@ -33,7 +34,7 @@ export interface PaperLedger {
     signalId: string,
     result: StoredSignal["result"],
     at: number,
-    excursion?: { mfeR: number | null; maeR: number | null },
+    excursion?: Partial<ClosePath> & { mfeR: number | null; maeR: number | null },
   ): Promise<void>;
 }
 
@@ -144,9 +145,34 @@ export function sqlLedger(sql: Sql): PaperLedger {
       return inserted.length > 0;
     },
     async appendSettle(signalId, result, _at, excursion) {
-      const mfe = JSON.stringify(excursion?.mfeR ?? null);
-      const mae = JSON.stringify(excursion?.maeR ?? null);
       const outcome = `case when $2 = 'TP' then to_jsonb((body->>'RR')::double precision) when $2 = 'SL' then '-1'::jsonb else 'null'::jsonb end`;
+      const withClose = excursion != null && Object.prototype.hasOwnProperty.call(excursion, "exitBarT");
+      const top = excursion
+        ? {
+            mfeR: excursion.mfeR,
+            maeR: excursion.maeR,
+            ...(withClose
+              ? {
+                  mfeBeforeExitR: excursion.mfeBeforeExitR ?? null,
+                  exitBarT: excursion.exitBarT ?? null,
+                  barsHeld: excursion.barsHeld ?? null,
+                }
+              : {}),
+          }
+        : {};
+      const studyPatch = excursion
+        ? {
+            mfeR: excursion.mfeR,
+            maeR: excursion.maeR,
+            ...(withClose
+              ? {
+                  mfeBeforeExitR: excursion.mfeBeforeExitR ?? null,
+                  exitBarT: excursion.exitBarT ?? null,
+                  barsHeld: excursion.barsHeld ?? null,
+                }
+              : {}),
+          }
+        : {};
       await sql.query(
         `update paper_bot_signal
          set result = $2,
@@ -154,46 +180,22 @@ export function sqlLedger(sql: Sql): PaperLedger {
                when jsonb_typeof(body->'study') = 'object' then
                  jsonb_set(
                    jsonb_set(
-                     jsonb_set(
-                       jsonb_set(
-                         jsonb_set(
-                           jsonb_set(
-                             jsonb_set(body, '{result}', to_jsonb($2::text)),
-                             '{resultR}',
-                             ${outcome}
-                           ),
-                           '{study,resultR}',
-                           ${outcome}
-                         ),
-                         '{mfeR}',
-                         $3::jsonb
-                       ),
-                       '{maeR}',
-                       $4::jsonb
-                     ),
-                     '{study,mfeR}',
-                     $3::jsonb
-                   ),
-                   '{study,maeR}',
-                   $4::jsonb
+                     jsonb_set(body, '{result}', to_jsonb($2::text)),
+                     '{resultR}',
+                     ${outcome}
+                   ) || $3::jsonb,
+                   '{study}',
+                   (body->'study') || jsonb_build_object('resultR', ${outcome}) || $4::jsonb
                  )
                else
                  jsonb_set(
-                   jsonb_set(
-                     jsonb_set(
-                       jsonb_set(body, '{result}', to_jsonb($2::text)),
-                       '{resultR}',
-                       ${outcome}
-                     ),
-                     '{mfeR}',
-                     $3::jsonb
-                   ),
-                   '{maeR}',
-                   $4::jsonb
-                 )
+                   jsonb_set(body, '{result}', to_jsonb($2::text)),
+                   '{resultR}',
+                   ${outcome}
+                 ) || $3::jsonb
              end
          where signal_id = $1 and result = 'ABIERTA'`,
-        [signalId, result, mfe, mae],
+        [signalId, result, jsonValue(top), jsonValue(studyPatch)],
       );
     },
   };
@@ -234,6 +236,11 @@ export function paperViewFrom(state: PaperState, signals: StoredSignal[], nowMs 
       resultR: row.resultR ?? null,
       mfeR: row.mfeR ?? null,
       maeR: row.maeR ?? null,
+      mfeBeforeExitR: row.mfeBeforeExitR ?? null,
+      exitBarT: row.exitBarT ?? null,
+      barsHeld: row.barsHeld ?? null,
+      episodeId: row.episodeId ?? null,
+      pathRecorded: Object.prototype.hasOwnProperty.call(row, "exitBarT"),
       study: row.study ?? null,
       createdAt: row.createdAt,
     }));
