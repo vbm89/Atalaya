@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { House, BarChart3, BookOpen, Ellipsis, CalendarDays, RefreshCw } from "lucide-react";
 import { getMarketAnalysis } from "@/lib/market/analysis.fn";
 import { getWatchHealth, getWatchEpisode, getWatchSnapshots, type WatchEpisodeView } from "@/lib/watch/watch.fn";
-import { secretConfigured, secretStatusLabel } from "@/lib/watch/secret-status";
+import { secretConfigured } from "@/lib/watch/secret-status";
 import type { AnalysisSnapshot, AssetAnalysis, AssetId } from "@/lib/trading/types";
 import type { SnapshotDraft } from "@/lib/watch/episode";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -39,7 +39,7 @@ import { MorePanel } from "./more-panel";
 import { AtalayaMark } from "./marks";
 import { sheetJournalEpisodeId } from "@/lib/memory/journal";
 import { formatMadridClock } from "@/lib/watch/clock";
-import { watchLamp, worstDataLamp } from "@/lib/watch/feed-lamp";
+import { worstDataLamp } from "@/lib/watch/feed-lamp";
 import { marketSessionKind, marketSessionLabel } from "@/lib/watch/market-session";
 
 /**
@@ -92,52 +92,22 @@ function OperativoPill({
     })),
   );
   const configured = secretConfigured(server);
-  const hint = systemHint(snapshot, server);
-  const watch = watchLamp(
-    {
-      lastStatus: server?.lastStatus,
-      lastOkMs: server?.lastOkMs,
-      stale: server?.stale ?? true,
-      watchSecretConfigured: configured === true,
-    },
-    Date.now(),
-  );
-  const ok = hint === "Todo funcionando";
-  const secretLabel = secretStatusLabel(configured);
-  const label = ok && secretLabel === "SECRETO CONFIGURADO" ? secretLabel : compactHeaderStatus(hint);
+  const dataOk =
+    configured === true &&
+    server?.lastStatus !== "failed" &&
+    data.lamp === "ok" &&
+    assets.length > 0;
+  const label = dataOk ? "Datos: OK" : "Datos: ERROR";
   return (
     <span
-      className={ok ? "atalaya-pill is-ok" : watch.lamp === "error" || data.lamp === "unavailable" ? "atalaya-pill is-bad" : "atalaya-pill is-warn"}
-      title={hint}
-      aria-label={hint}
+      className={dataOk ? "atalaya-pill is-ok" : "atalaya-pill is-bad"}
+      title={label}
+      aria-label={label}
     >
       <span className="atalaya-status-dot" />
       <span>{label}</span>
     </span>
   );
-}
-
-function compactHeaderStatus(hint: string): string {
-  switch (hint) {
-    case "Todo funcionando":
-      return "DATOS OK";
-    case "Falta el secreto del servidor":
-      return "SIN SECRETO";
-    case "Vigilancia con error":
-      return "ERROR";
-    case "Vigilancia retrasada":
-      return "RETRASADA";
-    case "No disponible":
-      return "NO DISPONIBLE";
-    case "DATOS NO DISPONIBLES":
-      return "SIN DATOS";
-    case "DATOS RETRASADOS":
-      return "RETRASADOS";
-    case "DATOS OK · subyacente cerrado":
-      return "DATOS OK";
-    default:
-      return hint;
-  }
 }
 
 function systemHint(
