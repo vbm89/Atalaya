@@ -10,6 +10,7 @@ import { DataLampChip } from "./data-lamp";
 import { formatCountdown, formatMadridClock } from "@/lib/watch/clock";
 import { nextWatchEvalMs } from "@/lib/watch/schedule";
 import { watchLamp, worstDataLamp, watchGlyph, type WatchLampSnap } from "@/lib/watch/feed-lamp";
+import { secretConfigured, secretStatusLabel } from "@/lib/watch/secret-status";
 import { countOperableEntries, marketSessionKind } from "@/lib/watch/market-session";
 import { AssetMark } from "./marks";
 import { listPaperOpportunities, type PaperAssetDecision } from "./paper-opportunities";
@@ -247,12 +248,13 @@ export function FeedStatus({
       price: a.id === "XAUUSD" ? a.priceSpot : a.price,
     })),
   );
+  const configured = secretConfigured(server);
   const watch = watchLamp(
     {
       lastStatus: server?.lastStatus,
       lastOkMs: server?.lastOkMs,
       stale: server?.stale ?? true,
-      watchSecretConfigured: server?.watchSecretConfigured ?? false,
+      watchSecretConfigured: configured === true,
     },
     nowMs,
   );
@@ -316,11 +318,16 @@ export function FeedStatus({
         {" · "}
         <span data-server-status>{watchGlyph(watch.lamp)}</span>
       </p>
-      {server && !server.watchSecretConfigured ? (
-        <p className="mt-1 text-xs text-wait" data-watch-secret-missing>
+      {configured === false ? (
+        <p className="mt-1 text-xs text-sell" data-watch-secret-missing>
           Vigilancia 24/7: falta el secreto del servidor.
         </p>
-      ) : server?.stale ? (
+      ) : configured === true ? (
+        <p className="mt-1 text-xs text-buy" data-watch-secret="configured">
+          {secretStatusLabel(true)}
+        </p>
+      ) : null}
+      {configured !== false && server?.stale ? (
         <p className="mt-1 text-xs text-wait" data-watch-stale>
           Vigilancia del servidor retrasada (más de 20 min).
         </p>

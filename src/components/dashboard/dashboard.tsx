@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { House, BarChart3, BookOpen, Ellipsis, CalendarDays, RefreshCw } from "lucide-react";
 import { getMarketAnalysis } from "@/lib/market/analysis.fn";
 import { getWatchHealth, getWatchEpisode, getWatchSnapshots, type WatchEpisodeView } from "@/lib/watch/watch.fn";
+import { secretConfigured, secretStatusLabel } from "@/lib/watch/secret-status";
 import type { AnalysisSnapshot, AssetAnalysis, AssetId } from "@/lib/trading/types";
 import type { SnapshotDraft } from "@/lib/watch/episode";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -90,18 +91,20 @@ function OperativoPill({
       price: a.id === "XAUUSD" ? a.priceSpot : a.price,
     })),
   );
+  const configured = secretConfigured(server);
   const hint = systemHint(snapshot, server);
   const watch = watchLamp(
     {
       lastStatus: server?.lastStatus,
       lastOkMs: server?.lastOkMs,
       stale: server?.stale ?? true,
-      watchSecretConfigured: server?.watchSecretConfigured ?? false,
+      watchSecretConfigured: configured === true,
     },
     Date.now(),
   );
   const ok = hint === "Todo funcionando";
-  const label = compactHeaderStatus(hint);
+  const secretLabel = secretStatusLabel(configured);
+  const label = ok && secretLabel === "SECRETO CONFIGURADO" ? secretLabel : compactHeaderStatus(hint);
   return (
     <span
       className={ok ? "atalaya-pill is-ok" : watch.lamp === "error" || data.lamp === "unavailable" ? "atalaya-pill is-bad" : "atalaya-pill is-warn"}
@@ -139,10 +142,12 @@ function compactHeaderStatus(hint: string): string {
 
 function systemHint(
   snapshot: AnalysisSnapshot | undefined,
-  server: { stale: boolean; watchSecretConfigured: boolean; lastStatus?: "ok" | "lag" | "failed" | "none" | null; lastOkMs?: number | null } | null,
+  server: { stale: boolean; watchSecretConfigured?: boolean | null; watchSecret?: string | null; lastStatus?: "ok" | "lag" | "failed" | "none" | null; lastOkMs?: number | null } | null,
 ): string {
+  const configured = secretConfigured(server);
+  if (configured == null) return "No disponible";
+  if (!configured) return "Falta el secreto del servidor";
   if (!server) return "No disponible";
-  if (!server.watchSecretConfigured) return "Falta el secreto del servidor";
   if (server.lastStatus === "failed") return "Vigilancia con error";
   if (server.stale) return "Vigilancia retrasada";
   const data = snapshot

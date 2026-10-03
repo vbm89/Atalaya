@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { authorizeWatchRequest, watchSecret } from "./secret.ts";
 import { emptyPublicHealth, toPublicWatchHealth, type WatchHealth } from "./health.ts";
+import { secretConfigured, secretStatusLabel } from "./secret-status.ts";
 import { vapidConfigured, vapidEnvKeys } from "./vapid.ts";
 
 describe("OPS auth", () => {
@@ -69,6 +71,42 @@ describe("OPS health", () => {
     assert.equal(down.persistence, "error");
     assert.doesNotMatch(JSON.stringify(down), /super-secret/);
     delete process.env.WATCH_SECRET;
+  });
+
+  it("HOME follows the same configured flag as /api/watch/health and never the secret value", () => {
+    const now = Date.parse("2026-10-03T08:00:00Z");
+    const configured: WatchHealth = {
+      lastTickAt: "2026-10-03T07:55:00.000Z",
+      lastSlot: 1,
+      lastStatus: "ok",
+      lastError: null,
+      lastEvalMs: now - 60_000,
+      lastOkMs: now - 60_000,
+      nextEvalMs: now + 60_000,
+      stale: false,
+      watchSecretConfigured: true,
+      snapshots: [],
+    };
+    const pub = toPublicWatchHealth(configured, now, { persistence: "ok" });
+    assert.equal(secretConfigured(pub), true);
+    assert.equal(secretConfigured({ watchSecretConfigured: true }), true);
+    assert.equal(secretConfigured({ watchSecret: "CONFIGURED" }), true);
+    assert.equal(secretStatusLabel(secretConfigured(pub)), "SECRETO CONFIGURADO");
+    assert.equal(secretConfigured({ watchSecret: "NOT_CONFIGURED", watchSecretConfigured: true }), false);
+    assert.equal(secretStatusLabel(false), "SIN SECRETO");
+    assert.equal(secretConfigured(null), null);
+    assert.equal(secretStatusLabel(null), null);
+    assert.equal(secretConfigured({}), null);
+    const home = readFileSync(new URL("../../components/dashboard/home-feed.tsx", import.meta.url), "utf8");
+    const dash = readFileSync(new URL("../../components/dashboard/dashboard.tsx", import.meta.url), "utf8");
+    const fn = readFileSync(new URL("./watch.fn.ts", import.meta.url), "utf8");
+    assert.match(home, /secretConfigured\(server\)/);
+    assert.match(dash, /secretConfigured\(server\)/);
+    assert.doesNotMatch(home, /WATCH_SECRET|process\.env/);
+    assert.doesNotMatch(dash, /WATCH_SECRET|process\.env/);
+    assert.match(fn, /readWatchHealth/);
+    assert.doesNotMatch(fn, /process\.env\.WATCH_SECRET/);
+    assert.doesNotMatch(JSON.stringify(pub), /super-secret|WATCH_SECRET=/);
   });
 });
 

@@ -8,7 +8,11 @@ export const getWatchHealth = createServerFn({ method: "POST" }).handler(async (
   const { createPgStore } = await import("./store");
   const { readWatchHealth } = await import("./health");
   const sql = await getSql();
-  return readWatchHealth(createPgStore(sql), Date.now());
+  const health = await readWatchHealth(createPgStore(sql), Date.now());
+  return {
+    ...health,
+    watchSecret: health.watchSecretConfigured ? ("CONFIGURED" as const) : ("NOT_CONFIGURED" as const),
+  };
 });
 
 export const getWatchSnapshots = createServerFn({ method: "POST" }).handler(async () => {
