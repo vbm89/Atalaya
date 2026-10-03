@@ -9,6 +9,7 @@ import type { SnapshotDraft } from "@/lib/watch/episode";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarketTile } from "./asset-card";
 import { BestOpportunityCard, FeedStatus, type PaperBoard } from "./home-feed";
+import { LearningCard } from "./learning-card";
 import { AssetSheet } from "./asset-sheet";
 import { CalendarList } from "./calendar-list";
 import { AccountPanel, useAccountSettings, useCosts } from "./account-panel";
@@ -337,10 +338,10 @@ export function Dashboard() {
 
   const paper = useQuery({
     queryKey: PAPER_KEY,
-    queryFn: async (): Promise<PaperBoard> => {
+    queryFn: async (): Promise<PaperBoard & { signals?: unknown }> => {
       const response = await fetch("/api/bot");
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return response.json() as Promise<PaperBoard>;
+      return response.json() as Promise<PaperBoard & { signals?: unknown }>;
     },
     staleTime: 15_000,
     refetchInterval: 20_000,
@@ -673,6 +674,7 @@ export function Dashboard() {
                       <Skeleton key={i} className="atalaya-market-tile" />
                     ))}
                 </div>
+                <LearningCard signals={paper.data?.signals} ready={Boolean(paper.data)} />
                 {!snapshot && loading ? (
                   <p className="atalaya-markets-label px-1 text-center text-sm text-muted">
                     Obteniendo precios y noticias reales…
