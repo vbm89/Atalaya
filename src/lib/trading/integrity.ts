@@ -51,18 +51,53 @@ export function hasExcessiveGaps(candles: Candle[], tf: Timeframe): boolean {
   return countGaps(candles, tf) > MAX_GAPS;
 }
 
+const EXCHANGE_WEEKDAY: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
+
+/** Wall clock in an IANA zone. DST is the zone's, not a fixed UTC offset. */
+export function exchangeCivilTime(
+  now: number,
+  timeZone: string,
+): { weekday: number; minutes: number } | null {
+  if (!Number.isFinite(now)) return null;
+  const bag: Record<string, string> = {};
+  for (const p of new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(now))) {
+    if (p.type !== "literal") bag[p.type] = p.value;
+  }
+  const weekday = EXCHANGE_WEEKDAY[bag.weekday ?? ""];
+  let hour = Number(bag.hour);
+  const minute = Number(bag.minute);
+  if (weekday == null || !Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  if (hour === 24) hour = 0;
+  return { weekday, minutes: hour * 60 + minute };
+}
+
 /**
- * CME/COMEX/NYMEX Globex: Sun 22:00 UTC – Fri 21:00 UTC,
- * daily halt 21:00–22:00 UTC. Saturday always closed.
- * Holidays are not modelled — extra closed hours only make us more conservative.
+ * Shared CME Globex week for NYMEX CL and COMEX GC, in America/Chicago.
+ * Sunday 17:00 CT inclusive → Friday 16:00 CT exclusive.
+ * Monday–Thursday maintenance [16:00, 17:00) CT.
+ * Not a fixed UTC window: 16:00 CT is 21:00 UTC in summer and 22:00 UTC in winter.
+ * Holidays are not modelled. Does not include the Nasdaq 16:15–16:30 ET halt.
  */
 export function isCmeSessionOpen(now = Date.now()): boolean {
-  const d = new Date(now);
-  const dow = d.getUTCDay();
-  const minutes = d.getUTCHours() * 60 + d.getUTCMinutes();
-  if (dow === 6) return false;
-  if (dow === 0) return minutes >= 22 * 60;
-  if (dow === 5) return minutes < 21 * 60;
-  if (minutes >= 21 * 60 && minutes < 22 * 60) return false;
+  const t = exchangeCivilTime(now, "America/Chicago");
+  if (!t) return false;
+  if (t.weekday === 6) return false;
+  if (t.weekday === 0) return t.minutes >= 17 * 60;
+  if (t.weekday === 5) return t.minutes < 16 * 60;
+  if (t.minutes >= 16 * 60 && t.minutes < 17 * 60) return false;
   return true;
 }

@@ -168,7 +168,9 @@ describe("push con el mercado cerrado", () => {
 });
 
 const CASH = ["XAUUSD", "US100", "WTI"] as const;
-/** Monday 5 Oct 2026 00:15:20 Madrid. The bar opened at 00:00, still closed. */
+/** Monday 5 Oct 2026 00:00:20 Madrid = Sunday 18:00:20 ET. Bar 17:45–18:00 ET is still the weekend. */
+const MON_0000 = Date.parse("2026-10-04T22:00:20.000Z");
+/** Monday 5 Oct 2026 00:15:20 Madrid = Sunday 18:15:20 ET. Bar 18:00–18:15 ET is the first in-session bar. */
 const MON_0015 = Date.parse("2026-10-04T22:15:20.000Z");
 /** Monday 5 Oct 2026 00:30:20 Madrid. Bar 00:15–00:30 is fully inside the session. */
 const MON_0030 = Date.parse("2026-10-04T22:30:20.000Z");
@@ -335,17 +337,51 @@ describe("registro de entradas", () => {
 });
 
 describe("reapertura del lunes", () => {
-  it("the 00:15 bar is still not a session bar; the 00:30 bar is", () => {
-    const early = slotSecFromNow(MON_0015);
+  it("the bar that ends at the Sunday 18:00 ET reopen is not a session bar; the next M15 is", () => {
+    const early = slotSecFromNow(MON_0000);
+    const first = slotSecFromNow(MON_0015);
     const later = slotSecFromNow(MON_0030);
     for (const id of CASH) {
-      assert.equal(entrySessionOpen(id, MON_0015, slotOpenSec(early), early), false, id);
+      assert.equal(entrySessionOpen(id, MON_0000, slotOpenSec(early), early), false, id);
+      assert.equal(entrySessionOpen(id, MON_0015, slotOpenSec(first), first), true, id);
       assert.equal(entrySessionOpen(id, MON_0030, slotOpenSec(later), later), true, id);
     }
-    assert.equal(entrySessionOpen("BTCUSD", MON_0015, slotOpenSec(early), early), true);
-    assert.equal(mayOpenWatchContinuation("XAUUSD", MON_0015, [barAt(early)], early), false);
-    assert.equal(mayOpenWatchContinuation("US100", MON_0030, [barAt(later)], later), true);
+    assert.equal(entrySessionOpen("BTCUSD", MON_0000, slotOpenSec(early), early), true);
+    assert.equal(mayOpenWatchContinuation("XAUUSD", MON_0000, [barAt(early)], early), false);
+    assert.equal(mayOpenWatchContinuation("US100", MON_0015, [barAt(first)], first), true);
     assert.equal(mayOpenWatchContinuation("WTI", MON_0030, [barAt(later)], later), true);
+  });
+
+  it("does not store a daily-break entry and does not replay it after the reopen", async () => {
+    const store = createMemoryStore();
+    const during = Date.parse("2026-09-08T21:15:20Z");
+    const after = Date.parse("2026-09-08T22:15:20Z");
+    const blocked = await runWatchTick({
+      nowMs: during,
+      store,
+      load: async () => loadEntries(during, ["XAUUSD", "US100", "WTI"], true),
+    });
+    assert.equal(blocked.status, "ok");
+    assert.equal(await store.countOpenEpisodes(), 0);
+    assert.equal((await store.listInbox(20)).length, 0);
+    const sent: string[] = [];
+    const opened = await runWatchTick({
+      nowMs: after,
+      store,
+      load: async () => loadEntries(after, ["XAUUSD"], true),
+      notify: async (events) => {
+        for (const ev of events) sent.push(`${ev.slot}:${ev.toState}`);
+        return events.length;
+      },
+    });
+    assert.equal(opened.assets.find((a) => a.id === "XAUUSD")?.state, "entry");
+    const ep = await store.getOpenEpisode("XAUUSD");
+    assert.equal(ep?.sl, setup.stopLoss);
+    assert.equal(ep?.tp1, setup.takeProfit1);
+    assert.equal(ep?.zoneLow, setup.zone.low);
+    assert.equal(ep?.zoneHigh, setup.zone.high);
+    assert.deepEqual(sent, [`${slotSecFromNow(after)}:entry`]);
+    assert.equal(await store.countOpenEpisodes(), 1);
   });
 
   it("does not send or duplicate a Sunday entry when the market reopens", async () => {

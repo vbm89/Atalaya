@@ -82,6 +82,7 @@ export function mayOpenWatchContinuation(
   slot: number,
 ): boolean {
   if (!m15CoversSlot(m15, slot)) return false;
+  if (!(nowMs >= slot * 1000)) return false;
   return entrySessionOpen(id, nowMs, slotOpenSec(slot), slot);
 }
 

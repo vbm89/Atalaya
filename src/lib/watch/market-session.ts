@@ -1,9 +1,11 @@
 import type { AssetId, DataStatus, SetupState } from "../trading/types";
-import { isCmeSessionOpen } from "../trading/integrity";
+import { exchangeCivilTime, isCmeSessionOpen } from "../trading/integrity";
 
 /**
- * Product session clock. Same zone as Atalaya clocks, quiet hours and
- * Asia/Londres/NY labels — not UTC, not the broker, not the browser.
+ * Product session clock.
+ * Europe/Madrid is the display zone (quiet hours, stamps). It is not the
+ * session boundary: XAUUSD, US100 and WTI each follow their exchange zone,
+ * so a US/EU DST gap cannot move the close. BTCUSD does not close.
  */
 export const SESSION_TZ = "Europe/Madrid";
 
@@ -44,8 +46,9 @@ export function madridCivilTime(now: number): { weekday: number; minutes: number
 }
 
 /**
- * Fri 23:00 → Mon 00:01 Europe/Madrid (inclusive start, exclusive end).
- * Shared by XAUUSD, US100 and WTI. BTCUSD is not in this window.
+ * Fixed Madrid wall-clock, not the underlying session.
+ * Friday 23:00 Madrid is 17:00 New York only while EU and US DST match.
+ * Entries use underlyingSessionOpen, which follows each exchange zone.
  */
 export function isMadridWeekendClose(now: number): boolean | null {
   const t = madridCivilTime(now);
@@ -57,16 +60,47 @@ export function isMadridWeekendClose(now: number): boolean | null {
 }
 
 /**
+ * Spot XAUUSD follows COMEX Gold Globex, not forex Sunday 17:00 ET.
+ * America/New_York: Sunday 18:00 inclusive → Friday 17:00 exclusive,
+ * Monday–Thursday break [17:00, 18:00).
+ * OANDA lists XAU/USD as 18:05–16:59 New York (a broker pad on this window).
+ * The underlying lock is the exchange hour, so an M15 bar is wholly in or wholly out.
+ */
+export function spotGoldOpen(now: number): boolean {
+  const t = exchangeCivilTime(now, "America/New_York");
+  if (!t) return false;
+  if (t.weekday === 6) return false;
+  if (t.weekday === 0) return t.minutes >= 18 * 60;
+  if (t.weekday === 5) return t.minutes < 17 * 60;
+  if (t.minutes >= 17 * 60 && t.minutes < 18 * 60) return false;
+  return true;
+}
+
+/**
+ * CME E-mini Nasdaq-100 Globex halt, America/New_York [16:15, 16:30).
+ * Separate from the 17:00–18:00 ET maintenance, which WTI and gold share.
+ */
+export function nasdaqTradingHalt(now: number): boolean {
+  const t = exchangeCivilTime(now, "America/New_York");
+  if (!t) return true;
+  return t.minutes >= 16 * 60 + 15 && t.minutes < 16 * 60 + 30;
+}
+
+/**
  * Clock-only: is the underlying tradable right now.
- * Last price / proxy ticks are ignored. null = clock could not be read.
+ * Last price / proxy ticks are ignored. null = unknown asset.
+ * BTCUSD is 24/7. XAU, US100 and WTI do not share one Madrid wall-clock.
  */
 export function underlyingSessionOpen(id: AssetId, now = Date.now()): boolean | null {
+  if (!Number.isFinite(now)) return null;
   if (id === "BTCUSD") return true;
-  const weekend = isMadridWeekendClose(now);
-  if (weekend == null) return null;
-  if (weekend) return false;
-  if (id === "XAUUSD") return true;
-  if (id === "US100" || id === "WTI") return isCmeSessionOpen(now);
+  if (id === "XAUUSD") return spotGoldOpen(now);
+  if (id === "WTI") return isCmeSessionOpen(now);
+  if (id === "US100") {
+    if (!isCmeSessionOpen(now)) return false;
+    if (nasdaqTradingHalt(now)) return false;
+    return true;
+  }
   return null;
 }
 
@@ -85,6 +119,7 @@ export function entrySessionOpen(
     return false;
   }
   if (barCloseSec <= barOpenSec) return false;
+  if (barCloseSec - barOpenSec !== 900) return false;
   return (
     underlyingSessionOpen(id, barOpenSec * 1000) === true &&
     underlyingSessionOpen(id, barCloseSec * 1000 - 1) === true &&

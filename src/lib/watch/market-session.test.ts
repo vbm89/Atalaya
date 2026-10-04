@@ -13,7 +13,11 @@ import {
   CLOSED_PENDING_EXPLAIN,
   countOperableEntries,
   setupBadgeLabel,
+  entrySessionOpen,
+  nasdaqTradingHalt,
 } from "./market-session.ts";
+import { slotOpenSec, slotSecFromNow } from "./identity.ts";
+import { mayOpenWatchContinuation } from "./tick.ts";
 /** CEST (UTC+2). Saturday 5 Sep 2026 10:30 Madrid. */
 const SAT = Date.UTC(2026, 8, 5, 8, 30, 0);
 /** Friday 4 Sep 2026 22:59 Madrid — still open. */
@@ -72,8 +76,8 @@ describe("reloj por activo", () => {
     assert.equal(underlyingSessionOpen("BTCUSD", FRI_CLOSE), true);
   });
 
-  it("weekday: gold is open even during the CME daily halt", () => {
-    assert.equal(underlyingSessionOpen("XAUUSD", TUE_HALT), true);
+  it("weekday: gold, Nasdaq and WTI are all closed in the daily break", () => {
+    assert.equal(underlyingSessionOpen("XAUUSD", TUE_HALT), false);
     assert.equal(underlyingSessionOpen("US100", TUE_HALT), false);
     assert.equal(underlyingSessionOpen("WTI", TUE_HALT), false);
     assert.equal(underlyingSessionOpen("BTCUSD", TUE_HALT), true);
@@ -279,18 +283,20 @@ describe("PENDING vs mercado cerrado (presentación)", () => {
     assert.equal(v.caption, null);
   });
 
-  it("XAUUSD PENDING becomes operable again on Monday 00:01 Madrid", () => {
+  it("XAUUSD PENDING is closed one minute before the Sunday 18:00 ET reopen and open on that instant", () => {
+    const before = Date.UTC(2026, 8, 6, 21, 59, 0);
+    const reopen = Date.UTC(2026, 8, 6, 22, 0, 0);
     const closed = episodeMarketView({
       id: "XAUUSD",
       dataStatus: "ok",
       setupState: "pending",
-      now: MON_MIDNIGHT,
+      now: before,
     });
     const open = episodeMarketView({
       id: "XAUUSD",
       dataStatus: "ok",
       setupState: "pending",
-      now: MON_OPEN,
+      now: reopen,
     });
     assert.equal(closed.operable, false);
     assert.equal(open.operable, true);
@@ -377,5 +383,100 @@ describe("PENDING vs mercado cerrado (presentación)", () => {
     const presented = pickPresentedOpportunity(assets, "XAUUSD", TUE);
     assert.equal(presented.asset?.id, "XAUUSD");
     assert.match(presented.note, /TRIGGER PENDIENTE/);
+  });
+});
+
+describe("calendario real por activo (Europe/Madrid solo como lectura)", () => {
+  const cash = ["XAUUSD", "US100", "WTI"] as const;
+
+  function bar(nowMs: number) {
+    const close = slotSecFromNow(nowMs);
+    return { close, open: slotOpenSec(close) };
+  }
+
+  it("summer daily break: the 16:45 ET bar is not recorded, the 18:00 ET bar is", () => {
+    const during = Date.parse("2026-09-08T21:00:08Z");
+    const inside = Date.parse("2026-09-08T21:15:08Z");
+    const after = Date.parse("2026-09-08T22:15:08Z");
+    for (const id of cash) {
+      const d = bar(during);
+      const i = bar(inside);
+      const a = bar(after);
+      assert.equal(entrySessionOpen(id, during, d.open, d.close), false, `${id} close into break`);
+      assert.equal(entrySessionOpen(id, inside, i.open, i.close), false, `${id} inside break`);
+      assert.equal(entrySessionOpen(id, after, a.open, a.close), true, `${id} after reopen`);
+      assert.equal(underlyingSessionOpen("BTCUSD", inside), true);
+    }
+  });
+
+  it("US100 halt 16:15–16:30 ET is closed; gold and WTI stay open", () => {
+    const halt = Date.parse("2026-09-08T20:20:00Z");
+    assert.equal(nasdaqTradingHalt(halt), true);
+    assert.equal(underlyingSessionOpen("US100", halt), false);
+    assert.equal(underlyingSessionOpen("XAUUSD", halt), true);
+    assert.equal(underlyingSessionOpen("WTI", halt), true);
+    assert.equal(underlyingSessionOpen("BTCUSD", halt), true);
+    const intoHalt = Date.parse("2026-09-08T20:15:08Z");
+    const haltBar = Date.parse("2026-09-08T20:30:08Z");
+    const afterHalt = Date.parse("2026-09-08T20:45:08Z");
+    const into = bar(intoHalt);
+    const held = bar(haltBar);
+    const next = bar(afterHalt);
+    assert.equal(entrySessionOpen("US100", intoHalt, into.open, into.close), false);
+    assert.equal(entrySessionOpen("WTI", intoHalt, into.open, into.close), true);
+    assert.equal(entrySessionOpen("US100", haltBar, held.open, held.close), false);
+    assert.equal(entrySessionOpen("XAUUSD", haltBar, held.open, held.close), true);
+    assert.equal(entrySessionOpen("US100", afterHalt, next.open, next.close), true);
+    assert.equal(entrySessionOpen("WTI", afterHalt, next.open, next.close), true);
+  });
+
+  it("winter maintenance is 22:00–23:00 UTC, not the summer 21:00 UTC window", () => {
+    const nasdaqHalt = Date.parse("2026-01-13T21:20:00Z");
+    const stillOpen = Date.parse("2026-01-13T21:30:00Z");
+    const maintenance = Date.parse("2026-01-13T22:30:00Z");
+    assert.equal(underlyingSessionOpen("US100", nasdaqHalt), false);
+    assert.equal(underlyingSessionOpen("WTI", nasdaqHalt), true);
+    assert.equal(underlyingSessionOpen("XAUUSD", nasdaqHalt), true);
+    assert.equal(underlyingSessionOpen("WTI", stillOpen), true);
+    assert.equal(underlyingSessionOpen("XAUUSD", stillOpen), true);
+    assert.equal(underlyingSessionOpen("US100", stillOpen), true);
+    assert.equal(underlyingSessionOpen("WTI", maintenance), false);
+    assert.equal(underlyingSessionOpen("XAUUSD", maintenance), false);
+    assert.equal(underlyingSessionOpen("US100", maintenance), false);
+    assert.equal(underlyingSessionOpen("BTCUSD", maintenance), true);
+  });
+
+  it("EU/US DST gap: Friday 17:00 ET is closed even though Madrid is still before 23:00", () => {
+    const closed = Date.parse("2026-10-30T21:30:00Z");
+    const madrid = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/Madrid",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(new Date(closed));
+    assert.equal(madrid < "23:00", true);
+    assert.equal(isMadridWeekendClose(closed), false);
+    for (const id of cash) assert.equal(underlyingSessionOpen(id, closed), false, id);
+  });
+
+  it("Sunday reopen is 18:00 ET; the bar that ends there is invalid and the next M15 is valid", () => {
+    const ending = Date.parse("2026-10-04T22:00:20Z");
+    const first = Date.parse("2026-10-04T22:15:20Z");
+    const e = bar(ending);
+    const f = bar(first);
+    for (const id of cash) {
+      assert.equal(entrySessionOpen(id, ending, e.open, e.close), false, id);
+      assert.equal(entrySessionOpen(id, first, f.open, f.close), true, id);
+    }
+    assert.equal(entrySessionOpen("BTCUSD", ending, e.open, e.close), true);
+  });
+
+  it("a forming bar is not a closed candle", () => {
+    const now = Date.parse("2026-09-08T12:07:00Z");
+    const close = slotSecFromNow(now) + 900;
+    const bar = { time: slotOpenSec(close), open: 1, high: 1, low: 1, close: 1, volume: 1 };
+    assert.equal(mayOpenWatchContinuation("XAUUSD", now, [bar], close), false);
+    const after = close * 1000 + 8_000;
+    assert.equal(mayOpenWatchContinuation("XAUUSD", after, [bar], close), true);
   });
 });
