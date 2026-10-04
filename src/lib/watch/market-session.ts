@@ -71,6 +71,28 @@ export function underlyingSessionOpen(id: AssetId, now = Date.now()): boolean | 
 }
 
 /**
+ * A new Watch entry is allowed only when the 15M bar opened and closed inside
+ * the underlying session and that session is still open. BTCUSD is always open.
+ * This does not change V1; it only says whether Watch may record the result.
+ */
+export function entrySessionOpen(
+  id: AssetId,
+  nowMs: number,
+  barOpenSec: number,
+  barCloseSec: number,
+): boolean {
+  if (!Number.isFinite(nowMs) || !Number.isFinite(barOpenSec) || !Number.isFinite(barCloseSec)) {
+    return false;
+  }
+  if (barCloseSec <= barOpenSec) return false;
+  return (
+    underlyingSessionOpen(id, barOpenSec * 1000) === true &&
+    underlyingSessionOpen(id, barCloseSec * 1000 - 1) === true &&
+    underlyingSessionOpen(id, nowMs) === true
+  );
+}
+
+/**
  * Single source of truth for Inicio tiles and Alertas.
  *
  * Closed session always wins over a last available price.

@@ -2,6 +2,8 @@ import { applyBasisToSetup } from "../trading/engine";
 import { snapshotIndicators } from "../trading/indicators";
 import { detectBosChoch, swingHighs, swingLows } from "../trading/structure";
 import type { AssetId, Candle, SetupProposal } from "../trading/types";
+import { slotOpenSec, slotSecFromNow } from "./identity";
+import { entrySessionOpen } from "./market-session";
 
 const MIN_RR = 1.5;
 const PAD_ATR = 0.15;
@@ -31,12 +33,19 @@ export function buildMomentumContinuation(args: {
   basis?: number | null;
   digits: number;
 }): SetupProposal | null {
+  const slot = slotSecFromNow(args.nowMs);
+  const open = slotOpenSec(slot);
+  // Closed session, or a bar that did not open and close inside it: no entry.
+  if (!entrySessionOpen(args.id, args.nowMs, open, slot)) return null;
+
   const m15 = closed(args.m15, args.nowMs);
   const h1 = closed(args.h1, args.nowMs);
   const h4 = closed(args.h4, args.nowMs);
   if (m15.length < 12 || h1.length < 12 || h4.length < 12) return null;
 
   const last = m15.at(-1)!;
+  // Only the bar that just closed. An older closed print is not a new entry.
+  if (last.time !== open) return null;
   const prior = m15.slice(0, -1);
   const atr = snapshotIndicators(m15).atr;
   if (!atr || atr <= 0) return null;

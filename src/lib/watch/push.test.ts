@@ -249,7 +249,7 @@ describe("notify claim is one-shot", () => {
     await store.upsertPushSub({ endpoint: "https://push.example/1", p256dh: "a", auth: "b" }, null);
     await store.setPushPrefs({ ...DEFAULT_PUSH_PREFS, pending: true, map: true, expired: true });
 
-    const now = Date.parse("2026-08-29T08:15:08.000Z");
+    const now = Date.parse("2026-09-08T10:15:08.000Z");
     const slot = Math.floor(now / 1000);
     const setup: SetupProposal = {
       state: "pending",

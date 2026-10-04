@@ -5,7 +5,7 @@ import { resolveOutcome } from "./outcome";
 import { computePostEntryMetrics, mergePostEntry, parsePostEntry, watchOutcomeOpenedSlot } from "./post-entry";
 import { diagnoseBornFreeze, logCaptureIssues } from "./capture-issues";
 import { FEED_GRACE_MS } from "./schedule";
-import { underlyingSessionOpen } from "./market-session";
+import { entrySessionOpen } from "./market-session";
 import { adaptWatchTarget, buildMomentumContinuation } from "./continuation";
 import type { WatchStore } from "./store";
 
@@ -71,9 +71,9 @@ export function m15CoversSlot(candles: Candle[] | undefined, slotSec: number): b
 }
 
 /**
- * Continuation is a Watch overlay, not V1. It may open a new entry only when
- * the underlying clock is open and the just-closed 15M bar is in the feed.
- * A fresh Sunday perp print is not a cash-session entry.
+ * Continuation and any other new Watch entry share this gate.
+ * The underlying clock must be open for the whole just-closed 15M bar,
+ * and that bar must be in the feed. A Sunday perp print is not an entry.
  */
 export function mayOpenWatchContinuation(
   id: AssetId,
@@ -81,9 +81,13 @@ export function mayOpenWatchContinuation(
   m15: Candle[] | undefined,
   slot: number,
 ): boolean {
-  if (underlyingSessionOpen(id, nowMs) !== true) return false;
-  return m15CoversSlot(m15, slot);
+  if (!m15CoversSlot(m15, slot)) return false;
+  return entrySessionOpen(id, nowMs, slotOpenSec(slot), slot);
 }
+
+/** Snapshot text for a blocked signal. Not an entry and not a V1 wait reason. */
+export const CLOSED_ENTRY_BLOCK =
+  "BLOQUEO — mercado cerrado o vela no válida. No es una entrada.";
 
 async function safeRemember(
   fn: ((work: MemoryTickWork) => Promise<void>) | undefined,
@@ -175,16 +179,15 @@ export async function runWatchTick(args: {
     const born: EpisodeDraft[] = [];
     const touched: EpisodeDraft[] = [];
     for (const asset of loaded.assets) {
+      const bars = loaded.m15ByAsset[asset.id];
+      const admits = mayOpenWatchContinuation(asset.id, args.nowMs, bars, slot);
       // Research overlay: adds a momentum-continuation entry without changing V1.
-      // It is evaluated only on the newly closed 15M bar, so it cannot spam the same slot.
+      // The function itself also refuses a closed session or a stale bar.
       let effectiveAsset = asset;
-      if (
-        asset.setupState !== "entry" &&
-        mayOpenWatchContinuation(asset.id, args.nowMs, loaded.m15ByAsset[asset.id], slot)
-      ) {
+      if (asset.setupState !== "entry" && admits) {
         const continuation = buildMomentumContinuation({
           id: asset.id,
-          m15: loaded.m15ByAsset[asset.id] ?? [],
+          m15: bars ?? [],
           h1: loaded.h1ByAsset?.[asset.id] ?? [],
           h4: loaded.h4ByAsset?.[asset.id] ?? [],
           nowMs: args.nowMs,
@@ -194,10 +197,10 @@ export async function runWatchTick(args: {
         if (continuation) {
           const tuned = adaptWatchTarget({
             setup: continuation,
-            m15: loaded.m15ByAsset[asset.id] ?? [],
+            m15: bars ?? [],
             h1: loaded.h1ByAsset?.[asset.id] ?? [],
             h4: loaded.h4ByAsset?.[asset.id] ?? [],
-            currentPrice: (loaded.m15ByAsset[asset.id] ?? []).at(-1)?.close ?? continuation.zone.low,
+            currentPrice: (bars ?? []).at(-1)?.close ?? continuation.zone.low,
             basis: asset.freeze?.basis ?? null,
             digits: asset.digits,
           });
@@ -218,6 +221,34 @@ export async function runWatchTick(args: {
               : null,
           };
         }
+      }
+
+      // Closed session or a bar that is not the one that just closed:
+      // do not record an entry, do not close or rewrite an existing episode.
+      if (effectiveAsset.setupState === "entry" && !admits) {
+        const prev = await args.store.getOpenEpisode(asset.id);
+        await args.store.upsertSnapshot({
+          assetId: asset.id,
+          state: "wait",
+          setup: null,
+          waitReason: CLOSED_ENTRY_BLOCK,
+          evaluatedAtMs: args.nowMs,
+          slot,
+          episodeId: prev?.episodeId ?? null,
+        });
+        assets.push({
+          id: asset.id,
+          state: "wait",
+          episodeId: prev?.episodeId ?? null,
+          events: 0,
+          waitReason: CLOSED_ENTRY_BLOCK,
+          missingForEntry: null,
+          direction: null,
+          quality: null,
+          riskReward: null,
+        });
+        console.info("[watch] entry blocked", { id: asset.id, slot });
+        continue;
       }
 
       // Any real V1 entry also gets the same reachable-target audit. This

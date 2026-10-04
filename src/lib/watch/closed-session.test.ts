@@ -1,18 +1,21 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { SetupProposal } from "../trading/types.ts";
+import type { AssetId, SetupProposal } from "../trading/types.ts";
+import { buildMomentumContinuation } from "./continuation.ts";
 import { foldEpisode } from "./episode.ts";
 import { slotOpenSec, slotSecFromNow } from "./identity.ts";
 import { inboxPushLabel } from "./inbox.ts";
-import { underlyingSessionOpen } from "./market-session.ts";
+import { entrySessionOpen, underlyingSessionOpen } from "./market-session.ts";
 import { dispatchEventPushes } from "./notify.ts";
 import { createMemoryStore } from "./store-memory.ts";
-import { mayOpenWatchContinuation, runWatchTick } from "./tick.ts";
+import { CLOSED_ENTRY_BLOCK, mayOpenWatchContinuation, runWatchTick, type WatchLoad } from "./tick.ts";
 
 /** Sunday 4 Oct 2026 17:45:20 Madrid — the XAU push in this audit. */
 const SUN = Date.parse("2026-10-04T15:45:20.922Z");
 /** Tuesday 8 Sep 2026 12:00 Madrid. Cash session open. */
 const TUE = Date.UTC(2026, 8, 8, 10, 0, 0);
+/** Same slot, after the 8s feed grace, so the tick is allowed to run. */
+const TUE_TICK = TUE + 20_000;
 /** Monday 5 Oct 2026 10:00 Madrid — session already open. */
 const MON = Date.parse("2026-10-05T08:00:00.000Z");
 
@@ -161,5 +164,252 @@ describe("push con el mercado cerrado", () => {
     }, SUN);
     assert.equal(n.sent, 1);
     assert.equal(sends, 1);
+  });
+});
+
+const CASH = ["XAUUSD", "US100", "WTI"] as const;
+/** Monday 5 Oct 2026 00:15:20 Madrid. The bar opened at 00:00, still closed. */
+const MON_0015 = Date.parse("2026-10-04T22:15:20.000Z");
+/** Monday 5 Oct 2026 00:30:20 Madrid. Bar 00:15–00:30 is fully inside the session. */
+const MON_0030 = Date.parse("2026-10-04T22:30:20.000Z");
+
+function seriesEnding(slot: number, n = 30) {
+  const open = slotOpenSec(slot);
+  return Array.from({ length: n }, (_, i) => ({
+    time: open - (n - 1 - i) * 900,
+    open: 100 + i * 0.1,
+    high: 101 + i * 0.1,
+    low: 99 + i * 0.1,
+    close: 100.2 + i * 0.1,
+    volume: 10,
+  }));
+}
+
+function loadEntries(nowMs: number, ids: readonly AssetId[], fresh: boolean): WatchLoad {
+  const slot = slotSecFromNow(nowMs);
+  const freshBar = barAt(slot);
+  const staleBar = { ...freshBar, time: slotOpenSec(slot) - 900 };
+  const m15ByAsset: WatchLoad["m15ByAsset"] = { BTCUSD: [freshBar] };
+  for (const id of ids) m15ByAsset[id] = [fresh || id === "BTCUSD" ? freshBar : staleBar];
+  return {
+    assets: ids.map((id) => ({
+      id,
+      setupState: "entry" as const,
+      setup: { ...setup },
+      waitReason: null,
+      digits: 2,
+    })),
+    m15ByAsset,
+    errors: [],
+  };
+}
+
+describe("la función de continuación no crea la entrada", () => {
+  it("returns null for XAU, US100 and WTI while the underlying is closed", () => {
+    const slot = slotSecFromNow(SUN);
+    const candles = seriesEnding(slot);
+    for (const id of CASH) {
+      assert.equal(entrySessionOpen(id, SUN, slotOpenSec(slot), slot), false);
+      assert.equal(
+        buildMomentumContinuation({
+          id,
+          m15: candles,
+          h1: candles,
+          h4: candles,
+          nowMs: SUN,
+          digits: 2,
+        }),
+        null,
+      );
+    }
+  });
+
+  it("does not reject BTC on Sunday and rejects a stale bar on an open Tuesday", () => {
+    const sunSlot = slotSecFromNow(SUN);
+    assert.equal(entrySessionOpen("BTCUSD", SUN, slotOpenSec(sunSlot), sunSlot), true);
+    const tueSlot = slotSecFromNow(TUE);
+    const stale = seriesEnding(tueSlot).map((c) => ({ ...c, time: c.time - 900 }));
+    assert.equal(
+      buildMomentumContinuation({
+        id: "BTCUSD",
+        m15: stale,
+        h1: stale,
+        h4: stale,
+        nowMs: TUE,
+        digits: 2,
+      }),
+      null,
+    );
+    assert.equal(mayOpenWatchContinuation("BTCUSD", TUE, stale, tueSlot), false);
+  });
+});
+
+describe("registro de entradas", () => {
+  it("does not store a V1 entry for XAU, US100 or WTI on Sunday, and still stores BTC", async () => {
+    const store = createMemoryStore();
+    const ids = ["XAUUSD", "US100", "WTI", "BTCUSD"] as const;
+    const sent: string[] = [];
+    const result = await runWatchTick({
+      nowMs: SUN,
+      store,
+      load: async () => loadEntries(SUN, ids, true),
+      notify: async (events) => {
+        for (const ev of events) sent.push(ev.episodeId);
+        return events.length;
+      },
+    });
+    assert.equal(result.status, "ok");
+    for (const id of CASH) {
+      const row = result.assets.find((a) => a.id === id);
+      assert.equal(row?.state, "wait");
+      assert.equal(row?.events, 0);
+      assert.equal(row?.waitReason, CLOSED_ENTRY_BLOCK);
+      assert.equal(await store.getOpenEpisode(id), null);
+      const snap = await store.getSnapshot(id);
+      assert.equal(snap?.state, "wait");
+      assert.equal(snap?.setup, null);
+      assert.equal(snap?.waitReason, CLOSED_ENTRY_BLOCK);
+    }
+    const btc = result.assets.find((a) => a.id === "BTCUSD");
+    assert.equal(btc?.state, "entry");
+    assert.equal(btc?.events, 1);
+    const episode = await store.getOpenEpisode("BTCUSD");
+    assert.ok(episode);
+    assert.equal(episode?.sl, setup.stopLoss);
+    assert.equal(episode?.tp1, setup.takeProfit1);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0], episode?.episodeId);
+    const inbox = await store.listInbox(20);
+    assert.equal(inbox.length, 1);
+    assert.equal(inbox[0]?.assetId, "BTCUSD");
+    assert.equal(inbox.every((row) => row.assetId !== "XAUUSD"), true);
+  });
+
+  it("stores the same V1 levels for all four when Tuesday's bar is fresh and the session is open", async () => {
+    const store = createMemoryStore();
+    const ids = ["XAUUSD", "US100", "WTI", "BTCUSD"] as const;
+    const result = await runWatchTick({
+      nowMs: TUE_TICK,
+      store,
+      load: async () => loadEntries(TUE_TICK, ids, true),
+    });
+    assert.equal(result.status, "ok");
+    for (const id of ids) {
+      const row = result.assets.find((a) => a.id === id);
+      assert.equal(row?.state, "entry", id);
+      assert.equal(row?.events, 1, id);
+      const episode = await store.getOpenEpisode(id);
+      assert.equal(episode?.sl, setup.stopLoss, id);
+      assert.equal(episode?.tp1, setup.takeProfit1, id);
+      assert.equal(episode?.zoneLow, setup.zone.low, id);
+    }
+  });
+
+  it("does not store a cash entry from a stale bar even if the session is open", async () => {
+    const store = createMemoryStore();
+    const result = await runWatchTick({
+      nowMs: TUE_TICK,
+      store,
+      load: async () => loadEntries(TUE_TICK, CASH, false),
+    });
+    assert.equal(result.status, "ok");
+    assert.equal(await store.countOpenEpisodes(), 0);
+    assert.equal((await store.listInbox(20)).length, 0);
+    for (const id of CASH) {
+      assert.equal(result.assets.find((a) => a.id === id)?.state, "wait");
+      assert.equal((await store.getSnapshot(id))?.waitReason, CLOSED_ENTRY_BLOCK);
+    }
+    assert.equal(mayOpenWatchContinuation("BTCUSD", TUE_TICK, [{ ...barAt(slotSecFromNow(TUE_TICK)), time: slotOpenSec(slotSecFromNow(TUE_TICK)) - 900 }], slotSecFromNow(TUE_TICK)), false);
+  });
+
+  it("a second Sunday tick does not create a duplicate entry", async () => {
+    const store = createMemoryStore();
+    const load = async () => loadEntries(SUN, ["XAUUSD"], true);
+    const first = await runWatchTick({ nowMs: SUN, store, load });
+    const second = await runWatchTick({ nowMs: SUN, store, load });
+    assert.equal(first.status, "ok");
+    assert.equal(second.status, "duplicate");
+    assert.equal(await store.countOpenEpisodes(), 0);
+    assert.equal((await store.listInbox(20)).length, 0);
+  });
+});
+
+describe("reapertura del lunes", () => {
+  it("the 00:15 bar is still not a session bar; the 00:30 bar is", () => {
+    const early = slotSecFromNow(MON_0015);
+    const later = slotSecFromNow(MON_0030);
+    for (const id of CASH) {
+      assert.equal(entrySessionOpen(id, MON_0015, slotOpenSec(early), early), false, id);
+      assert.equal(entrySessionOpen(id, MON_0030, slotOpenSec(later), later), true, id);
+    }
+    assert.equal(entrySessionOpen("BTCUSD", MON_0015, slotOpenSec(early), early), true);
+    assert.equal(mayOpenWatchContinuation("XAUUSD", MON_0015, [barAt(early)], early), false);
+    assert.equal(mayOpenWatchContinuation("US100", MON_0030, [barAt(later)], later), true);
+    assert.equal(mayOpenWatchContinuation("WTI", MON_0030, [barAt(later)], later), true);
+  });
+
+  it("does not send or duplicate a Sunday entry when the market reopens", async () => {
+    const store = createMemoryStore();
+    await store.upsertPushSub({ endpoint: "https://push.example/mon", p256dh: "a", auth: "b" }, null);
+    const sunSlot = slotSecFromNow(SUN);
+    const historical = foldEpisode(
+      null,
+      { id: "XAUUSD", setupState: "entry", setup, waitReason: null, digits: 2 },
+      sunSlot,
+      SUN,
+    );
+    const before = historical.episode!;
+    await store.upsertEpisode(before);
+    for (const ev of historical.events) await store.insertEvent(ev);
+
+    let sends = 0;
+    const monday = await runWatchTick({
+      nowMs: MON_0030,
+      store,
+      load: async () => loadEntries(MON_0030, ["XAUUSD"], true),
+      notify: async (events) => {
+        const out = await dispatchEventPushes(store, events, async () => {
+          sends += 1;
+          return "ok";
+        }, MON_0030);
+        return out.sent;
+      },
+    });
+    assert.equal(monday.status, "ok");
+    assert.equal(sends, 0);
+    assert.equal(await store.countOpenEpisodes(), 1);
+    const still = await store.getOpenEpisode("XAUUSD");
+    assert.equal(still?.episodeId, before.episodeId);
+    assert.equal(still?.openedSlot, before.openedSlot);
+    assert.equal(still?.sl, before.sl);
+    assert.equal(still?.tp1, before.tp1);
+    assert.equal(still?.closedAtMs, null);
+    const inbox = await store.listInbox(20);
+    assert.equal(inbox.length, 1);
+    assert.equal(inbox[0]?.episodeId, before.episodeId);
+    assert.equal(inbox[0]?.notified, false);
+    assert.equal(inbox[0]?.notifyStatus, "skipped");
+    assert.equal(monday.assets.find((a) => a.id === "XAUUSD")?.events, 0);
+  });
+
+  it("leaves an already sent Sunday row untouched", async () => {
+    const store = createMemoryStore();
+    const sunSlot = slotSecFromNow(SUN);
+    const historical = foldEpisode(
+      null,
+      { id: "US100", setupState: "entry", setup, waitReason: null, digits: 2 },
+      sunSlot,
+      SUN,
+    );
+    await store.upsertEpisode(historical.episode!);
+    for (const ev of historical.events) await store.insertEvent(ev);
+    await store.markNotifySent(historical.episode!.episodeId, historical.events[0]!.slot, "wait", "entry", SUN);
+    const monday = await dispatchEventPushes(store, [], async () => "ok", MON_0030);
+    assert.equal(monday.sent, 0);
+    const inbox = await store.listInbox(20);
+    assert.equal(inbox.length, 1);
+    assert.equal(inbox[0]?.notified, true);
+    assert.equal(inbox[0]?.notifyStatus, "sent");
+    assert.equal(inboxPushLabel(inbox[0]!), "Push enviado");
   });
 });

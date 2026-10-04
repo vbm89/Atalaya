@@ -3,7 +3,8 @@ import type { EpisodeDraft, SignalEventDraft } from "./episode";
 import { buildPushPayload, type PushPayload } from "./payload";
 import { shouldPushState } from "./policy";
 import { shouldPushWithPrefs } from "./push-prefs";
-import { underlyingSessionOpen } from "./market-session";
+import { slotOpenSec } from "./identity";
+import { entrySessionOpen } from "./market-session";
 import type { WatchStore } from "./store";
 
 export interface PushSub {
@@ -75,7 +76,10 @@ export async function dispatchEventPushes(
   for (const ev of merged) {
     if (ev.toState === "entry") {
       const episode = await store.getEpisode(ev.episodeId);
-      if (episode && underlyingSessionOpen(episode.assetId, nowMs) !== true) {
+      if (
+        episode &&
+        !entrySessionOpen(episode.assetId, ev.atMs, slotOpenSec(ev.slot), ev.slot)
+      ) {
         await store.markNotifySkipped(
           ev.episodeId,
           ev.slot,
