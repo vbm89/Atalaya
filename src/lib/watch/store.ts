@@ -91,6 +91,14 @@ export interface WatchStore {
     toState: SetupState,
     error: string,
   ): Promise<void>;
+  /** Terminal: do not send and do not retry when the session later opens. */
+  markNotifySkipped(
+    episodeId: string,
+    slot: number,
+    fromState: SetupState,
+    toState: SetupState,
+    error: string,
+  ): Promise<void>;
   listRetryableEvents(nowMs: number): Promise<SignalEventDraft[]>;
   getAlertPinHash(): Promise<string | null>;
   setAlertPinHash(hash: string): Promise<boolean>;
@@ -462,6 +470,18 @@ export function createPgStore(sql: SqlQuery): WatchStore {
              notify_last_error = $5
          where episode_id = $1 and slot = $2 and from_state = $3 and to_state = $4
            and notified = false`,
+        [episodeId, slot, fromState, toState, error],
+      );
+    },
+
+    async markNotifySkipped(episodeId, slot, fromState, toState, error) {
+      await sql.query(
+        `update signal_events
+         set notify_status = 'skipped',
+             notify_last_error = $5
+         where episode_id = $1 and slot = $2 and from_state = $3 and to_state = $4
+           and notified = false
+           and notify_status <> 'sent'`,
         [episodeId, slot, fromState, toState, error],
       );
     },

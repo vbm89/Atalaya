@@ -179,7 +179,7 @@ describe("bandeja de avisos", () => {
     );
     await store.upsertEpisode(f.episode!);
     for (const ev of f.events) await store.insertEvent(ev);
-    const n = await dispatchEventPushes(store, f.events, async () => "error");
+    const n = await dispatchEventPushes(store, f.events, async () => "error", Date.UTC(2026, 8, 8, 10, 0, 0));
     assert.equal(n.failed, 1);
     const inbox = await store.listInbox(20);
     assert.equal(inbox[0]?.notified, false);
@@ -367,7 +367,7 @@ describe("compartir setup", () => {
     );
     await store.upsertEpisode(f.episode!);
     for (const ev of f.events) await store.insertEvent(ev);
-    const n = await dispatchEventPushes(store, f.events, async () => "ok");
+    const n = await dispatchEventPushes(store, f.events, async () => "ok", Date.UTC(2026, 8, 8, 10, 0, 0));
     assert.equal(n.sent, 0);
     assert.ok(n.skipped >= 1);
     const inbox = await store.listInbox(20);

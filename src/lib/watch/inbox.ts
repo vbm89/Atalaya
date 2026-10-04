@@ -60,6 +60,9 @@ export function inboxPushLabel(row: InboxItem): string {
   if (row.notifyStatus === "failed") {
     return row.notifyLastError ? `Push falló · ${row.notifyLastError}` : "Push falló";
   }
+  if (row.notifyStatus === "skipped") {
+    return row.notifyLastError ? `Push no enviado · ${row.notifyLastError}` : "Push no enviado";
+  }
   if (row.notifyStatus === "claimed") return "Push reclamado, sin confirmación";
   return "Push no enviado";
 }

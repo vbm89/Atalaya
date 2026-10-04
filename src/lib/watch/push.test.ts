@@ -306,7 +306,7 @@ describe("notify claim is one-shot", () => {
     assert.equal(fEntry.events[0]?.toState, "entry");
     await store.upsertEpisode(fEntry.episode!);
     for (const ev of fEntry.events) await store.insertEvent(ev);
-    const nEntry = await dispatchEventPushes(store, fEntry.events, send);
+    const nEntry = await dispatchEventPushes(store, fEntry.events, send, Date.UTC(2026, 8, 8, 10, 0, 0));
     assert.equal(nEntry.claimed, 1);
     assert.equal(sent.length, 1);
 
@@ -336,7 +336,7 @@ describe("notify claim is one-shot", () => {
     assert.notEqual(next.episode?.episodeId, fEntry.episode?.episodeId);
     await store.upsertEpisode(next.episode!);
     for (const ev of next.events) await store.insertEvent(ev);
-    const nNew = await dispatchEventPushes(store, next.events, send);
+    const nNew = await dispatchEventPushes(store, next.events, send, Date.UTC(2026, 8, 8, 10, 0, 0));
     assert.equal(nNew.claimed, 1);
     assert.equal(sent.length, 2);
   });
@@ -418,7 +418,7 @@ describe("notify claim is one-shot", () => {
       managementNote: "",
       entryLabel: "2",
     };
-    const now = Date.parse("2026-08-29T08:15:08.000Z");
+    const now = Date.parse("2026-09-08T10:00:00.000Z");
     const f = foldEpisode(
       null,
       { id: "XAUUSD", setupState: "entry", setup, waitReason: null, digits: 2 },
@@ -810,7 +810,7 @@ describe("horas silenciosas y pausa 24h no paran V1", () => {
     const store = createMemoryStore();
     const sent: string[] = [];
     await store.upsertPushSub({ endpoint: "https://push.example/1", p256dh: "a", auth: "b" }, null);
-    const now = Date.parse("2026-08-30T12:00:00Z");
+    const now = Date.parse("2026-09-08T10:00:00Z");
     await store.setPushPrefs({
       ...DEFAULT_PUSH_PREFS,
       pausedUntilMs: now + 24 * 60 * 60 * 1000,

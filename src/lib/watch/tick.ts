@@ -5,6 +5,7 @@ import { resolveOutcome } from "./outcome";
 import { computePostEntryMetrics, mergePostEntry, parsePostEntry, watchOutcomeOpenedSlot } from "./post-entry";
 import { diagnoseBornFreeze, logCaptureIssues } from "./capture-issues";
 import { FEED_GRACE_MS } from "./schedule";
+import { underlyingSessionOpen } from "./market-session";
 import { adaptWatchTarget, buildMomentumContinuation } from "./continuation";
 import type { WatchStore } from "./store";
 
@@ -67,6 +68,21 @@ export function m15CoversSlot(candles: Candle[] | undefined, slotSec: number): b
   if (!candles || candles.length === 0) return false;
   const open = slotOpenSec(slotSec);
   return candles.some((c) => c.time === open);
+}
+
+/**
+ * Continuation is a Watch overlay, not V1. It may open a new entry only when
+ * the underlying clock is open and the just-closed 15M bar is in the feed.
+ * A fresh Sunday perp print is not a cash-session entry.
+ */
+export function mayOpenWatchContinuation(
+  id: AssetId,
+  nowMs: number,
+  m15: Candle[] | undefined,
+  slot: number,
+): boolean {
+  if (underlyingSessionOpen(id, nowMs) !== true) return false;
+  return m15CoversSlot(m15, slot);
 }
 
 async function safeRemember(
@@ -162,7 +178,10 @@ export async function runWatchTick(args: {
       // Research overlay: adds a momentum-continuation entry without changing V1.
       // It is evaluated only on the newly closed 15M bar, so it cannot spam the same slot.
       let effectiveAsset = asset;
-      if (asset.setupState !== "entry") {
+      if (
+        asset.setupState !== "entry" &&
+        mayOpenWatchContinuation(asset.id, args.nowMs, loaded.m15ByAsset[asset.id], slot)
+      ) {
         const continuation = buildMomentumContinuation({
           id: asset.id,
           m15: loaded.m15ByAsset[asset.id] ?? [],

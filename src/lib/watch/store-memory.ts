@@ -23,7 +23,7 @@ interface EventRec {
   atMs: number;
   slot: number;
   notified: boolean;
-  notifyStatus: "pending" | "claimed" | "failed" | "sent";
+  notifyStatus: "pending" | "claimed" | "failed" | "sent" | "skipped";
   notifyAttempts: number;
   notifyClaimedAt: number | null;
   notifyLastError: string | null;
@@ -192,6 +192,13 @@ export function createMemoryStore(): WatchStore {
       const ev = events.get(k);
       if (!ev || ev.notified) return;
       events.set(k, { ...ev, notifyStatus: "failed", notifyLastError: error });
+    },
+
+    async markNotifySkipped(episodeId, slot, fromState, toState, error) {
+      const k = eventKey(episodeId, slot, fromState, toState);
+      const ev = events.get(k);
+      if (!ev || ev.notified || ev.notifyStatus === "sent") return;
+      events.set(k, { ...ev, notifyStatus: "skipped", notifyLastError: error });
     },
 
     async listRetryableEvents(nowMs) {
