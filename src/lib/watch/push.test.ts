@@ -79,6 +79,7 @@ function loadAll(
       WAIT.WTI,
     ],
     m15ByAsset: { BTCUSD: m15 },
+    instrumentByAsset: { BTCUSD: "BTCUSDT" },
     errors: [],
   };
 }

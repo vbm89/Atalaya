@@ -4,7 +4,7 @@ import { detectBosChoch, swingHighs, swingLows } from "../trading/structure";
 import type { AssetId, Candle, SetupProposal } from "../trading/types";
 import { slotOpenSec, slotSecFromNow } from "./identity";
 import { entrySessionOpen } from "./market-session";
-import { assessSetupLevels, stopFromStructuralAnchor } from "./level-integrity";
+import { assessSetupLevels, instrumentVerdict, stopFromStructuralAnchor, xauBasisVerdict, type LevelRejectReason } from "./level-integrity";
 
 const MIN_RR = 1.5;
 const PAD_ATR = 0.15;
@@ -25,6 +25,15 @@ function nearestTarget(direction: "sell" | "buy", entry: number, risk: number, h
   return valid.length ? { tp1: valid[0]!, tp2: valid[1] ?? null } : null;
 }
 
+export interface ContinuationIntegrityReject {
+  reason: LevelRejectReason;
+  direction: "buy" | "sell" | null;
+  entry: number | null;
+  stop: number | null;
+  target: number | null;
+  anchor: number | null;
+}
+
 export function buildMomentumContinuation(args: {
   id: AssetId;
   m15: Candle[];
@@ -33,6 +42,10 @@ export function buildMomentumContinuation(args: {
   nowMs: number;
   basis?: number | null;
   digits: number;
+  /** Feed id of the candles these levels are built from. Required once a signal exists. */
+  instrument?: string | null;
+  /** Called once when an integrity rule refuses the entry. Strategy misses stay silent. */
+  onIntegrityReject?: (info: ContinuationIntegrityReject) => void;
 }): SetupProposal | null {
   const slot = slotSecFromNow(args.nowMs);
   const open = slotOpenSec(slot);
@@ -70,13 +83,31 @@ export function buildMomentumContinuation(args: {
     bullishImpulse && longContext ? "buy" : null;
   if (!direction) return null;
 
+  const entry = last.close;
+  let anchor: number | null = null;
+  let stop: number | null = null;
+  let target: number | null = null;
+  const reject = (reason: LevelRejectReason): null => {
+    console.info("[watch] continuation rejected", { id: args.id, reason });
+    args.onIntegrityReject?.({ reason, direction, entry, stop, target, anchor });
+    return null;
+  };
+
+  // Do not invent a proxy→spot shift. Without a finite basis the three XAU
+  // levels are not known to share one price base, so this is not an entry.
+  if (args.id === "XAUUSD") {
+    const basisVerdict = xauBasisVerdict(args.basis);
+    if (!basisVerdict.ok && basisVerdict.reason) return reject(basisVerdict.reason);
+  }
+  const quoted = instrumentVerdict(args.id, args.instrument);
+  if (!quoted.ok && quoted.reason) return reject(quoted.reason);
+
   const swings = direction === "sell" ? swingHighs(m15) : swingLows(m15);
   const structural = swings.filter((s) => s.index < m15.length - 1).at(-1)?.price;
   const fallback = direction === "sell"
     ? Math.max(...prior.slice(-5).map((c) => c.high))
     : Math.min(...prior.slice(-5).map((c) => c.low));
-  const anchor = structural ?? fallback;
-  const entry = last.close;
+  anchor = structural ?? fallback;
   // The swing has to sit on the adverse side before the pad. The pad must not
   // pull a wrong-side swing across the entry.
   const anchored = stopFromStructuralAnchor({
@@ -85,16 +116,15 @@ export function buildMomentumContinuation(args: {
     anchor,
     pad: atr * PAD_ATR,
   });
-  if (!anchored.ok) {
-    console.info("[watch] continuation rejected", { id: args.id, reason: anchored.reason });
-    return null;
-  }
-  const stop = anchored.stop;
+  if (!anchored.ok) return reject(anchored.reason);
+  stop = anchored.stop;
   const risk = direction === "sell" ? stop - entry : entry - stop;
-  if (!(risk > 0) || risk > atr * 3.5) return null;
+  if (!(risk > 0)) return reject("risk-not-positive");
+  if (risk > atr * 3.5) return reject("risk-out-of-bounds");
 
   const targets = nearestTarget(direction, entry, risk, h1, h4);
   if (!targets) return null;
+  target = targets.tp1;
 
   const setup: SetupProposal = {
     state: "entry",
@@ -115,14 +145,11 @@ export function buildMomentumContinuation(args: {
     managementNote: "SL obligatorio. Señal de continuación; análisis, no orden.",
     entryLabel: entry.toFixed(args.digits),
   };
-  const published = args.id === "XAUUSD" && args.basis != null
+  const published = args.id === "XAUUSD" && typeof args.basis === "number" && Number.isFinite(args.basis)
     ? applyBasisToSetup(setup, args.basis, args.digits)
     : setup;
   const verdict = assessSetupLevels(published, args.digits);
-  if (!verdict.ok) {
-    console.info("[watch] continuation rejected", { id: args.id, reason: verdict.reason });
-    return null;
-  }
+  if (!verdict.ok && verdict.reason) return reject(verdict.reason);
   return published;
 }
 

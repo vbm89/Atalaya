@@ -70,6 +70,7 @@ function loadAll(
   return {
     assets: [{ ...WAIT.XAUUSD }, { ...WAIT.BTCUSD, ...btc, id: "BTCUSD" }, { ...WAIT.US100 }, { ...WAIT.WTI }],
     m15ByAsset: { BTCUSD: m15 },
+    instrumentByAsset: { BTCUSD: "BTCUSDT" },
     errors: [],
   };
 }

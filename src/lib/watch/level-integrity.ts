@@ -1,4 +1,5 @@
-import type { SetupProposal } from "../trading/types";
+import { getAsset } from "../trading/assets";
+import type { AssetId, SetupProposal } from "../trading/types";
 
 /**
  * Watch-only gate. It does not choose a stop, a target, or a pad.
@@ -7,11 +8,13 @@ import type { SetupProposal } from "../trading/types";
 export type LevelRejectReason =
   | "non-finite"
   | "risk-not-positive"
+  | "risk-out-of-bounds"
   | "stop-wrong-side"
   | "target-wrong-side"
   | "anchor-wrong-side"
   | "rounded-order"
-  | "instrument";
+  | "instrument"
+  | "basis";
 
 export interface LevelVerdict {
   ok: boolean;
@@ -58,6 +61,8 @@ function anchorAdverse(direction: "buy" | "sell", entry: number, anchor: number)
 /**
  * Same shift on every level. A constant basis cannot invent distance.
  * Returns null when the basis itself is not a finite number.
+ * The publisher does not use this to skip a conversion: a missing or
+ * non-finite XAU basis refuses the entry instead.
  */
 export function shiftLevels<T extends { entry: number; stop: number; target: number; anchor?: number | null }>(
   levels: T,
@@ -129,6 +134,44 @@ export function stopFromStructuralAnchor(args: {
     return { ok: false, reason: "stop-wrong-side" };
   }
   return { ok: true, stop };
+}
+
+/**
+ * Symbols feed.ts can stamp on a pack for this asset (Bitget, Binance, Kraken,
+ * OKX, MEXC, Twelve, or the asset's own feedSymbol). Yahoo futures such as
+ * GC=F, NQ=F and CL=F are not in this set. One tick uses one of these ids;
+ * a blank or foreign id is not the same price base.
+ */
+export function canonicalFeedSymbols(assetId: AssetId): readonly string[] {
+  const asset = getAsset(assetId);
+  const raw = [
+    asset.feedSymbol,
+    asset.bitgetSymbol,
+    asset.binanceSymbol,
+    asset.krakenPair,
+    asset.okxInstId,
+    asset.mexcContract,
+    asset.twelveSymbol,
+  ];
+  return [...new Set(raw.filter((s): s is string => typeof s === "string" && s.trim() !== "").map((s) => s.trim()))];
+}
+
+/** Missing or foreign quote id. Does not invent a symbol. */
+export function instrumentVerdict(assetId: AssetId, quote: string | null | undefined): LevelVerdict {
+  const token = quote?.trim() ?? "";
+  if (!token) return { ok: false, reason: "instrument" };
+  if (!canonicalFeedSymbols(assetId).includes(token)) return { ok: false, reason: "instrument" };
+  return OK;
+}
+
+/**
+ * XAU levels are proxy candles shifted by a contemporaneous basis.
+ * Null, NaN and Infinity do not prove that entry, stop and target share a base.
+ * Other assets do not use this conversion.
+ */
+export function xauBasisVerdict(basis: number | null | undefined): LevelVerdict {
+  if (basis == null || !finite(basis)) return { ok: false, reason: "basis" };
+  return OK;
 }
 
 export function entryPrice(setup: SetupProposal): number {

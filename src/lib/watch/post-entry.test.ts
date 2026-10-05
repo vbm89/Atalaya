@@ -305,6 +305,7 @@ describe("post-entry tick persistence", () => {
           },
         ],
         m15ByAsset: { BTCUSD: [covering, ...bars] },
+        instrumentByAsset: { BTCUSD: "BTCUSDT" },
         errors: [],
       };
     }
@@ -400,6 +401,7 @@ describe("watch outcome clock", () => {
           },
         ],
         m15ByAsset: { BTCUSD: [mapCover, mapSl, entryCover, entryTp1] },
+        instrumentByAsset: { BTCUSD: "BTCUSDT" },
         errors: [],
       }),
     });

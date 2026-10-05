@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AssetId, SetupProposal } from "../trading/types.ts";
+import { getAsset } from "../trading/assets.ts";
+import type { EpisodeFreeze } from "./freeze.ts";
 import { buildMomentumContinuation } from "./continuation.ts";
 import { foldEpisode } from "./episode.ts";
 import { slotOpenSec, slotSecFromNow } from "./identity.ts";
@@ -193,6 +195,22 @@ function loadEntries(nowMs: number, ids: readonly AssetId[], fresh: boolean): Wa
   const staleBar = { ...freshBar, time: slotOpenSec(slot) - 900 };
   const m15ByAsset: WatchLoad["m15ByAsset"] = { BTCUSD: [freshBar] };
   for (const id of ids) m15ByAsset[id] = [fresh || id === "BTCUSD" ? freshBar : staleBar];
+  const xauFreeze = {
+    slotClosePrice: null,
+    quality: null,
+    riskReward: null,
+    dataSource: null,
+    feedSymbol: "XAUUSDT",
+    instrumentKind: "proxy",
+    basis: 1.25,
+    dataStatus: "ok",
+    waitReason: null,
+    highImpact: false,
+    underlyingClosed: false,
+    timeframe: "15m",
+    setupKind: null,
+    capturedAtMs: nowMs,
+  } satisfies EpisodeFreeze;
   return {
     assets: ids.map((id) => ({
       id,
@@ -200,8 +218,10 @@ function loadEntries(nowMs: number, ids: readonly AssetId[], fresh: boolean): Wa
       setup: { ...setup },
       waitReason: null,
       digits: 2,
+      freeze: id === "XAUUSD" ? xauFreeze : undefined,
     })),
     m15ByAsset,
+    instrumentByAsset: Object.fromEntries(ids.map((id) => [id, getAsset(id).feedSymbol])),
     errors: [],
   };
 }

@@ -6,8 +6,8 @@ import { computePostEntryMetrics, mergePostEntry, parsePostEntry, watchOutcomeOp
 import { diagnoseBornFreeze, logCaptureIssues } from "./capture-issues";
 import { FEED_GRACE_MS } from "./schedule";
 import { entrySessionOpen } from "./market-session";
-import { adaptWatchTarget, buildMomentumContinuation } from "./continuation";
-import { assessSetupLevels, levelRejectWaitReason, type LevelRejectReason } from "./level-integrity";
+import { adaptWatchTarget, buildMomentumContinuation, type ContinuationIntegrityReject } from "./continuation";
+import { assessSetupLevels, instrumentVerdict, levelRejectWaitReason, xauBasisVerdict, type LevelRejectReason } from "./level-integrity";
 import type { WatchStore } from "./store";
 
 export const FEED_RETRY_MS = 20_000;
@@ -59,6 +59,48 @@ export interface EntryLevelRejection {
   stop: number | null;
   target: number | null;
   instrument: string | null;
+  anchor: number | null;
+  /** continuation = refused before it became an entry. entry = a published entry the gate blocked. */
+  source: "continuation" | "entry";
+}
+
+function quoteInstrument(asset: FoldInput, loaded: WatchLoad): string | null {
+  const fromPack = loaded.instrumentByAsset?.[asset.id];
+  if (typeof fromPack === "string" && fromPack.trim()) return fromPack.trim();
+  const fromFreeze = asset.freeze?.feedSymbol;
+  if (typeof fromFreeze === "string" && fromFreeze.trim()) return fromFreeze.trim();
+  return null;
+}
+
+const REJECT_REASONS = new Set<LevelRejectReason>([
+  "non-finite",
+  "risk-not-positive",
+  "risk-out-of-bounds",
+  "stop-wrong-side",
+  "target-wrong-side",
+  "anchor-wrong-side",
+  "rounded-order",
+  "instrument",
+  "basis",
+]);
+
+/** Reads this tick's rejection list from the watch_evals.assets jsonb blob. */
+export function rejectionsFromEval(payload: unknown): EntryLevelRejection[] {
+  if (!payload || typeof payload !== "object") return [];
+  const raw = (payload as { rejections?: unknown }).rejections;
+  if (!Array.isArray(raw)) return [];
+  const out: EntryLevelRejection[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== "object") continue;
+    const reason = (row as { reason?: unknown }).reason;
+    if (typeof reason !== "string" || !REJECT_REASONS.has(reason as LevelRejectReason)) continue;
+    const source = (row as { source?: unknown }).source;
+    if (source !== "continuation" && source !== "entry") continue;
+    const assetId = (row as { assetId?: unknown }).assetId;
+    if (assetId !== "XAUUSD" && assetId !== "BTCUSD" && assetId !== "US100" && assetId !== "WTI") continue;
+    out.push(row as EntryLevelRejection);
+  }
+  return out;
 }
 
 function emptyTick(
@@ -202,7 +244,9 @@ export async function runWatchTick(args: {
       // Research overlay: adds a momentum-continuation entry without changing V1.
       // The function itself also refuses a closed session or a stale bar.
       let effectiveAsset = asset;
+      const quote = quoteInstrument(asset, loaded);
       if (asset.setupState !== "entry" && admits) {
+        let integrity: ContinuationIntegrityReject | null = null;
         const continuation = buildMomentumContinuation({
           id: asset.id,
           m15: bars ?? [],
@@ -211,8 +255,31 @@ export async function runWatchTick(args: {
           nowMs: args.nowMs,
           basis: asset.freeze?.basis ?? null,
           digits: asset.digits,
+          instrument: quote,
+          onIntegrityReject: (info) => {
+            integrity = info;
+          },
         });
-        if (continuation) {
+        if (integrity) {
+          const info: ContinuationIntegrityReject = integrity;
+          const already = rejections.some((r) => r.assetId === asset.id && r.reason === info.reason && r.source === "continuation");
+          if (!already) {
+            rejections.push({
+              assetId: asset.id,
+              slot,
+              atMs: args.nowMs,
+              reason: info.reason,
+              direction: info.direction,
+              entry: info.entry,
+              stop: info.stop,
+              target: info.target,
+              instrument: quote,
+              anchor: info.anchor,
+              source: "continuation",
+            });
+          }
+        }
+        if (continuation && !integrity) {
           const tuned = adaptWatchTarget({
             setup: continuation,
             m15: bars ?? [],
@@ -287,24 +354,40 @@ export async function runWatchTick(args: {
       }
 
       if (effectiveAsset.setupState === "entry" && effectiveAsset.setup) {
-        const verdict = assessSetupLevels(effectiveAsset.setup, effectiveAsset.digits);
-        if (!verdict.ok && verdict.reason) {
-          const setup = effectiveAsset.setup;
-          const rejection: EntryLevelRejection = {
-            assetId: asset.id,
-            slot,
-            atMs: args.nowMs,
-            reason: verdict.reason,
-            direction: setup.direction,
-            entry: setup.direction === "sell" ? setup.zone.low : setup.zone.high,
-            stop: setup.stopLoss,
-            target: setup.takeProfit1,
-            instrument: loaded.instrumentByAsset?.[asset.id] ?? null,
-          };
-          rejections.push(rejection);
-          console.info("[watch] entry rejected", rejection);
+        const setup = effectiveAsset.setup;
+        let reason: LevelRejectReason | null = null;
+        if (asset.id === "XAUUSD") {
+          const basisVerdict = xauBasisVerdict(asset.freeze?.basis ?? null);
+          if (!basisVerdict.ok) reason = basisVerdict.reason;
+        }
+        if (!reason) {
+          const inst = instrumentVerdict(asset.id, quote);
+          if (!inst.ok) reason = inst.reason;
+        }
+        if (!reason) {
+          const verdict = assessSetupLevels(setup, effectiveAsset.digits);
+          if (!verdict.ok) reason = verdict.reason;
+        }
+        if (reason) {
+          const already = rejections.some((r) => r.assetId === asset.id && r.reason === reason && r.source === "entry");
+          if (!already) {
+            rejections.push({
+              assetId: asset.id,
+              slot,
+              atMs: args.nowMs,
+              reason,
+              direction: setup.direction,
+              entry: setup.direction === "sell" ? setup.zone.low : setup.zone.high,
+              stop: setup.stopLoss,
+              target: setup.takeProfit1,
+              instrument: quote,
+              anchor: null,
+              source: "entry",
+            });
+          }
+          console.info("[watch] entry rejected", { id: asset.id, slot, reason });
           const prev = await args.store.getOpenEpisode(asset.id);
-          const waitReason = levelRejectWaitReason(verdict.reason);
+          const waitReason = levelRejectWaitReason(reason);
           await args.store.upsertSnapshot({
             assetId: asset.id,
             state: "wait",
