@@ -4,6 +4,7 @@ import { detectBosChoch, swingHighs, swingLows } from "../trading/structure";
 import type { AssetId, Candle, SetupProposal } from "../trading/types";
 import { slotOpenSec, slotSecFromNow } from "./identity";
 import { entrySessionOpen } from "./market-session";
+import { assessSetupLevels, stopFromStructuralAnchor } from "./level-integrity";
 
 const MIN_RR = 1.5;
 const PAD_ATR = 0.15;
@@ -75,23 +76,36 @@ export function buildMomentumContinuation(args: {
     ? Math.max(...prior.slice(-5).map((c) => c.high))
     : Math.min(...prior.slice(-5).map((c) => c.low));
   const anchor = structural ?? fallback;
-  const stop = direction === "sell" ? anchor + atr * PAD_ATR : anchor - atr * PAD_ATR;
-  const risk = Math.abs(last.close - stop);
+  const entry = last.close;
+  // The swing has to sit on the adverse side before the pad. The pad must not
+  // pull a wrong-side swing across the entry.
+  const anchored = stopFromStructuralAnchor({
+    direction,
+    entry,
+    anchor,
+    pad: atr * PAD_ATR,
+  });
+  if (!anchored.ok) {
+    console.info("[watch] continuation rejected", { id: args.id, reason: anchored.reason });
+    return null;
+  }
+  const stop = anchored.stop;
+  const risk = direction === "sell" ? stop - entry : entry - stop;
   if (!(risk > 0) || risk > atr * 3.5) return null;
 
-  const targets = nearestTarget(direction, last.close, risk, h1, h4);
+  const targets = nearestTarget(direction, entry, risk, h1, h4);
   if (!targets) return null;
 
   const setup: SetupProposal = {
     state: "entry",
     kind: "continuation",
     direction,
-    zone: { low: last.close, high: last.close },
+    zone: { low: entry, high: entry },
     invalidation: stop,
     stopLoss: stop,
     takeProfit1: targets.tp1,
     takeProfit2: targets.tp2,
-    riskReward: Math.abs(targets.tp1 - last.close) / risk,
+    riskReward: Math.abs(targets.tp1 - entry) / risk,
     quality: "media",
     qualityPhase: "final",
     supersedeLevel: direction === "sell" ? priorLow : priorHigh,
@@ -99,11 +113,17 @@ export function buildMomentumContinuation(args: {
     slWide: risk > atr * 2,
     warnings: ["MOMENTUM CONTINUATION — capa Watch independiente de V1"],
     managementNote: "SL obligatorio. Señal de continuación; análisis, no orden.",
-    entryLabel: last.close.toFixed(args.digits),
+    entryLabel: entry.toFixed(args.digits),
   };
-  return args.id === "XAUUSD" && args.basis != null
+  const published = args.id === "XAUUSD" && args.basis != null
     ? applyBasisToSetup(setup, args.basis, args.digits)
     : setup;
+  const verdict = assessSetupLevels(published, args.digits);
+  if (!verdict.ok) {
+    console.info("[watch] continuation rejected", { id: args.id, reason: verdict.reason });
+    return null;
+  }
+  return published;
 }
 
 

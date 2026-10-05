@@ -7,6 +7,7 @@ import { diagnoseBornFreeze, logCaptureIssues } from "./capture-issues";
 import { FEED_GRACE_MS } from "./schedule";
 import { entrySessionOpen } from "./market-session";
 import { adaptWatchTarget, buildMomentumContinuation } from "./continuation";
+import { assessSetupLevels, levelRejectWaitReason, type LevelRejectReason } from "./level-integrity";
 import type { WatchStore } from "./store";
 
 export const FEED_RETRY_MS = 20_000;
@@ -44,6 +45,20 @@ export interface TickResult {
   }>;
   retryCount: number;
   pushed: number;
+  /** Append-only for this tick. Not written into signal events or past episodes. */
+  rejections: EntryLevelRejection[];
+}
+
+export interface EntryLevelRejection {
+  assetId: AssetId;
+  slot: number;
+  atMs: number;
+  reason: LevelRejectReason;
+  direction: "buy" | "sell" | null;
+  entry: number | null;
+  stop: number | null;
+  target: number | null;
+  instrument: string | null;
 }
 
 function emptyTick(
@@ -61,6 +76,7 @@ function emptyTick(
     assets: extra.assets ?? [],
     retryCount: extra.retryCount ?? 0,
     pushed: extra.pushed ?? 0,
+    rejections: extra.rejections ?? [],
   };
 }
 
@@ -177,6 +193,7 @@ export async function runWatchTick(args: {
 
     const assets: TickResult["assets"] = [];
     const notifyQueue: SignalEventDraft[] = [];
+    const rejections: EntryLevelRejection[] = [];
     const born: EpisodeDraft[] = [];
     const touched: EpisodeDraft[] = [];
     for (const asset of loaded.assets) {
@@ -269,6 +286,49 @@ export async function runWatchTick(args: {
         };
       }
 
+      if (effectiveAsset.setupState === "entry" && effectiveAsset.setup) {
+        const verdict = assessSetupLevels(effectiveAsset.setup, effectiveAsset.digits);
+        if (!verdict.ok && verdict.reason) {
+          const setup = effectiveAsset.setup;
+          const rejection: EntryLevelRejection = {
+            assetId: asset.id,
+            slot,
+            atMs: args.nowMs,
+            reason: verdict.reason,
+            direction: setup.direction,
+            entry: setup.direction === "sell" ? setup.zone.low : setup.zone.high,
+            stop: setup.stopLoss,
+            target: setup.takeProfit1,
+            instrument: loaded.instrumentByAsset?.[asset.id] ?? null,
+          };
+          rejections.push(rejection);
+          console.info("[watch] entry rejected", rejection);
+          const prev = await args.store.getOpenEpisode(asset.id);
+          const waitReason = levelRejectWaitReason(verdict.reason);
+          await args.store.upsertSnapshot({
+            assetId: asset.id,
+            state: "wait",
+            setup: null,
+            waitReason,
+            evaluatedAtMs: args.nowMs,
+            slot,
+            episodeId: prev?.episodeId ?? null,
+          });
+          assets.push({
+            id: asset.id,
+            state: "wait",
+            episodeId: prev?.episodeId ?? null,
+            events: 0,
+            waitReason,
+            missingForEntry: null,
+            direction: null,
+            quality: null,
+            riskReward: null,
+          });
+          continue;
+        }
+      }
+
       const prev = await args.store.getOpenEpisode(effectiveAsset.id);
       const folded = foldEpisode(prev, effectiveAsset, slot, args.nowMs);
       if (folded.closePrevious) await args.store.upsertEpisode(folded.closePrevious);
@@ -345,6 +405,7 @@ export async function runWatchTick(args: {
       assets,
       errors: loaded.errors,
       pushed,
+      rejections,
     });
     await safeRemember(args.remember, {
       slot,
@@ -381,6 +442,7 @@ export async function runWatchTick(args: {
       assets,
       retryCount: claim.retryCount,
       pushed,
+      rejections,
     };
   } catch (e) {
     const durationMs = Date.now() - started;
