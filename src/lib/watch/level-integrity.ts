@@ -156,12 +156,59 @@ export function canonicalFeedSymbols(assetId: AssetId): readonly string[] {
   return [...new Set(raw.filter((s): s is string => typeof s === "string" && s.trim() !== "").map((s) => s.trim()))];
 }
 
-/** Missing or foreign quote id. Does not invent a symbol. */
+/** Missing or foreign quote id. An allowlist hit is not provenance. */
 export function instrumentVerdict(assetId: AssetId, quote: string | null | undefined): LevelVerdict {
   const token = quote?.trim() ?? "";
   if (!token) return { ok: false, reason: "instrument" };
   if (!canonicalFeedSymbols(assetId).includes(token)) return { ok: false, reason: "instrument" };
   return OK;
+}
+
+/**
+ * Feed labels are "Vendor SYMBOL" or "Twelve Data SYMBOL".
+ * The symbol has to be the token the provider stamped, not a substring.
+ */
+export function sourceCarriesSymbol(source: string | null | undefined, symbol: string | null | undefined): boolean {
+  const src = source?.trim() ?? "";
+  const sym = symbol?.trim() ?? "";
+  if (!src || !sym || !src.endsWith(sym)) return false;
+  return src.length === sym.length || src[src.length - sym.length - 1] === " ";
+}
+
+/**
+ * Symbol, source and candles from one pack. Missing metadata is not guessed
+ * from a freeze or from the allowlist. Kraken XBTUSD passes when the source
+ * names XBTUSD; BTCUSDT with a Kraken source does not.
+ */
+export function packProvenanceVerdict(args: {
+  assetId: AssetId;
+  instrument: string | null | undefined;
+  source: string | null | undefined;
+  candleCount: number;
+}): LevelVerdict {
+  const symbol = args.instrument?.trim() ?? "";
+  if (!symbol || !(args.candleCount > 0) || !sourceCarriesSymbol(args.source, symbol)) {
+    return { ok: false, reason: "instrument" };
+  }
+  if (!canonicalFeedSymbols(args.assetId).includes(symbol)) return { ok: false, reason: "instrument" };
+  return OK;
+}
+
+export type LevelPriceBase = "candle" | "spot";
+
+/** A finite XAU basis means the existing shift already moved the proxy candles to spot. */
+export function levelPriceBase(assetId: AssetId, basis: number | null | undefined): LevelPriceBase {
+  if (assetId === "XAUUSD" && basis != null && Number.isFinite(basis)) return "spot";
+  return "candle";
+}
+
+/**
+ * True only when the feed id is the unit of entry, stop and target.
+ * Spot levels after a finite XAU basis are not priced in the proxy candle id.
+ * Other assets are not shifted, so a verified pack is one base.
+ */
+export function feedPricesLevels(assetId: AssetId, basis: number | null | undefined): boolean {
+  return levelPriceBase(assetId, basis) === "candle";
 }
 
 /**

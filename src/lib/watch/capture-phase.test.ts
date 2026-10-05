@@ -182,6 +182,8 @@ describe("capture phase", () => {
           },
         ],
         m15ByAsset: { BTCUSD: [covering] },
+        instrumentByAsset: { BTCUSD: "BTCUSDT" },
+        sourceByAsset: { BTCUSD: "Binance BTCUSDT" },
         errors: [],
       };
     }

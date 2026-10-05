@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { PGlite } from "@electric-sql/pglite";
 import type { Candle, SetupProposal } from "../trading/types.ts";
 import type { EpisodeDraft } from "./episode.ts";
 import type { EpisodeFreeze } from "./freeze.ts";
@@ -9,13 +11,17 @@ import {
   assessExecutableLevels,
   assessSetupLevels,
   canonicalFeedSymbols,
+  feedPricesLevels,
   instrumentVerdict,
+  packProvenanceVerdict,
   shiftLevels,
+  sourceCarriesSymbol,
   stopFromStructuralAnchor,
   xauBasisVerdict,
 } from "./level-integrity.ts";
 import { slotOpenSec, slotSecFromNow } from "./identity.ts";
 import { createMemoryStore } from "./store-memory.ts";
+import { createPgStore, mergeEvalAssets, type WatchStore } from "./store.ts";
 import { runWatchTick, rejectionsFromEval, type WatchLoad } from "./tick.ts";
 
 const buy = {
@@ -212,6 +218,7 @@ describe("continuación con ancla inválida", () => {
       basis: null,
       digits: 2,
       instrument: "BTCUSDT",
+      source: "Binance BTCUSDT",
       onIntegrityReject: (info) => reasons.push(info.reason),
     });
     assert.equal(setup, null);
@@ -223,13 +230,16 @@ function load(
   asset: WatchLoad["assets"][number],
   bars: Candle[],
   instrument: string | null = "BTCUSDT",
+  source?: string | null,
 ): WatchLoad {
+  const resolvedSource = source === undefined ? (instrument ? `Binance ${instrument}` : null) : source;
   return {
     assets: [asset],
     m15ByAsset: { BTCUSD: bars, [asset.id]: bars },
     h1ByAsset: { [asset.id]: [] },
     h4ByAsset: { [asset.id]: [] },
     instrumentByAsset: { [asset.id]: instrument },
+    sourceByAsset: { [asset.id]: resolvedSource },
     errors: [],
   };
 }
@@ -359,6 +369,7 @@ describe("tick no publica una entrada inválida", () => {
         h1ByAsset: { BTCUSD: h1 },
         h4ByAsset: { BTCUSD: h4 },
         instrumentByAsset: { BTCUSD: "BTCUSDT" },
+        sourceByAsset: { BTCUSD: "Binance BTCUSDT" },
         errors: [],
       }),
       notify: async (events) => {
@@ -555,6 +566,11 @@ describe("registro durable y base de precios", () => {
     assert.equal(episode?.sl, 112);
     assert.equal(episode?.tp1, 80);
     assert.equal(episode?.zoneLow, 100);
+    assert.equal(feedPricesLevels("XAUUSD", 1.25), false);
+    assert.equal(episode?.freeze?.levelBase, "spot");
+    assert.equal(episode?.freeze?.candleSymbol, "XAUUSDT");
+    assert.equal(episode?.freeze?.sameBase, false);
+    assert.equal(episode?.freeze?.feedSymbol, "XAUUSDT");
     assert.deepEqual(notified, ["entry"]);
   });
 
@@ -627,6 +643,7 @@ describe("registro durable y base de precios", () => {
         h1ByAsset: { BTCUSD: bearishContext(3600) },
         h4ByAsset: { BTCUSD: bearishContext(14_400) },
         instrumentByAsset: { BTCUSD: "BTCUSDT" },
+        sourceByAsset: { BTCUSD: "Binance BTCUSDT" },
         errors: [],
       }),
       notify: async (events) => {
@@ -696,6 +713,294 @@ describe("registro durable y base de precios", () => {
     assert.equal(after?.zoneHigh, 110);
     assert.deepEqual(notified, []);
     assert.equal((await store.listInbox(20)).some((row) => row.toState === "entry"), false);
+  });
+
+  it("una continuación rechazada no cierra un episodio abierto aunque V1 esté en WAIT", async () => {
+    const store = createMemoryStore();
+    const open: EpisodeDraft = {
+      episodeId: "BTCUSD-1-hold",
+      assetId: "BTCUSD",
+      direction: "sell",
+      kind: "break-retest",
+      zoneLow: 100,
+      zoneHigh: 110,
+      sl: 112,
+      tp1: 80,
+      tp2: null,
+      openedAtMs: NOW - 900_000,
+      openedState: "map",
+      currentState: "map",
+      closedAtMs: null,
+      levelsKey: "keep",
+      openedSlot: slot - 900,
+      freeze: null,
+    };
+    await store.upsertEpisode(open);
+    const before = { ...(await store.getEpisode("BTCUSD-1-hold"))! };
+    const notified: string[] = [];
+    const result = await runWatchTick({
+      nowMs: NOW,
+      store,
+      load: async () => ({
+        assets: [{ id: "BTCUSD", setupState: "wait", setup: null, waitReason: "ESPERAR", digits: 2 }],
+        m15ByAsset: { BTCUSD: m15WrongSideAnchor() },
+        h1ByAsset: { BTCUSD: bearishContext(3600) },
+        h4ByAsset: { BTCUSD: bearishContext(14_400) },
+        instrumentByAsset: { BTCUSD: "BTCUSDT" },
+        sourceByAsset: { BTCUSD: "Binance BTCUSDT" },
+        errors: [],
+      }),
+      notify: async (events) => {
+        for (const ev of events) notified.push(ev.toState);
+        return events.length;
+      },
+    });
+    const after = await store.getEpisode("BTCUSD-1-hold");
+    assert.deepEqual(result.rejections.map((r) => r.reason), ["anchor-wrong-side"]);
+    assert.equal(result.rejections[0]?.source, "continuation");
+    assert.equal(result.assets[0]?.state, "map");
+    assert.equal(result.assets[0]?.events, 0);
+    assert.equal(after?.closedAtMs, null);
+    assert.equal(after?.currentState, before.currentState);
+    assert.equal(after?.sl, before.sl);
+    assert.equal(after?.tp1, before.tp1);
+    assert.equal(after?.zoneLow, before.zoneLow);
+    assert.equal(after?.zoneHigh, before.zoneHigh);
+    assert.deepEqual(notified, []);
+    assert.equal((await store.listInbox(20)).length, 0);
+    assert.equal(rejectionsFromEval((await store.getEval(slot))?.assets)[0]?.reason, "anchor-wrong-side");
+  });
+
+  it("un WAIT sin rechazo de continuación sí cierra el episodio abierto", async () => {
+    const store = createMemoryStore();
+    await store.upsertEpisode({
+      episodeId: "BTCUSD-1-close",
+      assetId: "BTCUSD",
+      direction: "sell",
+      kind: "break-retest",
+      zoneLow: 100,
+      zoneHigh: 110,
+      sl: 112,
+      tp1: 80,
+      tp2: null,
+      openedAtMs: NOW - 900_000,
+      openedState: "map",
+      currentState: "map",
+      closedAtMs: null,
+      levelsKey: "keep",
+      openedSlot: slot - 900,
+      freeze: null,
+    });
+    const result = await runWatchTick({
+      nowMs: NOW,
+      store,
+      load: async () => load({
+        id: "BTCUSD",
+        setupState: "wait",
+        setup: null,
+        waitReason: "ESPERAR",
+        digits: 2,
+      }, [barAtSlot()]),
+    });
+    assert.equal(result.rejections.length, 0);
+    assert.equal(await store.getOpenEpisode("BTCUSD"), null);
+    const closed = await store.getEpisode("BTCUSD-1-close");
+    assert.equal(closed?.currentState, "wait");
+    assert.equal(closed?.closedAtMs, NOW);
+    assert.equal((await store.listInbox(20)).some((row) => row.toState === "entry"), false);
+  });
+
+  it("un símbolo y una fuente de packs distintos no publican la entrada", async () => {
+    const store = createMemoryStore();
+    const result = await runWatchTick({
+      nowMs: NOW,
+      store,
+      load: async () => load({
+        id: "BTCUSD",
+        setupState: "entry",
+        digits: 2,
+        waitReason: null,
+        setup: proposal({
+          direction: "sell",
+          zone: { low: 100, high: 110 },
+          stopLoss: 112,
+          takeProfit1: 80,
+        }),
+      }, [barAtSlot()], "BTCUSDT", "Kraken XBTUSD"),
+    });
+    assert.equal(sourceCarriesSymbol("Kraken XBTUSD", "BTCUSDT"), false);
+    assert.equal(packProvenanceVerdict({
+      assetId: "BTCUSD",
+      instrument: "BTCUSDT",
+      source: "Kraken XBTUSD",
+      candleCount: 1,
+    }).reason, "instrument");
+    assert.deepEqual(result.rejections.map((r) => r.reason), ["instrument"]);
+    assert.equal(await store.getOpenEpisode("BTCUSD"), null);
+    assert.equal(result.rejectionsStored, true);
+  });
+
+  it("sin fuente la entrada no se publica aunque el símbolo esté permitido", async () => {
+    const store = createMemoryStore();
+    const result = await runWatchTick({
+      nowMs: NOW,
+      store,
+      load: async () => load({
+        id: "BTCUSD",
+        setupState: "entry",
+        digits: 2,
+        waitReason: null,
+        setup: proposal({
+          direction: "sell",
+          zone: { low: 100, high: 110 },
+          stopLoss: 112,
+          takeProfit1: 80,
+        }),
+      }, [barAtSlot()], "BTCUSDT", null),
+    });
+    assert.equal(packProvenanceVerdict({
+      assetId: "BTCUSD",
+      instrument: "BTCUSDT",
+      source: null,
+      candleCount: 1,
+    }).reason, "instrument");
+    assert.deepEqual(result.rejections.map((r) => r.reason), ["instrument"]);
+    assert.equal(await store.getOpenEpisode("BTCUSD"), null);
+  });
+
+  it("Kraken XBTUSD se publica cuando la fuente nombra ese símbolo", async () => {
+    const store = createMemoryStore();
+    const result = await runWatchTick({
+      nowMs: NOW,
+      store,
+      load: async () => load({
+        id: "BTCUSD",
+        setupState: "entry",
+        digits: 2,
+        waitReason: null,
+        setup: proposal({
+          direction: "sell",
+          zone: { low: 100, high: 110 },
+          stopLoss: 112,
+          takeProfit1: 80,
+        }),
+      }, [barAtSlot()], "XBTUSD", "Kraken XBTUSD"),
+    });
+    assert.equal(feedPricesLevels("BTCUSD", null), true);
+    assert.equal(result.rejections.length, 0);
+    assert.equal((await store.getOpenEpisode("BTCUSD"))?.currentState, "entry");
+  });
+
+  it("un reintento no borra un rechazo ya guardado en el slot", async () => {
+    const store = createMemoryStore();
+    await store.claimEval(slot, NOW);
+    const prior = {
+      assetId: "BTCUSD" as const,
+      slot,
+      atMs: NOW,
+      reason: "anchor-wrong-side" as const,
+      direction: "sell" as const,
+      entry: 100,
+      stop: 110,
+      target: 80,
+      instrument: "BTCUSDT",
+      anchor: 111,
+      source: "continuation" as const,
+    };
+    assert.equal(await store.completeEval(slot, NOW, "failed", "boom", 1, { rejections: [prior] }), true);
+    const result = await runWatchTick({
+      nowMs: NOW,
+      store,
+      load: async () => load({
+        id: "BTCUSD",
+        setupState: "wait",
+        setup: null,
+        waitReason: "ESPERAR",
+        digits: 2,
+      }, [barAtSlot()]),
+    });
+    assert.equal(result.status, "ok");
+    assert.equal(result.rejectionsStored, true);
+    assert.equal(result.rejections.length, 0);
+    const stored = rejectionsFromEval((await store.getEval(slot))?.assets);
+    assert.deepEqual(stored.map((r) => r.reason), ["anchor-wrong-side"]);
+    assert.deepEqual(mergeEvalAssets({ rejections: [prior] }, { errors: ["later"] }).rejections, [prior]);
+  });
+
+  it("una escritura no confirmada no se presenta como registro durable", async () => {
+    const inner = createMemoryStore();
+    await inner.claimEval(slot, NOW);
+    const prior = {
+      assetId: "BTCUSD" as const,
+      slot,
+      atMs: NOW,
+      reason: "basis" as const,
+      direction: null,
+      entry: null,
+      stop: null,
+      target: null,
+      instrument: "XAUUSDT",
+      anchor: null,
+      source: "entry" as const,
+    };
+    await inner.completeEval(slot, NOW, "failed", "old", 1, { rejections: [prior] });
+    const store: WatchStore = {
+      ...inner,
+      completeEval: async () => false,
+    };
+    const result = await runWatchTick({
+      nowMs: NOW,
+      store,
+      load: async () => load({
+        id: "BTCUSD",
+        setupState: "entry",
+        digits: 2,
+        waitReason: null,
+        setup: proposal({
+          direction: "sell",
+          zone: { low: 100, high: 100 },
+          stopLoss: 90,
+          takeProfit1: 120,
+        }),
+      }, [barAtSlot()], "BTCUSDT"),
+    });
+    assert.equal(result.rejectionsStored, false);
+    assert.deepEqual(result.rejections.map((r) => r.reason), ["stop-wrong-side"]);
+    assert.equal(rejectionsFromEval((await inner.getEval(slot))?.assets)[0]?.reason, "basis");
+  });
+
+  it("Postgres confirma la fila y conserva el rechazo previo del slot", async () => {
+    const pg = new PGlite();
+    await pg.waitReady;
+    const sqlText = readFileSync(new URL("../../../migrations/0002_watch.sql", import.meta.url), "utf8");
+    await pg.exec(sqlText);
+    const sql = {
+      query: async <T>(text: string, params: unknown[] = []) => {
+        const r = await pg.query<T>(text, params);
+        return r.rows as T[];
+      },
+    };
+    const store = createPgStore(sql);
+    await store.claimEval(slot, NOW);
+    const prior = {
+      assetId: "BTCUSD",
+      slot,
+      atMs: NOW,
+      reason: "anchor-wrong-side",
+      direction: "sell",
+      entry: 100,
+      stop: 110,
+      target: 80,
+      instrument: "BTCUSDT",
+      anchor: 111,
+      source: "continuation",
+    };
+    assert.equal(await store.completeEval(slot, NOW, "failed", "boom", 1, { rejections: [prior] }), true);
+    assert.equal(await store.completeEval(slot, NOW, "ok", null, 2, { errors: ["retry"] }), true);
+    assert.equal(await store.completeEval(999, NOW, "ok", null, 1, { rejections: [prior] }), false);
+    const row = rejectionsFromEval((await store.getEval(slot))?.assets);
+    assert.deepEqual(row.map((r) => r.reason), ["anchor-wrong-side"]);
+    await pg.close();
   });
 });
 

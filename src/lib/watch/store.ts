@@ -55,6 +55,12 @@ export interface NotifyDebugRow {
 
 export interface WatchStore {
   claimEval(slot: number, nowMs: number): Promise<Claim>;
+  /**
+   * Writes this slot's eval blob. Rejections already stored for the slot are kept.
+   * Returns false when the write cannot be confirmed.
+   * Memory: true only means this process holds the row. A restart drops it.
+   * Postgres: true means UPDATE ... RETURNING saw the row.
+   */
   completeEval(
     slot: number,
     nowMs: number,
@@ -62,7 +68,7 @@ export interface WatchStore {
     error: string | null,
     durationMs: number,
     assets: unknown,
-  ): Promise<void>;
+  ): Promise<boolean>;
   getEval(slot: number): Promise<EvalRow | null>;
   lastCompletedEval(): Promise<EvalRow | null>;
   lastOkEval(): Promise<EvalRow | null>;
@@ -167,6 +173,44 @@ function iso(msValue: number): string {
   return new Date(msValue).toISOString();
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function rejectionRows(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return [];
+  const out: Record<string, unknown>[] = [];
+  for (const row of value) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+    const rec = row as Record<string, unknown>;
+    if (typeof rec.assetId !== "string" || typeof rec.reason !== "string" || typeof rec.source !== "string") continue;
+    out.push(rec);
+  }
+  return out;
+}
+
+/**
+ * Latest eval summary, plus every rejection already stored for this slot.
+ * A later write that omits a reason does not erase it. Same asset, source
+ * and reason are not duplicated. An empty payload does not wipe the summary.
+ */
+export function mergeEvalAssets(prev: unknown, next: unknown): Record<string, unknown> {
+  const prevObj = asRecord(prev);
+  const nextObj = asRecord(next);
+  const nextFields = Object.keys(nextObj).filter((key) => key !== "rejections");
+  const base = nextFields.length > 0 ? { ...nextObj } : { ...prevObj };
+  const kept: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+  for (const row of [...rejectionRows(prevObj.rejections), ...rejectionRows(nextObj.rejections)]) {
+    const key = `${String(row.assetId)}|${String(row.source)}|${String(row.reason)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    kept.push(row);
+  }
+  return { ...base, rejections: kept };
+}
+
 function rowToEval(r: Record<string, unknown>): EvalRow {
   return {
     slot: num(r.slot),
@@ -267,16 +311,24 @@ export function createPgStore(sql: SqlQuery): WatchStore {
     },
 
     async completeEval(slot, nowMs, status, error, durationMs, assets) {
-      await sql.query(
+      const existing = await sql.query<Record<string, unknown>>(
+        `select assets from watch_evals where slot = $1`,
+        [slot],
+      );
+      const prevAssets = existing[0] ? parseJson(existing[0].assets, null) : null;
+      const merged = mergeEvalAssets(prevAssets, assets);
+      const rows = await sql.query<{ slot: number }>(
         `update watch_evals
          set status = $2,
              ran_at = $3::timestamptz,
              error = $4,
              duration_ms = $5,
              assets = $6::jsonb
-         where slot = $1`,
-        [slot, status, iso(nowMs), error, durationMs, JSON.stringify(assets)],
+         where slot = $1
+         returning slot`,
+        [slot, status, iso(nowMs), error, durationMs, JSON.stringify(merged)],
       );
+      return rows.length > 0;
     },
 
     async getEval(slot) {

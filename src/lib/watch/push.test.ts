@@ -80,6 +80,7 @@ function loadAll(
     ],
     m15ByAsset: { BTCUSD: m15 },
     instrumentByAsset: { BTCUSD: "BTCUSDT" },
+    sourceByAsset: { BTCUSD: "Binance BTCUSDT" },
     errors: [],
   };
 }

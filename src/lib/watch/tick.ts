@@ -7,7 +7,7 @@ import { diagnoseBornFreeze, logCaptureIssues } from "./capture-issues";
 import { FEED_GRACE_MS } from "./schedule";
 import { entrySessionOpen } from "./market-session";
 import { adaptWatchTarget, buildMomentumContinuation, type ContinuationIntegrityReject } from "./continuation";
-import { assessSetupLevels, instrumentVerdict, levelRejectWaitReason, xauBasisVerdict, type LevelRejectReason } from "./level-integrity";
+import { assessSetupLevels, feedPricesLevels, levelRejectWaitReason, packProvenanceVerdict, xauBasisVerdict, type LevelRejectReason } from "./level-integrity";
 import type { WatchStore } from "./store";
 
 export const FEED_RETRY_MS = 20_000;
@@ -45,6 +45,8 @@ export interface TickResult {
   }>;
   retryCount: number;
   pushed: number;
+  /** True only when completeEval confirmed the write. Memory does not survive a restart. */
+  rejectionsStored: boolean;
   /** Append-only for this tick. Not written into signal events or past episodes. */
   rejections: EntryLevelRejection[];
 }
@@ -67,8 +69,12 @@ export interface EntryLevelRejection {
 function quoteInstrument(asset: FoldInput, loaded: WatchLoad): string | null {
   const fromPack = loaded.instrumentByAsset?.[asset.id];
   if (typeof fromPack === "string" && fromPack.trim()) return fromPack.trim();
-  const fromFreeze = asset.freeze?.feedSymbol;
-  if (typeof fromFreeze === "string" && fromFreeze.trim()) return fromFreeze.trim();
+  return null;
+}
+
+function packSource(asset: FoldInput, loaded: WatchLoad): string | null {
+  const source = loaded.sourceByAsset?.[asset.id];
+  if (typeof source === "string" && source.trim()) return source.trim();
   return null;
 }
 
@@ -118,6 +124,7 @@ function emptyTick(
     assets: extra.assets ?? [],
     retryCount: extra.retryCount ?? 0,
     pushed: extra.pushed ?? 0,
+    rejectionsStored: extra.rejectionsStored ?? false,
     rejections: extra.rejections ?? [],
   };
 }
@@ -203,13 +210,14 @@ export async function runWatchTick(args: {
     });
   }
 
+  const rejections: EntryLevelRejection[] = [];
   try {
     const loaded = await args.load();
     const btcBars = loaded.m15ByAsset.BTCUSD;
     if (!m15CoversSlot(btcBars, slot)) {
       const durationMs = Date.now() - started;
       const error = "LAG — vela 15M de BTCUSD aún no publicada para este slot.";
-      await args.store.completeEval(slot, args.nowMs, "lag", error, durationMs, {
+      const rejectionsStored = await args.store.completeEval(slot, args.nowMs, "lag", error, durationMs, {
         errors: loaded.errors,
       });
       await safeRemember(args.remember, {
@@ -230,12 +238,12 @@ export async function runWatchTick(args: {
         durationMs,
         error,
         retryCount: claim.retryCount,
+        rejectionsStored,
       });
     }
 
     const assets: TickResult["assets"] = [];
     const notifyQueue: SignalEventDraft[] = [];
-    const rejections: EntryLevelRejection[] = [];
     const born: EpisodeDraft[] = [];
     const touched: EpisodeDraft[] = [];
     for (const asset of loaded.assets) {
@@ -245,6 +253,8 @@ export async function runWatchTick(args: {
       // The function itself also refuses a closed session or a stale bar.
       let effectiveAsset = asset;
       const quote = quoteInstrument(asset, loaded);
+      const source = packSource(asset, loaded);
+      let continuationRejected = false;
       if (asset.setupState !== "entry" && admits) {
         let integrity: ContinuationIntegrityReject | null = null;
         const continuation = buildMomentumContinuation({
@@ -256,11 +266,13 @@ export async function runWatchTick(args: {
           basis: asset.freeze?.basis ?? null,
           digits: asset.digits,
           instrument: quote,
+          source,
           onIntegrityReject: (info) => {
             integrity = info;
           },
         });
         if (integrity) {
+          continuationRejected = true;
           const info: ContinuationIntegrityReject = integrity;
           const already = rejections.some((r) => r.assetId === asset.id && r.reason === info.reason && r.source === "continuation");
           if (!already) {
@@ -305,6 +317,27 @@ export async function runWatchTick(args: {
                 }
               : null,
           };
+        }
+      }
+
+      // A rejected continuation is not a market transition to WAIT.
+      // Leave the open episode untouched. A WAIT with no integrity rejection
+      // still folds and may close it.
+      if (continuationRejected && asset.setupState === "wait") {
+        const prev = await args.store.getOpenEpisode(asset.id);
+        if (prev && prev.closedAtMs == null) {
+          assets.push({
+            id: asset.id,
+            state: prev.currentState,
+            episodeId: prev.episodeId,
+            events: 0,
+            waitReason: asset.waitReason ?? null,
+            missingForEntry: asset.freeze?.missingForEntry ?? null,
+            direction: prev.direction,
+            quality: null,
+            riskReward: null,
+          });
+          continue;
         }
       }
 
@@ -361,8 +394,13 @@ export async function runWatchTick(args: {
           if (!basisVerdict.ok) reason = basisVerdict.reason;
         }
         if (!reason) {
-          const inst = instrumentVerdict(asset.id, quote);
-          if (!inst.ok) reason = inst.reason;
+          const provenance = packProvenanceVerdict({
+            assetId: asset.id,
+            instrument: quote,
+            source,
+            candleCount: (bars ?? []).length,
+          });
+          if (!provenance.ok) reason = provenance.reason;
         }
         if (!reason) {
           const verdict = assessSetupLevels(setup, effectiveAsset.digits);
@@ -410,6 +448,22 @@ export async function runWatchTick(args: {
           });
           continue;
         }
+      }
+
+      if (
+        effectiveAsset.setupState === "entry" &&
+        effectiveAsset.freeze &&
+        !feedPricesLevels(effectiveAsset.id, effectiveAsset.freeze.basis)
+      ) {
+        effectiveAsset = {
+          ...effectiveAsset,
+          freeze: {
+            ...effectiveAsset.freeze,
+            levelBase: "spot",
+            candleSymbol: quote,
+            sameBase: false,
+          },
+        };
       }
 
       const prev = await args.store.getOpenEpisode(effectiveAsset.id);
@@ -484,7 +538,7 @@ export async function runWatchTick(args: {
     }
 
     const durationMs = Date.now() - started;
-    await args.store.completeEval(slot, args.nowMs, "ok", null, durationMs, {
+    const rejectionsStored = await args.store.completeEval(slot, args.nowMs, "ok", null, durationMs, {
       assets,
       errors: loaded.errors,
       pushed,
@@ -525,18 +579,32 @@ export async function runWatchTick(args: {
       assets,
       retryCount: claim.retryCount,
       pushed,
+      rejectionsStored,
       rejections,
     };
   } catch (e) {
     const durationMs = Date.now() - started;
     const error = e instanceof Error ? e.message : "error";
-    await args.store.completeEval(slot, args.nowMs, "failed", error, durationMs, {});
-    console.info("[watch] tick", { slot, status: "failed", durationMs, error });
+    let rejectionsStored = false;
+    try {
+      rejectionsStored = await args.store.completeEval(slot, args.nowMs, "failed", error, durationMs, {
+        rejections,
+      });
+    } catch (writeErr) {
+      rejectionsStored = false;
+      console.info("[watch] eval write failed", {
+        slot,
+        error: writeErr instanceof Error ? writeErr.message : "error",
+      });
+    }
+    console.info("[watch] tick", { slot, status: "failed", durationMs, error, rejectionsStored });
     return emptyTick("failed", slot, {
       durationMs,
       error,
       retryAfterMs: FEED_RETRY_MS,
       retryCount: claim.retryCount,
+      rejections,
+      rejectionsStored,
     });
   }
 }

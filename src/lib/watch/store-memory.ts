@@ -8,6 +8,7 @@ import {
   MAX_NOTIFY_ATTEMPTS,
   NOTIFY_CLAIM_STALE_MS,
   STALE_PENDING_MS,
+  mergeEvalAssets,
   type Claim,
   type EvalRow,
   type EvalStatus,
@@ -92,7 +93,9 @@ export function createMemoryStore(): WatchStore {
     },
 
     async completeEval(slot, nowMs, status, error, durationMs, assets) {
+      // This Map dies with the process. true is not a restart guarantee.
       const prev = evals.get(slot);
+      const merged = mergeEvalAssets(prev?.assets, assets);
       evals.set(slot, {
         slot,
         startedAtMs: prev?.startedAtMs ?? nowMs,
@@ -101,8 +104,9 @@ export function createMemoryStore(): WatchStore {
         error,
         durationMs,
         retryCount: prev?.retryCount ?? 0,
-        assets,
+        assets: merged,
       });
+      return true;
     },
 
     async getEval(slot) {

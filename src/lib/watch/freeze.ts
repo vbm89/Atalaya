@@ -22,6 +22,15 @@ export interface EpisodeFreeze {
   timeframe: "15m";
   setupKind: string | null;
   capturedAtMs: number;
+  /**
+   * Pack symbol of the candles. Not the unit of the levels when levelBase is spot.
+   * Absent on rows written before this field existed.
+   */
+  candleSymbol?: string | null;
+  /** spot = a finite XAU basis already shifted the levels off the candle. */
+  levelBase?: "spot" | "candle" | null;
+  /** False when spot levels are still labeled with the proxy candle id. */
+  sameBase?: boolean | null;
   /** P5.2 — copied from V1 outputs. Absent on pre-P5.2 episodes. */
   bias4hLabel?: string | null;
   missingForEntry?: string | null;

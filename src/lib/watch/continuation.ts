@@ -4,7 +4,7 @@ import { detectBosChoch, swingHighs, swingLows } from "../trading/structure";
 import type { AssetId, Candle, SetupProposal } from "../trading/types";
 import { slotOpenSec, slotSecFromNow } from "./identity";
 import { entrySessionOpen } from "./market-session";
-import { assessSetupLevels, instrumentVerdict, stopFromStructuralAnchor, xauBasisVerdict, type LevelRejectReason } from "./level-integrity";
+import { assessSetupLevels, packProvenanceVerdict, stopFromStructuralAnchor, xauBasisVerdict, type LevelRejectReason } from "./level-integrity";
 
 const MIN_RR = 1.5;
 const PAD_ATR = 0.15;
@@ -44,6 +44,8 @@ export function buildMomentumContinuation(args: {
   digits: number;
   /** Feed id of the candles these levels are built from. Required once a signal exists. */
   instrument?: string | null;
+  /** Source string stamped on that same pack. Required once a signal exists. */
+  source?: string | null;
   /** Called once when an integrity rule refuses the entry. Strategy misses stay silent. */
   onIntegrityReject?: (info: ContinuationIntegrityReject) => void;
 }): SetupProposal | null {
@@ -99,7 +101,12 @@ export function buildMomentumContinuation(args: {
     const basisVerdict = xauBasisVerdict(args.basis);
     if (!basisVerdict.ok && basisVerdict.reason) return reject(basisVerdict.reason);
   }
-  const quoted = instrumentVerdict(args.id, args.instrument);
+  const quoted = packProvenanceVerdict({
+    assetId: args.id,
+    instrument: args.instrument,
+    source: args.source,
+    candleCount: args.m15.length,
+  });
   if (!quoted.ok && quoted.reason) return reject(quoted.reason);
 
   const swings = direction === "sell" ? swingHighs(m15) : swingLows(m15);

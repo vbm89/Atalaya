@@ -222,6 +222,7 @@ function loadEntries(nowMs: number, ids: readonly AssetId[], fresh: boolean): Wa
     })),
     m15ByAsset,
     instrumentByAsset: Object.fromEntries(ids.map((id) => [id, getAsset(id).feedSymbol])),
+    sourceByAsset: Object.fromEntries(ids.map((id) => [id, `${getAsset(id).venue} ${getAsset(id).feedSymbol}`])),
     errors: [],
   };
 }
