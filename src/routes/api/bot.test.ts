@@ -97,11 +97,12 @@ describe("/api/bot auth", { concurrency: false }, () => {
     }
   });
 
-  it("keeps the scheduled workflow free of a literal credential", () => {
+  it("the scheduled workflow sends the bearer from the Actions secret", () => {
     const yaml = readFileSync(new URL("../../../.github/workflows/atalaya-paper-tick.yml", import.meta.url), "utf8");
     assert.match(yaml, /https:\/\/atalaya-dev\.vercel\.app\/api\/bot/);
     assert.match(yaml, /cron: "7,22,37,52 \* \* \* \*"/);
+    assert.match(yaml, /CRON_SECRET: \$\{\{ secrets\.CRON_SECRET \}\}/);
+    assert.match(yaml, /Authorization: Bearer \$\{CRON_SECRET\}/);
     assert.doesNotMatch(yaml, /Bearer [A-Za-z0-9]/);
-    assert.doesNotMatch(yaml, /CRON_SECRET\s*:/);
   });
 });

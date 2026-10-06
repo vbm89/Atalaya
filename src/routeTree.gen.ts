@@ -16,6 +16,7 @@ import { Route as ApiBotRouteImport } from './routes/api/bot'
 import { Route as ApiLabV1StatsRouteImport } from './routes/api/lab/v1-stats'
 import { Route as ApiLearnShadowReplayRouteImport } from './routes/api/learn/shadow-replay'
 import { Route as ApiPaperCronRouteImport } from './routes/api/paper/cron'
+import { Route as ApiPaperViewRouteImport } from './routes/api/paper/view'
 import { Route as ApiShadowDiscoveryRouteImport } from './routes/api/shadow/discovery'
 import { Route as ApiShadowDiscoveryExploreRouteImport } from './routes/api/shadow/discovery-explore'
 import { Route as ApiShadowRadarRouteImport } from './routes/api/shadow/radar'
@@ -57,6 +58,11 @@ const ApiPaperCronRoute = ApiPaperCronRouteImport.update({
   path: '/api/paper/cron',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPaperViewRoute = ApiPaperViewRouteImport.update({
+  id: '/api/paper/view',
+  path: '/api/paper/view',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiShadowDiscoveryRoute = ApiShadowDiscoveryRouteImport.update({
   id: '/api/shadow/discovery',
   path: '/api/shadow/discovery',
@@ -92,6 +98,7 @@ export interface FileRoutesByFullPath {
   '/api/lab/v1-stats': typeof ApiLabV1StatsRoute
   '/api/learn/shadow-replay': typeof ApiLearnShadowReplayRoute
   '/api/paper/cron': typeof ApiPaperCronRoute
+  '/api/paper/view': typeof ApiPaperViewRoute
   '/api/shadow/discovery': typeof ApiShadowDiscoveryRoute
   '/api/shadow/discovery-explore': typeof ApiShadowDiscoveryExploreRoute
   '/api/shadow/radar': typeof ApiShadowRadarRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByTo {
   '/api/lab/v1-stats': typeof ApiLabV1StatsRoute
   '/api/learn/shadow-replay': typeof ApiLearnShadowReplayRoute
   '/api/paper/cron': typeof ApiPaperCronRoute
+  '/api/paper/view': typeof ApiPaperViewRoute
   '/api/shadow/discovery': typeof ApiShadowDiscoveryRoute
   '/api/shadow/discovery-explore': typeof ApiShadowDiscoveryExploreRoute
   '/api/shadow/radar': typeof ApiShadowRadarRoute
@@ -121,6 +129,7 @@ export interface FileRoutesById {
   '/api/lab/v1-stats': typeof ApiLabV1StatsRoute
   '/api/learn/shadow-replay': typeof ApiLearnShadowReplayRoute
   '/api/paper/cron': typeof ApiPaperCronRoute
+  '/api/paper/view': typeof ApiPaperViewRoute
   '/api/shadow/discovery': typeof ApiShadowDiscoveryRoute
   '/api/shadow/discovery-explore': typeof ApiShadowDiscoveryExploreRoute
   '/api/shadow/radar': typeof ApiShadowRadarRoute
@@ -137,6 +146,7 @@ export interface FileRouteTypes {
     | '/api/lab/v1-stats'
     | '/api/learn/shadow-replay'
     | '/api/paper/cron'
+    | '/api/paper/view'
     | '/api/shadow/discovery'
     | '/api/shadow/discovery-explore'
     | '/api/shadow/radar'
@@ -151,6 +161,7 @@ export interface FileRouteTypes {
     | '/api/lab/v1-stats'
     | '/api/learn/shadow-replay'
     | '/api/paper/cron'
+    | '/api/paper/view'
     | '/api/shadow/discovery'
     | '/api/shadow/discovery-explore'
     | '/api/shadow/radar'
@@ -165,6 +176,7 @@ export interface FileRouteTypes {
     | '/api/lab/v1-stats'
     | '/api/learn/shadow-replay'
     | '/api/paper/cron'
+    | '/api/paper/view'
     | '/api/shadow/discovery'
     | '/api/shadow/discovery-explore'
     | '/api/shadow/radar'
@@ -180,6 +192,7 @@ export interface RootRouteChildren {
   ApiLabV1StatsRoute: typeof ApiLabV1StatsRoute
   ApiLearnShadowReplayRoute: typeof ApiLearnShadowReplayRoute
   ApiPaperCronRoute: typeof ApiPaperCronRoute
+  ApiPaperViewRoute: typeof ApiPaperViewRoute
   ApiShadowDiscoveryRoute: typeof ApiShadowDiscoveryRoute
   ApiShadowDiscoveryExploreRoute: typeof ApiShadowDiscoveryExploreRoute
   ApiShadowRadarRoute: typeof ApiShadowRadarRoute
@@ -238,6 +251,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPaperCronRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/paper/view': {
+      id: '/api/paper/view'
+      path: '/api/paper/view'
+      fullPath: '/api/paper/view'
+      preLoaderRoute: typeof ApiPaperViewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/shadow/discovery': {
       id: '/api/shadow/discovery'
       path: '/api/shadow/discovery'
@@ -284,6 +304,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiLabV1StatsRoute: ApiLabV1StatsRoute,
   ApiLearnShadowReplayRoute: ApiLearnShadowReplayRoute,
   ApiPaperCronRoute: ApiPaperCronRoute,
+  ApiPaperViewRoute: ApiPaperViewRoute,
   ApiShadowDiscoveryRoute: ApiShadowDiscoveryRoute,
   ApiShadowDiscoveryExploreRoute: ApiShadowDiscoveryExploreRoute,
   ApiShadowRadarRoute: ApiShadowRadarRoute,

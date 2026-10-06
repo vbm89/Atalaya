@@ -339,7 +339,7 @@ export function Dashboard() {
   const paper = useQuery({
     queryKey: PAPER_KEY,
     queryFn: async (): Promise<PaperBoard & { signals?: unknown }> => {
-      const response = await fetch("/api/bot");
+      const response = await fetch("/api/paper/view");
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return response.json() as Promise<PaperBoard & { signals?: unknown }>;
     },

@@ -37,7 +37,7 @@ export function LearningPanel() {
     let cancelled = false;
     const pull = async () => {
       try {
-        const res = await fetch("/api/bot", { cache: "no-store" });
+        const res = await fetch("/api/paper/view", { cache: "no-store" });
         if (!res.ok) throw new Error("paper");
         const next = (await res.json()) as PaperView;
         if (!cancelled) { setData(next); setError(false); }
