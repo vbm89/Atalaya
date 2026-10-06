@@ -71,7 +71,7 @@ export function BotScreen() {
     let cancelled = false;
     async function pull() {
       try {
-        const r = await fetch("/api/bot");
+        const r = await fetch("/api/paper/view");
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const data = (await r.json()) as BoardBody;
         if (!cancelled) {
