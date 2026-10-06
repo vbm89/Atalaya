@@ -10,16 +10,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Trigger durable paper tick on DEV
+      - name: Trigger authenticated watch tick on DEV
         env:
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          WATCH_SECRET: ${{ secrets.WATCH_SECRET }}
         run: |
           set -euo pipefail
-          if [ -z "${CRON_SECRET}" ]; then
-            echo "CRON_SECRET is not configured for GitHub Actions" >&2
+          if [ -z "${WATCH_SECRET}" ]; then
+            echo "WATCH_SECRET is not configured for GitHub Actions" >&2
             exit 1
           fi
           curl --fail --silent --show-error --max-time 90 \
             -H "Cache-Control: no-cache" \
-            -H "Authorization: Bearer ${CRON_SECRET}" \
-            "https://atalaya-dev.vercel.app/api/bot"
+            -H "Authorization: Bearer ${WATCH_SECRET}" \
+            "https://atalaya-dev.vercel.app/api/watch/tick"
