@@ -343,7 +343,10 @@ describe("memory persist PGLite", () => {
     assert.equal(ctx.session, "londres");
     assert.equal(ctx.warnings?.[0], "aviso de prueba");
     const archived = await sql.query<{ n: number }>("select count(*)::int as n from market_m15");
-    assert.equal(Number(archived[0]?.n), 12);
+    // 4 assets x 2 closed bars: the bar opening at `slot` is still forming (closed-bar rule).
+    assert.equal(Number(archived[0]?.n), 8);
+    const forming = await sql.query<{ n: number }>("select count(*)::int as n from market_m15 where t = $1", [slot]);
+    assert.equal(Number(forming[0]?.n), 0);
     const shaRows = await sql.query<{ slot: number }>("select slot from watch_eval_versions where slot = $1", [slot]);
     assert.equal(shaRows.length, 1);
     const again = await runWatchTick({
