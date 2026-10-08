@@ -34,6 +34,27 @@ function iso(ms: number): string {
   return new Date(ms).toISOString();
 }
 
+export const M15_SEC = 900;
+const TF_SEC: Record<TapeTf, number> = { "15m": 900, "1h": 3600, "4h": 14400 };
+
+/**
+ * Closed-bar rule. Feed `time` is the bar OPEN in UTC unix seconds
+ * (Binance k[0]/1000, Bitget row[0]/1000, Twelve Data datetime parsed as UTC).
+ * A bar is closed iff t + step <= refSec. In the Watch tick refSec = slot
+ * (the close of the bar just evaluated), so the bar that opened at `slot`
+ * (about FEED_GRACE_MS old) is still forming and is never archived:
+ * market_m15 uses ON CONFLICT DO NOTHING, so a partial first read would
+ * otherwise be frozen forever.
+ */
+export function closedBars(candles: Candle[] | undefined, stepSec: number, refSec: number): Candle[] {
+  if (!candles?.length || !Number.isFinite(refSec)) return [];
+  return candles.filter((c) => Number.isFinite(c.time) && c.time + stepSec <= refSec);
+}
+
+export function closedM15(candles: Candle[] | undefined, refSec: number): Candle[] {
+  return closedBars(candles, M15_SEC, refSec);
+}
+
 function validOhlc(c: Candle): boolean {
   return [c.time, c.open, c.high, c.low, c.close].every((n) => Number.isFinite(n));
 }
@@ -105,12 +126,13 @@ export async function persistArchiveM15(
   source: string | null,
   instrument: string | null,
   nowMs: number,
+  refSec: number = Math.floor(nowMs / 1000),
 ): Promise<number> {
   if (!candles?.length) return 0;
   const seen = new Set<number>();
   const rows: unknown[][] = [];
   const ingested = iso(nowMs);
-  for (const c of candles) {
+  for (const c of closedM15(candles, refSec)) {
     if (!validOhlc(c) || c.time <= 0 || seen.has(c.time)) continue;
     seen.add(c.time);
     rows.push([
@@ -197,10 +219,12 @@ export async function persistTapeForEpisode(
   episode: EpisodeDraft,
   series: Partial<Record<TapeTf, Candle[]>>,
   nowMs: number,
+  refSec: number = Math.floor(nowMs / 1000),
 ): Promise<void> {
   const tfs: TapeTf[] = ["15m", "1h", "4h"];
   for (const tf of tfs) {
-    const candles = series[tf] ?? [];
+    // Same closed-bar rule per timeframe; the tape is append-only (do nothing).
+    const candles = closedBars(series[tf] ?? [], TF_SEC[tf], refSec);
     const look = lookbackOf(candles, tf, episode.openedSlot);
     const fwd = forwardOf(candles, tf, episode.openedSlot);
     await insertTapeBars(sql, episode.episodeId, look, nowMs);
@@ -310,6 +334,7 @@ export async function rememberAfterTick(sql: SqlQuery, work: MemoryTickWork): Pr
         work.loaded.sourceByAsset?.[id] ?? null,
         work.loaded.instrumentByAsset?.[id] ?? null,
         work.nowMs,
+        work.slot,
       );
     });
   }
@@ -325,6 +350,7 @@ export async function rememberAfterTick(sql: SqlQuery, work: MemoryTickWork): Pr
           "4h": work.loaded.h4ByAsset?.[ep.assetId],
         },
         work.nowMs,
+        work.slot,
       ),
     );
   }

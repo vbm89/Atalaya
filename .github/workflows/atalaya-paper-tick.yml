@@ -7,7 +7,7 @@ on:
 jobs:
   tick:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 4
     steps:
       - name: Trigger authenticated watch tick on DEV
         env:
@@ -22,3 +22,19 @@ jobs:
             -H "Cache-Control: no-cache" \
             -H "Authorization: Bearer ${WATCH_SECRET}" \
             "https://atalaya-dev.vercel.app/api/watch/tick"
+
+      - name: Trigger authenticated paper tick on DEV
+        # Runs even if the watch step failed: the two ticks are independent.
+        if: ${{ always() }}
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "CRON_SECRET is not configured for GitHub Actions" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --max-time 90 -X POST \
+            -H "Cache-Control: no-cache" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "https://atalaya-dev.vercel.app/api/paper/cron"
