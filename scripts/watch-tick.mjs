@@ -11,6 +11,12 @@ import { dispatchEventPushes, sendWebPush } from "../src/lib/watch/notify.ts";
 import { createPgStore } from "../src/lib/watch/store.ts";
 import { runWatchTick } from "../src/lib/watch/tick.ts";
 
+const databaseUrl = process.env.DATABASE_URL?.trim();
+if (!databaseUrl) {
+  console.error("DATABASE_URL is required. Watch tick not started.");
+  process.exit(1);
+}
+
 function publicError(error) {
   const message = error instanceof Error ? error.message : "error";
   const url = process.env.DATABASE_URL?.trim();

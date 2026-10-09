@@ -3,9 +3,10 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import type { Bar } from "../learn/price-behaviour/types.ts";
+import type { Sql } from "../db.ts";
 import { cronAuthorized } from "./cron-auth.ts";
 import { runCycle, type PaperTape } from "./cycle.ts";
-import { readDurableView, serverlessLiveness, sqlLedger } from "./ledger.ts";
+import { readDurableView, serverlessLiveness, sqlLedger, type PaperLedger } from "./ledger.ts";
 import { emptyState } from "./store.ts";
 
 const T0 = Date.parse("2026-03-02T00:00:00Z") / 1000;
@@ -41,22 +42,24 @@ function tape(bars: Bar[]): PaperTape {
   return { bars: bars.map((row) => ({ ...row, source: "test" })), source: "LIVE", note: null, attempts: [] };
 }
 
-async function db() {
+async function db(): Promise<{ sql: Sql; ledger: PaperLedger }> {
   const pg = new PGlite();
   await pg.waitReady;
   await pg.exec(readFileSync(new URL("../../../migrations/0001_paper_bot.sql", import.meta.url), "utf8"));
-  const sql = Object.assign(
-    async (strings: TemplateStringsArray, ...values: unknown[]) => {
-      let text = strings[0] ?? "";
-      for (let i = 0; i < values.length; i += 1) text += `$${i + 1}${strings[i + 1] ?? ""}`;
-      const result = await pg.query(text, values);
-      return result.rows;
-    },
-    {
-      query: async (text: string, params: unknown[] = []) => (await pg.query(text, params)).rows,
-    },
-  );
-  return { pg, sql, ledger: sqlLedger(sql) };
+  const query = async <T = Record<string, unknown>>(text: string, params: unknown[] = []): Promise<T[]> => {
+    const result = await pg.query<T>(text, params);
+    return result.rows;
+  };
+  const tagged = async <T = Record<string, unknown>>(
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ): Promise<T[]> => {
+    let text = strings[0] ?? "";
+    for (let i = 0; i < values.length; i += 1) text += `$${i + 1}${strings[i + 1] ?? ""}`;
+    return query<T>(text, values);
+  };
+  const sql: Sql = Object.assign(tagged, { query });
+  return { sql, ledger: sqlLedger(sql) };
 }
 
 describe("paper durable", () => {
@@ -126,6 +129,8 @@ describe("paper durable", () => {
           createdAt: 1,
           tier: "FULL" as const,
           result: "ABIERTA" as const,
+          resultR: null,
+          study: null,
           revisionOf: null,
         },
       });

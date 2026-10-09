@@ -17,18 +17,23 @@ function bars(n: number, step = 1): Bar[] {
   return out;
 }
 
-function signal(partial: Partial<StoredSignal> & Pick<StoredSignal, "asset" | "timestamp" | "result" | "RR">): StoredSignal {
+function signal(
+  partial: Pick<StoredSignal, "asset" | "timestamp" | "result" | "RR"> &
+    Partial<Pick<StoredSignal, "setup" | "resultR" | "study">>,
+): StoredSignal {
   return {
     kind: "signal",
     signalId: `${partial.asset}|${partial.timestamp}`,
+    asset: partial.asset,
     timeframe: "15m",
+    timestamp: partial.timestamp,
     provider: "test",
     lastBarT: partial.timestamp - 900,
     direction: "VENTA",
     entry: 1,
     stop: 2,
     target: 0,
-    setup: "FAILED_BREAKOUT",
+    setup: partial.setup ?? "FAILED_BREAKOUT",
     marketState: "RANGE",
     event: "FAILED_BREAKOUT_UP",
     confirmation: true,
@@ -36,8 +41,11 @@ function signal(partial: Partial<StoredSignal> & Pick<StoredSignal, "asset" | "t
     rationale: "",
     createdAt: partial.timestamp,
     tier: "PARTIAL",
+    result: partial.result,
+    resultR: partial.resultR ?? null,
+    study: partial.study ?? null,
     revisionOf: null,
-    ...partial,
+    RR: partial.RR,
   };
 }
 
@@ -62,6 +70,7 @@ function signal(partial: Partial<StoredSignal> & Pick<StoredSignal, "asset" | "t
       confirmation: true,
       hourUtc: 12,
       session: "x",
+      sessionName: null,
       entry: row.entry,
       stop: row.stop,
       target: row.target,
