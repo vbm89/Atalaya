@@ -1,0 +1,11 @@
+[Unit]
+Description=Atalaya watch every 15 minutes
+
+[Timer]
+OnCalendar=*:7,22,37,52
+AccuracySec=1s
+Persistent=false
+Unit=atalaya-watch.service
+
+[Install]
+WantedBy=timers.target

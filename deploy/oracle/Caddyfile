@@ -1,0 +1,5 @@
+# Plain HTTP until a domain you control points at this VM.
+# Do not invent a hostname: Let's Encrypt will fail and may rate-limit it.
+:80 {
+	reverse_proxy 127.0.0.1:3000
+}
