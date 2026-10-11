@@ -3,3 +3,6 @@ node_modules/
 .env.local
 .env.*.local
 *.pem
+.output/
+deploy/oracle/*.env
+!deploy/oracle/*.env.example

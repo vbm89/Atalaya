@@ -1,0 +1,10 @@
+[Unit]
+Description=Atalaya local Postgres backup
+
+[Service]
+Type=oneshot
+User=atalaya
+Group=atalaya
+EnvironmentFile=/etc/atalaya/atalaya.env
+ExecStart=/opt/atalaya/deploy/oracle/tick-locked.sh backup /opt/atalaya/deploy/oracle/backup.sh
+NoNewPrivileges=true

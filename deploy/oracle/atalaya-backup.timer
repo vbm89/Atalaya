@@ -1,0 +1,11 @@
+[Unit]
+Description=Atalaya daily local backup
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+AccuracySec=1min
+Persistent=false
+Unit=atalaya-backup.service
+
+[Install]
+WantedBy=timers.target

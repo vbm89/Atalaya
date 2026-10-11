@@ -1,0 +1,21 @@
+[Unit]
+Description=Atalaya Node server
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=atalaya
+Group=atalaya
+WorkingDirectory=/opt/atalaya
+EnvironmentFile=/etc/atalaya/atalaya.env
+Environment=HOST=127.0.0.1
+Environment=PORT=3000
+ExecStart=/usr/bin/node .output/server/index.mjs
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

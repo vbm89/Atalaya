@@ -1,0 +1,67 @@
+name: Atalaya paper
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: inspect, migrate or paper
+        required: true
+        default: inspect
+        type: choice
+        options:
+          - inspect
+          - migrate
+          - paper
+      migration_confirm:
+        description: Required only for migrate. Do not put secrets here.
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atalaya-paper
+  cancel-in-progress: false
+
+jobs:
+  paper:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --omit=dev --no-audit --no-fund
+      - name: Inspect, migrate or run one paper cycle
+        env:
+          ACTION: ${{ inputs.action }}
+          MIGRATION_CONFIRM: ${{ inputs.migration_confirm }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PAPER_DB_HOST: ${{ secrets.PAPER_DB_HOST }}
+          PAPER_DB_NAME: ${{ secrets.PAPER_DB_NAME }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ]; then
+            echo "Only a manual dispatch is allowed." >&2
+            exit 1
+          fi
+          case "$ACTION" in
+            inspect|migrate|paper) ;;
+            *) echo "Unsupported action." >&2; exit 1 ;;
+          esac
+          if [ -z "${DATABASE_URL}" ] || [ -z "${PAPER_DB_HOST}" ] || [ -z "${PAPER_DB_NAME}" ]; then
+            echo "Database secrets are not configured." >&2
+            exit 1
+          fi
+          node scripts/paper-db-guard.mjs
+          if [ "$ACTION" = "migrate" ]; then
+            node scripts/migrate.mjs
+          elif [ "$ACTION" = "paper" ]; then
+            node --experimental-strip-types --import ./scripts/register-ts-ext.mjs scripts/paper-tick.mjs
+            node scripts/paper-db-read.mjs
+          fi

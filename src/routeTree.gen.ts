@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiLearnShadowReplayRouteImport } from './routes/api/learn/shadow-replay'
+import { Route as ApiPaperViewRouteImport } from './routes/api/paper/view'
 import { Route as ApiWatchHealthRouteImport } from './routes/api/watch/health'
 import { Route as ApiWatchTickRouteImport } from './routes/api/watch/tick'
 
@@ -22,6 +23,11 @@ const IndexRoute = IndexRouteImport.update({
 const ApiLearnShadowReplayRoute = ApiLearnShadowReplayRouteImport.update({
   id: '/api/learn/shadow-replay',
   path: '/api/learn/shadow-replay',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPaperViewRoute = ApiPaperViewRouteImport.update({
+  id: '/api/paper/view',
+  path: '/api/paper/view',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiWatchHealthRoute = ApiWatchHealthRouteImport.update({
@@ -38,12 +44,14 @@ const ApiWatchTickRoute = ApiWatchTickRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/learn/shadow-replay': typeof ApiLearnShadowReplayRoute
+  '/api/paper/view': typeof ApiPaperViewRoute
   '/api/watch/health': typeof ApiWatchHealthRoute
   '/api/watch/tick': typeof ApiWatchTickRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/learn/shadow-replay': typeof ApiLearnShadowReplayRoute
+  '/api/paper/view': typeof ApiPaperViewRoute
   '/api/watch/health': typeof ApiWatchHealthRoute
   '/api/watch/tick': typeof ApiWatchTickRoute
 }
@@ -51,20 +59,38 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/learn/shadow-replay': typeof ApiLearnShadowReplayRoute
+  '/api/paper/view': typeof ApiPaperViewRoute
   '/api/watch/health': typeof ApiWatchHealthRoute
   '/api/watch/tick': typeof ApiWatchTickRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/learn/shadow-replay' | '/api/watch/health' | '/api/watch/tick'
+  fullPaths:
+    | '/'
+    | '/api/learn/shadow-replay'
+    | '/api/paper/view'
+    | '/api/watch/health'
+    | '/api/watch/tick'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/learn/shadow-replay' | '/api/watch/health' | '/api/watch/tick'
-  id: '__root__' | '/' | '/api/learn/shadow-replay' | '/api/watch/health' | '/api/watch/tick'
+  to:
+    | '/'
+    | '/api/learn/shadow-replay'
+    | '/api/paper/view'
+    | '/api/watch/health'
+    | '/api/watch/tick'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/learn/shadow-replay'
+    | '/api/paper/view'
+    | '/api/watch/health'
+    | '/api/watch/tick'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiLearnShadowReplayRoute: typeof ApiLearnShadowReplayRoute
+  ApiPaperViewRoute: typeof ApiPaperViewRoute
   ApiWatchHealthRoute: typeof ApiWatchHealthRoute
   ApiWatchTickRoute: typeof ApiWatchTickRoute
 }
@@ -83,6 +109,13 @@ declare module '@tanstack/react-router' {
       path: '/api/learn/shadow-replay'
       fullPath: '/api/learn/shadow-replay'
       preLoaderRoute: typeof ApiLearnShadowReplayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/paper/view': {
+      id: '/api/paper/view'
+      path: '/api/paper/view'
+      fullPath: '/api/paper/view'
+      preLoaderRoute: typeof ApiPaperViewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/watch/health': {
@@ -105,6 +138,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiLearnShadowReplayRoute: ApiLearnShadowReplayRoute,
+  ApiPaperViewRoute: ApiPaperViewRoute,
   ApiWatchHealthRoute: ApiWatchHealthRoute,
   ApiWatchTickRoute: ApiWatchTickRoute,
 }
