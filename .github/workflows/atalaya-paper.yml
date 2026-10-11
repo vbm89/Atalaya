@@ -1,0 +1,92 @@
+name: Atalaya paper
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: inspect, migrate or paper
+        required: true
+        default: inspect
+        type: choice
+        options:
+          - inspect
+          - migrate
+          - paper
+      migration_confirm:
+        description: Required only for migrate. Do not put secrets here.
+        required: false
+        default: ""
+        type: string
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atalaya-paper
+  cancel-in-progress: false
+
+jobs:
+  paper:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Choose a safe action
+        id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_ACTION: ${{ inputs.action }}
+          SCHEDULE_ARM: ${{ vars.PAPER_SCHEDULE }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            if [ "$SCHEDULE_ARM" != "armed" ]; then
+              echo "mode=disarmed" >> "$GITHUB_OUTPUT"
+              echo "Scheduled paper is disarmed. No database call."
+              exit 0
+            fi
+            echo "mode=paper" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case "$INPUT_ACTION" in
+            inspect|migrate|paper) echo "mode=$INPUT_ACTION" >> "$GITHUB_OUTPUT" ;;
+            *) echo "Unsupported action." >&2; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.mode != 'disarmed'
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.mode != 'disarmed'
+        with:
+          node-version: "22"
+          cache: npm
+      - if: steps.gate.outputs.mode != 'disarmed'
+        run: npm ci --omit=dev --no-audit --no-fund
+
+      - name: Inspect, migrate or run one paper cycle
+        if: steps.gate.outputs.mode != 'disarmed'
+        env:
+          ACTION: ${{ steps.gate.outputs.mode }}
+          MIGRATION_CONFIRM: ${{ inputs.migration_confirm }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PAPER_DB_HOST: ${{ secrets.PAPER_DB_HOST }}
+          PAPER_DB_NAME: ${{ secrets.PAPER_DB_NAME }}
+        run: |
+          set -euo pipefail
+          case "$ACTION" in
+            inspect|migrate|paper) ;;
+            *) echo "Unsupported action." >&2; exit 1 ;;
+          esac
+          if [ -z "${DATABASE_URL}" ] || [ -z "${PAPER_DB_HOST}" ] || [ -z "${PAPER_DB_NAME}" ]; then
+            echo "Database secrets are not configured." >&2
+            exit 1
+          fi
+          node scripts/paper-db-guard.mjs
+          if [ "$ACTION" = "migrate" ]; then
+            node scripts/migrate.mjs
+          elif [ "$ACTION" = "paper" ]; then
+            node --experimental-strip-types --import ./scripts/register-ts-ext.mjs scripts/paper-tick.mjs
+            node scripts/paper-db-read.mjs
+          fi

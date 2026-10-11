@@ -12,7 +12,14 @@ import pg from "pg";
 function publicError(error) {
   const message = error instanceof Error ? error.message : "error";
   const url = process.env.DATABASE_URL?.trim();
-  if (url && message.includes(url)) return "database error";
+  if (!url) return message;
+  if (message.includes(url)) return "database error";
+  try {
+    const host = new URL(url).hostname;
+    if (host && message.includes(host)) return "database error";
+  } catch {
+    return "database error";
+  }
   return message;
 }
 

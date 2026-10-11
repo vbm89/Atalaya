@@ -46,6 +46,10 @@ try {
   );
   console.log(JSON.stringify(rows.rows));
 } catch (error) {
+  const message = error instanceof Error ? error.message : "";
+  if ((raw && message.includes(raw)) || message.includes(host) || (database && message.includes(database))) {
+    fail("could not read paper_bot_decision");
+  }
   if (error && typeof error === "object" && "code" in error) fail("could not read paper_bot_decision");
   throw error;
 } finally {
