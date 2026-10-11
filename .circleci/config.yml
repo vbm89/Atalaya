@@ -1,0 +1,82 @@
+version: 2.1
+
+parameters:
+  action:
+    type: enum
+    enum: [inspect, migrate, paper]
+    default: inspect
+  migration_confirm:
+    type: string
+    default: ""
+
+jobs:
+  paper-shadow:
+    docker:
+      - image: cimg/node:22.14
+    resource_class: small
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - npm-prod-v1-{{ checksum "package-lock.json" }}
+      - run:
+          name: Install production dependencies only on a cache miss
+          command: |
+            if [ -d node_modules/pg ]; then
+              echo "cache hit"
+            else
+              npm ci --omit=dev --no-audit --no-fund
+            fi
+      - save_cache:
+          key: npm-prod-v1-{{ checksum "package-lock.json" }}
+          paths:
+            - node_modules
+      - run:
+          name: Verify the database before any migration or paper tick
+          command: |
+            case "$ACTION" in
+              inspect|migrate|paper) ;;
+              *) echo "ACTION must be inspect, migrate or paper." >&2; exit 1 ;;
+            esac
+            case "$MIGRATION_CONFIRM" in
+              *"<<"*|*">>"*) echo "MIGRATION_CONFIRM was not substituted." >&2; exit 1 ;;
+            esac
+            node scripts/paper-db-guard.mjs
+          environment:
+            ACTION: "<< pipeline.parameters.action >>"
+            MIGRATION_CONFIRM: "<< pipeline.parameters.migration_confirm >>"
+      - when:
+          condition:
+            equal: [migrate, << pipeline.parameters.action >>]
+          steps:
+            - run:
+                name: Apply pending reviewed migrations
+                command: node scripts/migrate.mjs
+      - when:
+          condition:
+            equal: [paper, << pipeline.parameters.action >>]
+          steps:
+            - run:
+                name: Paper tick
+                command: |
+                  start=$(date +%s)
+                  node --experimental-strip-types --import ./scripts/register-ts-ext.mjs scripts/paper-tick.mjs
+                  echo "paper_seconds=$(( $(date +%s) - start ))"
+            - run:
+                name: Read stored paper decisions
+                command: |
+                  case "$ACTION" in
+                    paper) ;;
+                    *) echo "Read step requires ACTION=paper." >&2; exit 1 ;;
+                  esac
+                  node scripts/paper-db-read.mjs
+                environment:
+                  ACTION: "<< pipeline.parameters.action >>"
+                  MIGRATION_CONFIRM: "<< pipeline.parameters.migration_confirm >>"
+
+workflows:
+  proof:
+    when:
+      equal: [api, << pipeline.trigger_source >>]
+    jobs:
+      - paper-shadow
