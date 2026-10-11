@@ -83,7 +83,9 @@ function cooldownMs(retryAfterSec: number | null): number {
 }
 
 function snippet(text: string): string | null {
-  const clean = text.replace(/[\u0000-\u001f]/g, " ").trim();
+  let clean = "";
+  for (const ch of text) clean += ch.charCodeAt(0) <= 0x1f ? " " : ch;
+  clean = clean.trim();
   if (!clean) return null;
   return clean.slice(0, BODY_SNIPPET_MAX);
 }

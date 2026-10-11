@@ -1,5 +1,4 @@
 import { atrAt, emaAt, median, trueRange } from "./candle.ts";
-import { PARAMS } from "./params.ts";
 import type { AssetId, Bar, ContextView, StructureView } from "./types.ts";
 
 export function sessionId(tSec: number, asset: AssetId): string {
