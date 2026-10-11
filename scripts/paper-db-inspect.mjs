@@ -55,8 +55,7 @@ async function main() {
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (message.includes(target.connectionString) || message.includes(target.database)) fail("database error");
-    if (error && typeof error === "object" && "code" in error) fail("database unreachable");
-    throw error;
+    fail("database unreachable");
   } finally {
     await pool.end();
   }
