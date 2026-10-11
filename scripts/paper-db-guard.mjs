@@ -70,7 +70,7 @@ if (!database || database !== nameWanted) fail("Database name does not match PAP
 
 const files = (await readdir(new URL("../migrations/", import.meta.url))).filter((file) => file.endsWith(".sql")).sort();
 const filesMatch = files.length === expected.length && files.every((file, index) => file === expected[index]);
-console.log(JSON.stringify({ host, database, migrationFiles: files, migrationFilesMatch: filesMatch }));
+console.log(JSON.stringify({ migrationFilesMatch: filesMatch }));
 if (!filesMatch) fail("Top-level migration files are not exactly the five expected names.");
 
 const pool = new pg.Pool({ connectionString: raw, max: 1, connectionTimeoutMillis: 8000 });
@@ -110,6 +110,10 @@ try {
     console.log("PAPER_ALLOWED");
   }
 } catch (error) {
+  const message = error instanceof Error ? error.message : "";
+  if ((raw && message.includes(raw)) || message.includes(host) || (database && message.includes(database))) {
+    fail("database error");
+  }
   if (error && typeof error === "object" && "code" in error) fail("database unreachable");
   throw error;
 } finally {
