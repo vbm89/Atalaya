@@ -1,13 +1,6 @@
 import pg from "pg";
 import { readdir } from "node:fs/promises";
-
-const expected = [
-  "0001_paper_bot.sql",
-  "0002_watch.sql",
-  "0003_watch_push.sql",
-  "0004_watch_v10.sql",
-  "0005_memory.sql",
-];
+import { expected, isPrefix, paperTablesReady } from "./paper-db-policy.mjs";
 
 const knownTables = new Set([
   "_migrations",
@@ -43,17 +36,6 @@ function isAivenDatabaseHost(hostname) {
     return false;
   }
   return labels.at(-2) === "aivencloud" && labels.at(-1) === "com";
-}
-
-function isPrefix(applied) {
-  if (applied.length > expected.length) return false;
-  const seen = new Set();
-  for (let index = 0; index < applied.length; index += 1) {
-    const name = applied[index];
-    if (typeof name !== "string" || seen.has(name) || name !== expected[index]) return false;
-    seen.add(name);
-  }
-  return true;
 }
 
 const action = process.env.ACTION;
@@ -122,7 +104,7 @@ try {
     }
     if (names.length > 0 && applied.length === 0) fail("Refusing to migrate an unrecognized database.");
     console.log(applied.length === 0 ? "MIGRATE_ALLOWED" : "MIGRATE_RESUME_ALLOWED");
-  } else if (!names.includes("paper_bot_decision") || applied.length !== expected.length) {
+  } else if (!paperTablesReady(names, applied)) {
     fail("Required paper tables or migration record are missing. Paper tick not started.");
   } else {
     console.log("PAPER_ALLOWED");

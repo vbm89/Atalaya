@@ -76,7 +76,6 @@ jobs:
 
 workflows:
   proof:
-    when:
-      equal: [api, << pipeline.trigger_source >>]
+    when: pipeline.event.name == "api"
     jobs:
       - paper-shadow
