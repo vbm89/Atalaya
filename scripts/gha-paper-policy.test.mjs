@@ -1,19 +1,19 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const yaml = readFileSync(new URL("../.github/workflows/atalaya-paper.yml", import.meta.url), "utf8");
 
-test("the paper workflow is manual or scheduled, never a push or pull request", () => {
+test("paper runs only by manual dispatch and cannot call Vercel or Watch", () => {
   assert.match(yaml, /workflow_dispatch:/);
-  assert.match(yaml, /cron: "7,22,37,52 \* \* \* \*"/);
-  assert.doesNotMatch(yaml, /pull_request|push:/);
+  assert.match(yaml, /default: inspect/);
+  assert.match(yaml, /github.event_name == 'workflow_dispatch'/);
+  assert.match(yaml, /GITHUB_EVENT_NAME\}" != "workflow_dispatch"/);
+  assert.doesNotMatch(yaml, /schedule:|pull_request:|^\s*push:/m);
   assert.match(yaml, /contents: read/);
-  assert.doesNotMatch(yaml, /vercel|watch-tick|\/api\/bot|\/api\/watch/);
+  assert.doesNotMatch(yaml, /vercel|watch-tick|\/api\/bot|\/api\/watch|PAPER_SCHEDULE/);
 });
 
-test("a schedule cannot reach the database unless the repository variable is armed", () => {
-  assert.match(yaml, /SCHEDULE_ARM" != "armed"/);
-  assert.match(yaml, /mode=disarmed/);
-  assert.match(yaml, /steps\.gate\.outputs\.mode != 'disarmed'/);
+test("the Vercel cron workflow is not part of this branch", () => {
+  assert.equal(existsSync(new URL("../.github/workflows/atalaya-paper-tick.yml", import.meta.url)), false);
 });
