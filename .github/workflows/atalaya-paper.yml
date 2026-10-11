@@ -1,4 +1,4 @@
-name: Atalaya paper
+name: Atalaya paper inspect
 
 on:
   workflow_dispatch:
@@ -22,11 +22,9 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci --omit=dev --no-audit --no-fund
-      - name: Read-only database inspect
+      - name: Read-only inspect of the new Aiven database
         env:
-          ACTION: inspect
-          MIGRATION_CONFIRM: ""
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PAPER_DATABASE_URL: ${{ secrets.PAPER_DATABASE_URL }}
           PAPER_DB_HOST: ${{ secrets.PAPER_DB_HOST }}
           PAPER_DB_NAME: ${{ secrets.PAPER_DB_NAME }}
         run: |
@@ -35,12 +33,8 @@ jobs:
             echo "Only a manual dispatch is allowed." >&2
             exit 1
           fi
-          if [ "$ACTION" != "inspect" ]; then
-            echo "This workflow only inspects." >&2
+          if [ -n "${DATABASE_URL-}" ]; then
+            echo "DATABASE_URL must not be set for inspect." >&2
             exit 1
           fi
-          if [ -z "${DATABASE_URL}" ] || [ -z "${PAPER_DB_HOST}" ] || [ -z "${PAPER_DB_NAME}" ]; then
-            echo "Database secrets are not configured." >&2
-            exit 1
-          fi
-          node scripts/paper-db-guard.mjs
+          node scripts/paper-db-inspect.mjs
