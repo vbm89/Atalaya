@@ -15,8 +15,16 @@
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import pg from "pg";
 import { pendingMigrations } from "./migration-plan.mjs";
+import { migrationSkipReason } from "./migrate-guard.mjs";
+
+// Fail-safe: migrations are opt-in (ALLOW_DB_MIGRATE=1). Checked before
+// DATABASE_URL is read, so a skipped build never touches the database.
+const skipReason = migrationSkipReason(process.env);
+if (skipReason) {
+  console.log(`[migrate] ${skipReason} — skipping.`);
+  process.exit(0);
+}
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -42,6 +50,8 @@ async function main() {
     return;
   }
 
+  // Loaded only past the guards.
+  const { default: pg } = await import("pg");
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 1 });
   const client = await pool.connect();
   try {

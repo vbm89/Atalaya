@@ -87,27 +87,20 @@ exists is **unverified**.
 | `research/shadow-ob-audit` `.github/workflows/atalaya-paper-tick.yml` | **Never on schedule** (not the default branch) | `/api/bot` | GET / `CRON_SECRET` | `7,22,37,52 * * * *` (inert) |
 | cron-job.org (`scripts/ops-watch-tick.example.sh`) | Unverified | `/api/watch/tick` | POST / `WATCH_SECRET` | every 5 min (if it exists) |
 
-## Warning: 0540c20 changes a V1 input
+## 0540c20 is NOT in this branch
 
-`0540c20` ("fix(watch): lock entries to each exchange session") is in the range
-`4307331..a1daf26`, so deploying `research/shadow-ob-audit` ships it.
+`fix/dev-ops-clean` is built on `4307331` (live DEV) and excludes `0540c20`
+(V1-input CME session clock change, not accepted) and the later research
+commits. Deploy this exact commit; do not deploy `research/shadow-ob-audit`.
 
-- It replaces the fixed-UTC CME window with an `America/Chicago` clock (DST
-  aware): `isCmeSessionOpen`, `src/lib/trading/integrity.ts:95`, with
-  `exchangeCivilTime` at `integrity.ts:65`.
-- That value becomes `sessionOpen` in `src/lib/market/feed.ts:243-246`.
-- It is passed to V1 in `src/lib/market/run-analysis.ts:97` and
-  `src/lib/watch/analyze.ts:82`.
-- V1 reads it in `analyzeAsset`: parameter at `src/lib/trading/signals.ts:279`,
-  and `underlyingClosed` at `signals.ts:355` (US100, WTI).
+## Migrations are opt-in
 
-The protected V1 bytes are unchanged (`check:v1-sha` passes), but a V1 **input**
-changes around the EU/US DST gap and the CME maintenance hour. This needs
-**explicit acceptance before deploying research**.
+`npm run build` still ends with `db:migrate`, but `scripts/migrate.mjs` skips
+unless `ALLOW_DB_MIGRATE=1` (`scripts/migrate-guard.mjs`). No Vercel build
+migrates by default.
 
 ## Checklist (manual, after unpause)
 
-- [ ] Accept the 0540c20 V1-input change explicitly.
 - [ ] Merge PR-1a (`fbc14e9`) into `main` so `/api/paper/cron` is scheduled.
 - [ ] Make sure the GitHub Actions secrets `WATCH_SECRET` and `CRON_SECRET`
       match the Vercel values for atalaya-dev.
