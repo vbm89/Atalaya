@@ -6,6 +6,9 @@ async function run(request: Request): Promise<Response> {
   if (!cronAuthorized(request)) {
     return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
+  const { dbWritesBlocked } = await import("@/lib/watch/http");
+  const blocked = dbWritesBlocked();
+  if (blocked) return blocked;
   try {
     const { report, view } = await runDurableTick();
     return Response.json({

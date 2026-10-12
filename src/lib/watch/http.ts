@@ -1,4 +1,5 @@
-import { getSql } from "@/lib/db";
+import { dbSource, getSql } from "@/lib/db";
+import { dbWriteGate } from "@/lib/db-identity";
 import { loadWatchMarket } from "./analyze";
 import { dispatchEventPushes, sendWebPush } from "./notify";
 import { authorizeWatchRequest } from "./secret";
@@ -12,6 +13,9 @@ export async function handleWatchTick(request: Request): Promise<Response> {
   if (!auth.ok) {
     return Response.json({ error: auth.error }, { status: auth.status });
   }
+
+  const blocked = dbWritesBlocked();
+  if (blocked) return blocked;
 
   const nowMs = Date.now();
   let lastError: unknown = null;
@@ -76,8 +80,25 @@ export async function handleWatchHealth(): Promise<Response> {
     const store = createPgStore(sql);
     const health = await readWatchHealth(store, nowMs);
     const openEpisodes = await store.countOpenEpisodes();
-    return Response.json(toPublicWatchHealth(health, nowMs, { persistence: "ok", openEpisodes }));
+    return Response.json({ ...toPublicWatchHealth(health, nowMs, { persistence: "ok", openEpisodes }), ...dbGatePublic() });
   } catch {
-    return Response.json(emptyPublicHealth(nowMs, "error"), { status: 200 });
+    return Response.json({ ...emptyPublicHealth(nowMs, "error"), ...dbGatePublic() }, { status: 200 });
   }
+}
+
+/** Non-secret DB identity: truncated fingerprint + whether writes are allowed. */
+export function dbGatePublic(): { dbSource: string; dbFingerprint: string | null; dbWritable: boolean } {
+  if (dbSource !== "neon") return { dbSource, dbFingerprint: null, dbWritable: true };
+  const gate = dbWriteGate();
+  return { dbSource, dbFingerprint: gate.fingerprint, dbWritable: gate.writable };
+}
+
+/** 503 before any market fetch when the DB identity gate keeps the DB read-only. */
+export function dbWritesBlocked(): Response | null {
+  const gate = dbGatePublic();
+  if (gate.dbWritable) return null;
+  return Response.json(
+    { status: "failed", error: "DB read-only: DB_IDENTITY_ALLOW no coincide con DATABASE_URL.", dbFingerprint: gate.dbFingerprint },
+    { status: 503 },
+  );
 }

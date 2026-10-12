@@ -95,14 +95,41 @@ function createNeonSql(): Promise<Sql> {
     types.setTypeParser(OID_DATE, identity);
     types.setTypeParser(OID_INTERVAL, identity);
     const pool = new Pool({ connectionString: databaseUrl });
+    // DB identity gate: unless DB_IDENTITY_ALLOW matches this DATABASE_URL's
+    // fingerprint, every statement runs in a READ ONLY transaction, so
+    // Postgres itself rejects any write (see ./db-identity.ts).
+    const { dbWriteGate } = await import("./db-identity");
+    const gate = dbWriteGate();
+    if (!gate.writable) {
+      console.warn("[db] DB_IDENTITY_ALLOW does not match DATABASE_URL — read-only", { fingerprint: gate.fingerprint });
+    }
+    const runReadOnly = async <T>(client: { query: (t: string, p?: unknown[]) => Promise<{ rows: unknown[] }> }, text: string, params: unknown[]) => {
+      await client.query("BEGIN TRANSACTION READ ONLY");
+      try {
+        const res = await client.query(text, params);
+        await client.query("COMMIT");
+        return res.rows as T[];
+      } catch (err) {
+        try { await client.query("ROLLBACK"); } catch { /* ignore */ }
+        throw err;
+      }
+    };
     const sql = toSql(async <T>(text: string, params: unknown[]) => {
+      if (!gate.writable) {
+        const client = await pool.connect();
+        try {
+          return await runReadOnly<T>(client, text, params);
+        } finally {
+          client.release();
+        }
+      }
       const res = await pool.query(text, params);
       return res.rows as T[];
     });
     sql.transaction = async <T>(fn: (tx: Sql) => Promise<T>): Promise<T> => {
       const client = await pool.connect();
       try {
-        await client.query("BEGIN");
+        await client.query(gate.writable ? "BEGIN" : "BEGIN TRANSACTION READ ONLY");
         const tx = toSql(async <R>(text: string, params: unknown[]) => {
           const res = await client.query(text, params);
           return res.rows as R[];
