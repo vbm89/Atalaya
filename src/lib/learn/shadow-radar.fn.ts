@@ -1,6 +1,22 @@
 import { createServerFn } from "@tanstack/react-start";
 
+// Heavy read (all episodes + full market_m15 + replay). Three panels call it,
+// so share one result per warm instance for 5 min and dedupe in-flight calls.
+const RADAR_TTL_MS = 5 * 60_000;
+let radarCache: { at: number; data: Promise<unknown> } | null = null;
+
 export const getShadowRadar = createServerFn({ method: "POST" }).handler(async () => {
+  const now = Date.now();
+  if (radarCache && now - radarCache.at < RADAR_TTL_MS) return radarCache.data as ReturnType<typeof buildRadar>;
+  const data = buildRadar();
+  radarCache = { at: now, data };
+  data.catch(() => {
+    if (radarCache?.data === data) radarCache = null;
+  });
+  return data;
+});
+
+async function buildRadar() {
   const { getSql } = await import("@/lib/db");
   const { createPgStore } = await import("@/lib/watch/store");
   const { buildShadowRadar } = await import("./shadow-radar");
@@ -85,4 +101,4 @@ export const getShadowRadar = createServerFn({ method: "POST" }).handler(async (
       k1Status: SHADOW_HYPOTHESIS_REGISTRY[0]!.status,
     },
   };
-});
+}
