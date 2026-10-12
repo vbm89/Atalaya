@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AssetSnapshot, PaperViewSignal } from "@/lib/bot-paper/store";
+import { startVisiblePoll } from "@/lib/visible-poll";
 
 interface BoardBody {
   updatedAt: number;
@@ -82,11 +83,11 @@ export function BotScreen() {
         if (!cancelled) setError(e instanceof Error ? e.message : "sin conexión");
       }
     }
-    void pull();
-    const id = window.setInterval(() => void pull(), 20000);
+    // Visible tabs only; one immediate pull when the tab comes back.
+    const stop = startVisiblePoll(() => void pull(), 60_000);
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      stop();
     };
   }, []);
 

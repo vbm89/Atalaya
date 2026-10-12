@@ -16,6 +16,7 @@ async function run(request: Request): Promise<Response> {
       duplicates: report.duplicates,
       waited: report.waited,
       processed: report.processed,
+      skipped: report.skipped === true,
       bot: view.bot,
       storageStatus: view.storageStatus,
       assets: view.assets.map((row) => ({

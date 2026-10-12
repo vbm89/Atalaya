@@ -91,6 +91,12 @@ describe("paper bot autónomo", () => {
     assert.equal(readSignals(root).length, 0);
     assert.equal(readDecisions(root).length, 4);
     assert.equal(readState(root).lastProcessedBar, expected);
+    assert.equal(again.skipped, true);
+    let calls = 0;
+    const third = await runCycle({ dir: root, nowSec: now + 10, load: async (asset) => { calls += 1; return load(asset); } });
+    assert.equal(calls, 0, "caught-up cycle must not fetch market data");
+    assert.equal(third.skipped, true);
+    assert.equal(readDecisions(root).length, 4);
   });
 
   it("una vela nueva se evalúa y la anterior no se repite", async () => {

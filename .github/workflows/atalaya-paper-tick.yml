@@ -1,26 +1,48 @@
 name: Atalaya Paper Tick
 
+# Single scheduling source for DEV (see docs/ops/scheduling.md).
+# Schedules only fire from the default branch (main).
+# Replaces the cron-job.org 5-minute job: disable that job once this is on main.
 on:
   schedule:
     - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
 
+concurrency:
+  group: atalaya-dev-tick
+  cancel-in-progress: false
+
 jobs:
   tick:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://atalaya-dev.vercel.app
     steps:
-      - name: Trigger durable paper tick
+      - name: Watch tick (GET /api/watch/tick, WATCH_SECRET)
         env:
-          # Same name as Vercel CRON_SECRET. This file cannot prove the Actions secret exists or matches DEV.
+          WATCH_SECRET: ${{ secrets.WATCH_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${WATCH_SECRET}" ]; then echo "WATCH_SECRET is not configured" >&2; exit 1; fi
+          code=$(curl --silent --show-error --max-time 120 -o /tmp/watch.json -w '%{http_code}' \
+            -H "Cache-Control: no-cache" -H "Authorization: Bearer ${WATCH_SECRET}" \
+            "${BASE_URL}/api/watch/tick")
+          echo "HTTP ${code}"
+          jq -c '{status, slot, durationMs, retryCount, duplicate}' /tmp/watch.json 2>/dev/null || true
+          # 425 too_early is benign; anything else non-2xx fails the step.
+          case "$code" in 2??|425) ;; *) exit 1 ;; esac
+
+      - name: Paper tick (POST /api/paper/cron, CRON_SECRET)
+        if: always()
+        env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -euo pipefail
-          if [ -z "${CRON_SECRET}" ]; then
-            echo "CRON_SECRET is not configured for GitHub Actions" >&2
-            exit 1
-          fi
-          curl --fail --silent --show-error --max-time 90 \
-            -H "Cache-Control: no-cache" \
-            -H "Authorization: Bearer ${CRON_SECRET}" \
-            "https://atalaya-dev.vercel.app/api/bot"
+          if [ -z "${CRON_SECRET}" ]; then echo "CRON_SECRET is not configured" >&2; exit 1; fi
+          code=$(curl --silent --show-error --max-time 90 -o /tmp/paper.json -w '%{http_code}' \
+            -X POST -H "Cache-Control: no-cache" -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${BASE_URL}/api/paper/cron")
+          echo "HTTP ${code}"
+          jq -c '{ok, expected, skipped, decisions, signalsNew, waited, processed, bot, storageStatus}' /tmp/paper.json 2>/dev/null || true
+          case "$code" in 2??) ;; *) exit 1 ;; esac

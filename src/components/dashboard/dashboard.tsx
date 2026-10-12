@@ -324,7 +324,8 @@ export function Dashboard() {
     queryKey: HEALTH_KEY,
     queryFn: () => getWatchHealth(),
     staleTime: 15_000,
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
     retry: 0,
   });
 
@@ -332,7 +333,8 @@ export function Dashboard() {
     queryKey: SNAPS_KEY,
     queryFn: () => getWatchSnapshots(),
     staleTime: 15_000,
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
     retry: 0,
   });
 
@@ -344,7 +346,8 @@ export function Dashboard() {
       return response.json() as Promise<PaperBoard & { signals?: unknown }>;
     },
     staleTime: 15_000,
-    refetchInterval: 20_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
     retry: 1,
   });
 

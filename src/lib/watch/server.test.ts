@@ -272,6 +272,49 @@ describe("watch tick idempotency + lag", () => {
     assert.equal(btc?.state, "entry");
   });
 
+  it("an already-done slot exits before loading the market", async () => {
+    const store = memoryStore();
+    let loads = 0;
+    const load = async (): Promise<WatchLoad> => {
+      loads += 1;
+      return loadAll({ setupState: "entry", setup: sampleSetup, waitReason: null }, [bar]);
+    };
+    assert.equal((await runWatchTick({ nowMs: now, store, load })).status, "ok");
+    assert.equal(loads, 1);
+    for (let i = 0; i < 3; i += 1) {
+      const again = await runWatchTick({
+        nowMs: now + i * 60_000,
+        store,
+        load: async () => {
+          throw new Error("should not load a done slot");
+        },
+      });
+      assert.equal(again.status, "duplicate");
+    }
+    assert.equal(loads, 1);
+  });
+
+  it("an in-flight slot exits before loading the market", async () => {
+    const store = memoryStore();
+    await store.claimEval(slotSecFromNow(now), now);
+    const r = await runWatchTick({
+      nowMs: now,
+      store,
+      load: async () => {
+        throw new Error("should not load an in-flight slot");
+      },
+    });
+    assert.equal(r.status, "in_flight");
+  });
+
+  it("shadow replay is not on the tick or analysis request path", () => {
+    for (const rel of ["./http.ts", "../market/analysis.fn.ts"]) {
+      const src = readFileSync(new URL(rel, import.meta.url), "utf8");
+      assert.equal(src.includes("analyzeShadowReplay"), false, rel);
+      assert.equal(src.includes("loadShadowEpisodes"), false, rel);
+    }
+  });
+
   it("covers a slot only when the 15M open exists", () => {
     assert.equal(m15CoversSlot([bar], slot), true);
     assert.equal(m15CoversSlot([], slot), false);
