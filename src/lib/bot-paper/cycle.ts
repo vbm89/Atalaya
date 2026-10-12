@@ -45,6 +45,8 @@ export interface CycleReport {
   nowSec: number;
   expected: number;
   decisions: number;
+  /** True when every asset already had the closed bar: no market fetch ran. */
+  skipped?: boolean;
   signalsNew: number;
   duplicates: number;
   waited: AssetId[];
@@ -209,9 +211,13 @@ export async function runCycle(opts: { dir?: string; ledger?: PaperLedger; nowSe
   const sinceClose = nowSec - (expected + PARAMS.barSec);
   const state = await ledger.readState();
   const report: CycleReport = { nowSec, expected, decisions: 0, signalsNew: 0, duplicates: 0, waited: [], processed: [] };
-  const loaded = await Promise.allSettled(ASSETS.map((asset) => opts.load(asset)));
+  // Already caught up on this closed bar: no market fetch, no per-asset work.
+  // A repeated or overlapping cron call costs one state read + one state write.
+  const caughtUp = ASSETS.every((asset) => (state.assets[asset]?.lastBarT ?? -1) >= expected);
+  if (caughtUp) report.skipped = true;
+  const loaded = caughtUp ? [] : await Promise.allSettled(ASSETS.map((asset) => opts.load(asset)));
 
-  for (let i = 0; i < ASSETS.length; i++) {
+  for (let i = 0; i < loaded.length; i++) {
     const asset = ASSETS[i]!;
     const result = loaded[i]!;
     const previous = state.assets[asset]?.lastBarT ?? null;

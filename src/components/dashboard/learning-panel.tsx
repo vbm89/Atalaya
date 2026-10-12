@@ -1,5 +1,6 @@
 import { BrainCircuit, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { startVisiblePoll } from "@/lib/visible-poll";
 
 type PaperSignal = {
   id: string;
@@ -43,9 +44,9 @@ export function LearningPanel() {
         if (!cancelled) { setData(next); setError(false); }
       } catch { if (!cancelled) setError(true); }
     };
-    void pull();
-    const id = window.setInterval(() => void pull(), 20_000);
-    return () => { cancelled = true; window.clearInterval(id); };
+    // Visible tabs only; one immediate pull when the tab comes back.
+    const stop = startVisiblePoll(() => void pull(), 60_000);
+    return () => { cancelled = true; stop(); };
   }, []);
 
   const signals = data?.signals ?? [];

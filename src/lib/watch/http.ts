@@ -5,30 +5,6 @@ import { authorizeWatchRequest } from "./secret";
 import { createPgStore } from "./store";
 import { runWatchTick } from "./tick";
 
-type WatchSql = Awaited<ReturnType<typeof getSql>>;
-
-async function runShadowReplaySidecar(sql: WatchSql, generatedAt: string): Promise<void> {
-  if ((process.env.SHADOW_REPLAY_ENABLED?.trim() ?? "") !== "true") return;
-
-  try {
-    const { loadShadowEpisodes } = await import("@/lib/learn/shadow-db");
-    const { analyzeShadowReplay } = await import("@/lib/learn/shadow-analysis");
-    const { saveShadowReplayReport } = await import("@/lib/learn/shadow-replay-store");
-    const episodes = await loadShadowEpisodes(sql);
-    const report = analyzeShadowReplay(episodes);
-    await saveShadowReplayReport(sql, report, generatedAt);
-    console.info("[shadow] replay", {
-      status: "ok",
-      episodesAnalyzed: report.replay.episodesAnalyzed,
-      comparisons: report.comparisons.length,
-    });
-  } catch (e) {
-    console.error("[shadow] replay failed", {
-      error: e instanceof Error ? e.message : String(e),
-    });
-  }
-}
-
 const RETRY_DELAY_MS = 750;
 
 export async function handleWatchTick(request: Request): Promise<Response> {
@@ -63,11 +39,8 @@ export async function handleWatchTick(request: Request): Promise<Response> {
         },
       });
 
-      // Shadow V2 is a research sidecar. It runs only after a successful Watch
-      // cycle and can never alter the V1 result or HTTP status.
-      if (result.status === "ok") {
-        await runShadowReplaySidecar(sql, new Date(nowMs).toISOString());
-      }
+      // Shadow V2 replay is not part of the tick: it reloads every episode and
+      // its tape, so it runs only on demand via POST /api/learn/shadow-replay.
 
       const status =
         result.status === "failed" ? 500 : result.status === "too_early" ? 425 : 200;
