@@ -37,7 +37,8 @@ export function InboxPanel({
     queryKey: ["watch-inbox"],
     queryFn: () => getWatchInbox(),
     staleTime: 15_000,
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
     retry: 0,
   });
   const hist = useQuery({

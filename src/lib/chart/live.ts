@@ -5,6 +5,9 @@ import type { ChartSeries, ChartTf, LiveStatus } from "./types";
 import { applyTradeInPlace, foldLiveLast, mergeKlineIntoOpen, patchLastBar, tfSeconds } from "./bars";
 import { parseBinanceAggTrade, parseBinanceKline, unwrapBinancePayload } from "./stream";
 
+/** REST fallback cadence for getChartTick (a server function per call). */
+export const CHART_POLL_MS = 15_000;
+
 const BINANCE_WS_BASES = [
   "wss://data-stream.binance.vision/ws",
   "wss://stream.binance.com:9443/ws",
@@ -278,7 +281,8 @@ export function useChartLive(series: ChartSeries | undefined) {
         }
       };
       void tick();
-      pollId = window.setInterval(() => void tick(), 2000);
+      // Server function per call: keep REST fallback at 15s.
+      pollId = window.setInterval(() => void tick(), CHART_POLL_MS);
     };
 
     const scheduleReconnect = () => {
