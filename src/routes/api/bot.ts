@@ -4,32 +4,26 @@ import { usesDurableStore } from "../../lib/bot-paper/ledger.ts";
 import { readPaperView } from "../../lib/bot-paper/store.ts";
 
 const BAR_SEC = 15 * 60;
-const RETRY_SEC = 15;
 
 function latestClosed(nowSec: number): number {
   return Math.floor(nowSec / BAR_SEC) * BAR_SEC - BAR_SEC;
 }
 
+/** True when the ledger has not processed the latest closed 15m bar. */
+export function ledgerBehind(lastProcessedBar: number | null | undefined, nowSec: number): boolean {
+  return lastProcessedBar == null || lastProcessedBar < latestClosed(nowSec);
+}
+
 /**
- * Catch-up of one closed 15m bar. Only the authenticated handler may call this.
- * It reads the ledger and, when that bar is still missing, runs one paper tick.
+ * Read-only view of the durable ledger. No market fetch, no tick, no write:
+ * a stale ledger is only reported (`ledgerBehind: true`). The paper tick runs
+ * from the scheduled POST /api/paper/cron.
  */
 async function durableView() {
   const { getSql } = await import("../../lib/db.ts");
   const { readDurableView } = await import("../../lib/bot-paper/ledger.ts");
-  const { runDurableTick } = await import("../../lib/bot-paper/tick.ts");
-  const sql = await getSql();
-  const before = await readDurableView(sql);
-  const nowSec = Math.floor(Date.now() / 1000);
-  const expected = latestClosed(nowSec);
-  const behind = before.lastProcessedBar == null || before.lastProcessedBar < expected;
-  const retryDue = before.lastCycleAt == null || nowSec - before.lastCycleAt >= RETRY_SEC;
-
-  if (behind && retryDue) {
-    await runDurableTick(nowSec);
-  }
-
-  return readDurableView(sql);
+  const view = await readDurableView(await getSql());
+  return { ...view, ledgerBehind: ledgerBehind(view.lastProcessedBar, Math.floor(Date.now() / 1000)) };
 }
 
 type BotDeps = {
@@ -51,7 +45,7 @@ function publicError(error: unknown): string {
   return message;
 }
 
-/** Paper catch-up. Rejects before any ledger read, market fetch or tick. */
+/** Paper ledger read. Rejects before any ledger read; never runs a tick. */
 export async function handleBotGet(request: Request, deps: BotDeps = defaultDeps): Promise<Response> {
   if (!cronAuthorized(request)) {
     return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });

@@ -16,17 +16,8 @@ export const getMarketAnalysis = createServerFn({ method: "POST" })
       const sql = getSql();
       await recordDailyForecasts(sql, result.assets, forecastAll(result.assets, generatedAt), generatedAt);
 
-      // Shadow V2 replay: rebuild the historical evidence, analyze it, and
-      // persist the report on every normal analysis cycle. This is strictly
-      // research data; it never feeds the V1 decision path.
-      if ((process.env.SHADOW_REPLAY_ENABLED?.trim() ?? "") === "true") {
-        const { loadShadowEpisodes } = await import("@/lib/learn/shadow-db");
-        const { analyzeShadowReplay } = await import("@/lib/learn/shadow-analysis");
-        const { saveShadowReplayReport } = await import("@/lib/learn/shadow-replay-store");
-        const episodes = await loadShadowEpisodes(sql);
-        const report = analyzeShadowReplay(episodes);
-        await saveShadowReplayReport(sql, report, generatedAt);
-      }
+      // Shadow V2 replay is not run here: it reloads every episode and its
+      // tape. Run it on demand via POST /api/learn/shadow-replay.
     } catch {
       // Research persistence is deliberately best-effort and isolated from V1.
     }

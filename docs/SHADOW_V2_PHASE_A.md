@@ -58,6 +58,6 @@ Run with a configured research database:
 npm run shadow:replay
 ```
 
-The CLI replay runner is read-only. The Watch integration is different: after a successful Watch cycle, when `SHADOW_REPLAY_ENABLED=true`, it runs the same analysis and persists a bounded replay report for the lab. Replay failures are caught and cannot turn a successful V1 Watch cycle into a failed response.
+The CLI replay runner is read-only. The replay is not part of the Watch tick or of `getMarketAnalysis`: it reloads every episode and its tape, which is too much CPU per tick. To persist a bounded replay report for the lab, call `POST /api/learn/shadow-replay` on demand (gated by `SHADOW_REPLAY_ENABLED`, token and host). See [ops/scheduling.md](./ops/scheduling.md).
 
 Phase B (sweep/reclaim and FVG retest on the same frozen maps) is documented in [SHADOW_V2_PHASE_B.md](./SHADOW_V2_PHASE_B.md). It does not change these invariants.
